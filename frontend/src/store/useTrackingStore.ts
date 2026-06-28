@@ -1,0 +1,73 @@
+import { create } from 'zustand';
+import axios from 'axios';
+
+interface TrackingEvent {
+  date: string;
+  location: string;
+  status: string;
+}
+
+interface TrackingData {
+  bl_number: string;
+  vessel_name: string;
+  status: string;
+  pol: string;
+  pod: string;
+  etd: string;
+  eta: string;
+  events?: TrackingEvent[];
+  last_updated: string;
+}
+
+interface TrackingState {
+  data: TrackingData | null;
+  shipments: TrackingData[];
+  loading: boolean;
+  error: string | null;
+  fetchTracking: (blNumber: string) => Promise<void>;
+  fetchAllShipments: () => Promise<void>;
+  clearData: () => void;
+}
+
+export const useTrackingStore = create<TrackingState>((set) => ({
+  data: null,
+  shipments: [],
+  loading: false,
+  error: null,
+  
+  fetchTracking: async (blNumber: string) => {
+    set({ loading: true, error: null });
+    try {
+      const response = await axios.get(`http://localhost:5000/api/tracking/${blNumber}`, { withCredentials: true });
+      if (response.data.success) {
+        set({ data: response.data.data, loading: false });
+      }
+    } catch (err: any) {
+      set({ 
+        error: err.response?.data?.message || '트래킹 정보를 불러오는 데 실패했습니다.', 
+        loading: false,
+        data: null
+      });
+    }
+  },
+
+  fetchAllShipments: async () => {
+    set({ loading: true, error: null });
+    try {
+      const response = await axios.get('http://localhost:5000/api/tracking/all', { withCredentials: true });
+      if (response.data.success) {
+        // 날짜 포맷 변경 (yyyy-mm-dd)
+        const formatted = response.data.data.map((item: any) => ({
+          ...item,
+          etd: item.etd ? item.etd.split('T')[0] : '',
+          eta: item.eta ? item.eta.split('T')[0] : ''
+        }));
+        set({ shipments: formatted, loading: false });
+      }
+    } catch (err: any) {
+      set({ error: '선적 목록을 불러오는 데 실패했습니다.', loading: false });
+    }
+  },
+
+  clearData: () => set({ data: null, error: null })
+}));
