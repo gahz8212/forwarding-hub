@@ -12,35 +12,56 @@ import { Search, Ship, MapPin, Calendar, Clock, Anchor } from "lucide-react";
 
 // 임시 로그인 컴포넌트
 const Login = () => {
+  const [isLogin, setIsLogin] = React.useState(true);
   const [username, setUsername] = React.useState("admin");
   const [password, setPassword] = React.useState("admin123");
+  const [mobile, setMobile] = React.useState("");
   const { setUser } = useAuthStore();
   const [error, setError] = React.useState("");
+  const [successMsg, setSuccessMsg] = React.useState("");
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+    setSuccessMsg("");
     try {
-      const response = await axios.post(
-        "http://localhost:5000/api/auth/login",
-        {
-          username,
-          password,
-        },
-        { withCredentials: true },
-      );
+      if (isLogin) {
+        const response = await axios.post(
+          "http://localhost:5000/api/auth/login",
+          {
+            username,
+            password,
+          },
+          { withCredentials: true },
+        );
 
-      if (response.data.success) {
-        setUser(response.data.user);
+        if (response.data.success) {
+          setUser(response.data.user);
+        }
+      } else {
+        const response = await axios.post(
+          "http://localhost:5000/api/auth/register",
+          {
+            username,
+            password,
+            mobile,
+          }
+        );
+
+        if (response.data.success) {
+          setSuccessMsg("회원가입이 완료되었습니다. 로그인해주세요.");
+          setIsLogin(true);
+        }
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || "로그인 실패");
+      setError(err.response?.data?.message || (isLogin ? "로그인 실패" : "회원가입 실패"));
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <form
-        onSubmit={handleLogin}
+        onSubmit={handleSubmit}
         className="bg-white p-8 rounded-xl shadow-lg w-96"
       >
         <h2 className="text-2xl font-bold text-center mb-6 text-brand-dark">
@@ -48,6 +69,9 @@ const Login = () => {
         </h2>
         {error && (
           <p className="text-red-500 mb-4 text-sm text-center">{error}</p>
+        )}
+        {successMsg && (
+          <p className="text-green-500 mb-4 text-sm text-center">{successMsg}</p>
         )}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -58,9 +82,10 @@ const Login = () => {
             className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            required
           />
         </div>
-        <div className="mb-6">
+        <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Password
           </label>
@@ -69,13 +94,53 @@ const Login = () => {
             className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            required
           />
         </div>
+        {!isLogin && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Mobile (휴대전화)
+            </label>
+            <input
+              type="tel"
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              placeholder="010-0000-0000"
+              required
+            />
+          </div>
+        )}
         <button
           type="submit"
-          className="w-full bg-brand-blue text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition"
+          className={`w-full text-white py-2 rounded-lg font-semibold transition ${isLogin ? "bg-brand-blue hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
         >
-          Login
+          {isLogin ? "Login" : "Sign Up"}
+        </button>
+        <p className="mt-4 text-sm text-center text-gray-600">
+          {isLogin ? "계정이 없으신가요? " : "이미 계정이 있으신가요? "}
+          <button
+            type="button"
+            className="text-brand-blue font-semibold hover:underline"
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError("");
+              setSuccessMsg("");
+            }}
+          >
+            {isLogin ? "회원가입" : "로그인"}
+          </button>
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${import.meta.env.VITE_KAKAO_REST_API_KEY}&redirect_uri=http://localhost:5000/api/auth/kakao/callback&response_type=code&scope=talk_message,profile_nickname`;
+            window.location.href = KAKAO_AUTH_URL;
+          }}
+          className="w-full mt-4 bg-[#FEE500] text-[#000000] py-2 rounded-lg font-semibold hover:bg-[#FDD800] transition flex items-center justify-center gap-2"
+        >
+          카카오로 3초 만에 시작하기
         </button>
       </form>
     </div>
@@ -116,7 +181,9 @@ const Dashboard = () => {
 
     // 도착항 목록 가져오기
     axios
-      .get("http://localhost:5000/api/schedules/pods", { withCredentials: true })
+      .get("http://localhost:5000/api/schedules/pods", {
+        withCredentials: true,
+      })
       .then((res) => {
         if (res.data.success) {
           setAvailablePods(res.data.data);
@@ -167,6 +234,21 @@ const Dashboard = () => {
       console.error(err);
     } finally {
       setScheduleLoading(false);
+    }
+  };
+
+  const handleBookingRequest = async (schedule: any) => {
+    try {
+      const res = await axios.post(
+        "http://localhost:5000/api/schedules/book",
+        { schedule },
+        { withCredentials: true }
+      );
+      if (res.data.success) {
+        alert(res.data.message);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || "부킹 요청 실패");
     }
   };
 
@@ -404,7 +486,10 @@ const Dashboard = () => {
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-blue text-white appearance-none"
                     value={scheduleQuery.pod}
                     onChange={(e) =>
-                      setScheduleQuery({ ...scheduleQuery, pod: e.target.value })
+                      setScheduleQuery({
+                        ...scheduleQuery,
+                        pod: e.target.value,
+                      })
                     }
                   >
                     {availablePods.map((pod) => (
@@ -514,7 +599,10 @@ const Dashboard = () => {
                           {Number(sch.available_weight).toLocaleString()}
                         </p>
                       </div>
-                      <button className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-bold text-sm transition">
+                      <button
+                        onClick={() => handleBookingRequest(sch)}
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-bold text-sm transition"
+                      >
                         부킹 요청
                       </button>
                     </div>
