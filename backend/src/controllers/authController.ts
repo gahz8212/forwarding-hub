@@ -113,7 +113,7 @@ export const kakaoCallback = async (req: Request, res: Response) => {
     let [rows]: any = await pool.query('SELECT id, username, role FROM users WHERE username = ?', [nickname]);
     
     if (rows.length === 0) {
-      await pool.query('INSERT INTO users (username, password, role, mobile) VALUES (?, ?, ?, ?)', [nickname, 'kakao_oauth', 'client', '']);
+      await pool.query('INSERT INTO users (username, password, role, mobile) VALUES (?, ?, ?, ?)', [nickname, 'kakao_oauth', 'admin', '']);
       [rows] = await pool.query('SELECT id, username, role FROM users WHERE username = ?', [nickname]);
     }
 

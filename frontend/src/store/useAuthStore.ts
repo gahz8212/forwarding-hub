@@ -5,6 +5,7 @@ interface User {
   id: number;
   username: string;
   role: string;
+  kakaoToken?: string;
 }
 
 interface AuthState {

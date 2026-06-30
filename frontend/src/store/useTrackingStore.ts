@@ -17,6 +17,13 @@ interface TrackingData {
   eta: string;
   events?: TrackingEvent[];
   last_updated: string;
+  doc_closing_date?: string;
+  cargo_closing_date?: string;
+  invoice_file_path?: string;
+  packing_list_file_path?: string;
+  truck_date?: string;
+  truck_plate_number?: string;
+  truck_driver_phone?: string;
 }
 
 interface TrackingState {
