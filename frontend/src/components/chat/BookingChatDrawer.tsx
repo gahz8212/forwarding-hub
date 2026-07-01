@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import axios from "axios";
 import { io } from "socket.io-client";
 import { X, Send, Lock, Globe, MessageSquare, ShieldAlert } from "lucide-react";
@@ -114,7 +115,7 @@ export default function BookingChatDrawer({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
       {/* Background Overlay */}
       <div 
@@ -271,6 +272,7 @@ export default function BookingChatDrawer({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

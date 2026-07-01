@@ -3,6 +3,8 @@ import axios from "axios";
 import { Check, X, Clock, AlertCircle, Share2, MessageSquare } from "lucide-react";
 import { useAuthStore } from "../../store/useAuthStore";
 import BookingChatDrawer from "../../components/chat/BookingChatDrawer";
+import { io } from "socket.io-client";
+import { useSearchParams } from "react-router-dom";
 
 export default function AdminBookingPage() {
   const [bookings, setBookings] = useState<any[]>([]);
@@ -13,6 +15,10 @@ export default function AdminBookingPage() {
   // 채팅 서랍장 상태
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
+
+  // 쿼리 매개변수 확인용 (채팅 알림 등에서 바로 열기용)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openChatId = searchParams.get("openChat");
 
   // 현재 사용자 정보
   const { user } = useAuthStore();
@@ -37,7 +43,38 @@ export default function AdminBookingPage() {
 
   useEffect(() => {
     fetchBookings();
+
+    // 실시간 소켓 연결 (신규 부킹 발생 시 목록 자동 갱신용)
+    const socket = io("http://localhost:5000");
+    socket.on("connect", () => {
+      console.log("AdminBookingPage socket connected");
+      socket.emit("join", { role: "admin" });
+    });
+
+    socket.on("new_booking_alert", () => {
+      console.log("실시간 신규 부킹 요청 감지 ➔ 목록 갱신");
+      fetchBookings();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
+
+  // 쿼리 파라미터(openChat) 감지하여 특정 대화방 바로 열기
+  useEffect(() => {
+    if (openChatId && bookings.length > 0) {
+      const bk = bookings.find((b) => b.id === Number(openChatId));
+      if (bk) {
+        setSelectedBooking(bk);
+        setIsChatOpen(true);
+        // 처리 후 주소창 쿼리스트링 비워주기
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete("openChat");
+        setSearchParams(newParams, { replace: true });
+      }
+    }
+  }, [openChatId, bookings]);
 
   const handleApprove = async (bk: any) => {
     setProcessingId(bk.id);
@@ -61,11 +98,43 @@ export default function AdminBookingPage() {
     }
   };
 
-  const handleReject = (id: number) => {
-    if (confirm("정말로 이 부킹 요청을 반려하시겠습니까?")) {
-      // 반려 시에는 목록에서 임시 제외 처리
-      setBookings((prev) => prev.filter((b) => b.id !== id));
-      alert("부킹 요청이 반려되었습니다.");
+  const handleReject = async (id: number) => {
+    const bk = bookings.find((b) => b.id === id);
+    if (!bk) return;
+
+    // 반려 의사 재확인 창
+    if (!confirm(`정말로 BK-${id.toString().padStart(5, "0")} 부킹 요청을 반려하시겠습니까?\n반려 시 해당 요청 내역은 데이터베이스에서 즉시 완전히 삭제됩니다.`)) {
+      return;
+    }
+
+    const reason = prompt("부킹 반려 사유를 입력해 주세요 (카카오톡 알림으로 전송됩니다):");
+    if (reason === null) return; // 취소 클릭 시 중단
+    if (!reason.trim()) {
+      alert("반려 사유는 필수 입력 항목입니다.");
+      return;
+    }
+
+    setProcessingId(id);
+    try {
+      const res = await axios.post(
+        "http://localhost:5000/api/schedules/reject",
+        {
+          bookingId: id,
+          reason: reason.trim(),
+          bookingDetails: bk
+        },
+        { withCredentials: true }
+      );
+
+      if (res.data.success) {
+        alert(res.data.message);
+        // 반려 완료된 항목을 목록에서 실시간 제외
+        setBookings((prev) => prev.filter((b) => b.id !== id));
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || "반려 처리 중 오류가 발생했습니다.");
+    } finally {
+      setProcessingId(null);
     }
   };
 

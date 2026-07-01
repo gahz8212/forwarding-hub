@@ -5,7 +5,7 @@ import { Anchor } from "lucide-react";
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = React.useState(true);
-  const [username, setUsername] = React.useState("admin");
+  const [username, setUsername] = React.useState("김화주");
   const [password, setPassword] = React.useState("admin123");
   const [mobile, setMobile] = React.useState("");
   const { setUser } = useAuthStore();
@@ -67,14 +67,14 @@ export default function LoginPage() {
             Forwarding Hub
           </h2>
         </div>
-        
+
         {error && (
           <p className="text-red-500 mb-4 text-sm text-center font-medium bg-red-50 py-1.5 rounded">{error}</p>
         )}
         {successMsg && (
           <p className="text-green-500 mb-4 text-sm text-center font-medium bg-green-50 py-1.5 rounded">{successMsg}</p>
         )}
-        
+
         <div className="mb-4">
           <label className="block text-sm font-bold text-slate-700 mb-1">
             Username
@@ -116,13 +116,12 @@ export default function LoginPage() {
         )}
         <button
           type="submit"
-          className={`w-full text-white py-2.5 rounded-lg font-bold transition shadow-sm ${
-            isLogin ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"
-          }`}
+          className={`w-full text-white py-2.5 rounded-lg font-bold transition shadow-sm ${isLogin ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"
+            }`}
         >
           {isLogin ? "로그인" : "회원가입"}
         </button>
-        
+
         <p className="mt-4 text-sm text-center text-slate-500">
           {isLogin ? "계정이 없으신가요? " : "이미 계정이 있으신가요? "}
           <button

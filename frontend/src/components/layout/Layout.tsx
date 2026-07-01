@@ -17,16 +17,22 @@ export default function Layout() {
   const currentPath = location.pathname;
 
   const [bookingAlerts, setBookingAlerts] = useState<any[]>([]);
+  const [chatAlerts, setChatAlerts] = useState<any[]>([]);
 
   useEffect(() => {
-    if (user?.role === "admin") {
-      const socket = io("http://localhost:5000");
+    if (!user) return;
 
-      socket.on("connect", () => {
-        console.log("Admin socket connected");
+    const socket = io("http://localhost:5000");
+
+    socket.on("connect", () => {
+      console.log(`Socket connected in layout for user: ${user.username} (${user.role})`);
+      if (user.role === "admin") {
         socket.emit("join", { role: "admin" });
-      });
+      }
+    });
 
+    // 신규 부킹 요청 알람 리스너 (어드민 전용)
+    if (user.role === "admin") {
       socket.on("new_booking_alert", (data) => {
         const uniqueId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
         const requestTime = new Date().toLocaleString("ko-KR", {
@@ -40,11 +46,46 @@ export default function Layout() {
         });
         setBookingAlerts((prev) => [...prev, { ...data, alertId: uniqueId, requestTime }]);
       });
-
-      return () => {
-        socket.disconnect();
-      };
     }
+
+    // 신규 채팅 메시지 실시간 알람 리스너 (어드민/화주 공용)
+    socket.on("booking_message_notification", (data) => {
+      console.log("실시간 채팅 메시지 알림 감지:", data);
+      const isAdmin = user.role === "admin";
+      const isClient = user.role === "client";
+
+      let shouldAlert = false;
+      // 1) 어드민인 경우: 화주(client)가 보낸 대화글 감지
+      if (isAdmin && data.senderRole === "client") {
+        shouldAlert = true;
+      }
+      // 2) 화주인 경우: 본인의 부킹 건이고 어드민이 보낸 비공개가 아닌 대화글 감지
+      else if (
+        isClient &&
+        user.id === data.shipperId &&
+        data.senderRole === "admin" &&
+        data.isPrivate === 0
+      ) {
+        shouldAlert = true;
+      }
+
+      if (shouldAlert) {
+        const uniqueId = `chat_${Date.now()}_${Math.random()}`;
+        const timeStr = new Date().toLocaleTimeString("ko-KR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+        setChatAlerts((prev) => [
+          ...prev,
+          { ...data, alertId: uniqueId, requestTime: timeStr }
+        ]);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, [user]);
 
   const handleCloseAlert = (alertId: string) => {
@@ -227,6 +268,48 @@ export default function Layout() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 실시간 채팅 알림(신규 메시지) 팝업 스택 (화면 좌측 하단 배치) */}
+      {chatAlerts.length > 0 && (
+        <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-4 max-h-[85vh] overflow-y-auto w-80 p-2 scrollbar-thin">
+          {chatAlerts.map((alertItem) => (
+            <div
+              key={alertItem.alertId}
+              className="bg-slate-900 border-2 border-blue-500 p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300 text-white"
+            >
+              <h4 className="text-base font-black text-blue-400">💬 새로운 업무 메시지</h4>
+              <p className="text-slate-300 text-sm mt-2 font-bold">보낸 사람: {alertItem.senderName}</p>
+              <p className="text-slate-300 text-xs mt-1 bg-white/10 p-2.5 rounded-lg italic break-all">
+                "{alertItem.message.length > 40 ? alertItem.message.slice(0, 40) + "..." : alertItem.message}"
+              </p>
+              <p className="text-slate-500 text-[10px] mt-2">수신일시: {alertItem.requestTime}</p>
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => {
+                    // 알람 목록에서 해당 항목 제거
+                    setChatAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId));
+                    // 어드민/화주 경로 분기 및 쿼리 파라미터 전달하여 대화창 오픈 트리거
+                    const targetPath = user?.role === "admin" ? "/admin/bookings" : "/bookings";
+                    navigate(`${targetPath}?openChat=${alertItem.bookingId}`);
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
+                >
+                  확인하러 가기
+                </button>
+                <button
+                  onClick={() => {
+                    setChatAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId));
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg font-bold text-xs transition"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

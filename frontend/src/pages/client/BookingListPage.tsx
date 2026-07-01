@@ -3,6 +3,8 @@ import axios from "axios";
 import { Clock, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react";
 import { useAuthStore } from "../../store/useAuthStore";
 import BookingChatDrawer from "../../components/chat/BookingChatDrawer";
+import { useSearchParams } from "react-router-dom";
+import { io } from "socket.io-client";
 
 export default function BookingListPage() {
   const [bookings, setBookings] = useState<any[]>([]);
@@ -12,6 +14,10 @@ export default function BookingListPage() {
   // 채팅방 서랍장 상태
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
+
+  // 쿼리 매개변수 확인용 (채팅 알림 등에서 바로 열기용)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openChatId = searchParams.get("openChat");
 
   // 로그인한 화주 정보
   const { user } = useAuthStore();
@@ -26,12 +32,45 @@ export default function BookingListPage() {
       })
       .catch((err) => {
         console.error("부킹 내역 조회 실패:", err);
-        setError("예약 내역을 불러오는 중 오류가 발생했습니다.");
+        setError(`예약 내역을 불러오는 중 오류가 발생했습니다. (${err.response?.data?.message || err.message})`);
       })
       .finally(() => {
         setLoading(false);
       });
   }, []);
+
+  // 실시간 부킹 반려(삭제) 소켓 수신 처리
+  useEffect(() => {
+    const socket = io("http://localhost:5000");
+
+    socket.on("connect", () => {
+      console.log("BookingListPage socket connected");
+    });
+
+    socket.on("booking_rejected", (data) => {
+      console.log("실시간 부킹 반려 감지 ➔ 목록에서 즉시 제거:", data);
+      setBookings((prev) => prev.filter((b) => b.id !== data.bookingId));
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  // 쿼리 파라미터(openChat) 감지하여 특정 대화방 바로 열기
+  useEffect(() => {
+    if (openChatId && bookings.length > 0) {
+      const bk = bookings.find((b) => b.id === Number(openChatId));
+      if (bk) {
+        setSelectedBooking(bk);
+        setIsChatOpen(true);
+        // 처리 후 주소창 쿼리스트링 비워주기
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete("openChat");
+        setSearchParams(newParams, { replace: true });
+      }
+    }
+  }, [openChatId, bookings]);
 
   const handleOpenChat = (bk: any) => {
     setSelectedBooking(bk);
@@ -91,14 +130,14 @@ export default function BookingListPage() {
                       )}
                     </td>
                     <td className="p-4 text-slate-600 text-sm align-top">
-                      {new Date(bk.created_at).toLocaleDateString("ko-KR")}
+                      {bk.created_at ? new Date(bk.created_at).toLocaleDateString("ko-KR") : "-"}
                     </td>
-                    <td className="p-4 text-slate-800 font-semibold align-top">{bk.vessel_name}</td>
+                    <td className="p-4 text-slate-800 font-semibold align-top">{bk.vessel_name || "-"}</td>
                     <td className="p-4 text-slate-600 text-sm align-top">
-                      {bk.pol.split(",")[0]} ➔ {bk.pod.split(",")[0]}
+                      {(bk.pol || "").split(",")[0] || "-"} ➔ {(bk.pod || "").split(",")[0] || "-"}
                     </td>
                     <td className="p-4 text-slate-600 text-sm text-center align-top">
-                      ETD: {bk.etd ? bk.etd.split("T")[0] : ""} <br /> ETA: {bk.eta ? bk.eta.split("T")[0] : ""}
+                      ETD: {bk.etd && typeof bk.etd === "string" ? bk.etd.split("T")[0] : "-"} <br /> ETA: {bk.eta && typeof bk.eta === "string" ? bk.eta.split("T")[0] : "-"}
                     </td>
                     <td className="p-4 align-top">
                       <div className="flex items-center justify-center">
