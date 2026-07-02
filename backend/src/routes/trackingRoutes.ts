@@ -5,11 +5,13 @@ import {
   uploadDocs, 
   verifyDocs, 
   assignTruck,
-  updateShipmentStatus
+  updateShipmentStatus,
+  reRequestDocs
 } from '../controllers/trackingController';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import pool from '../config/db';
 
 const router = Router();
 
@@ -20,8 +22,29 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
+  destination: async (req, file, cb) => {
+    try {
+      const blNumber = req.body.blNumber || 'unknown';
+      const [rows]: any = await pool.query('SELECT shipper FROM shipments WHERE bl_number = ?', [blNumber]);
+      const shipperName = rows.length > 0 ? rows[0].shipper : 'unknown';
+      
+      // 폴더명 생성 시 특수문자 제거 및 공백 트림 처리
+      const safeShipperName = shipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || 'unknown';
+
+      const now = new Date();
+      const year = now.getFullYear().toString();
+      const month = (now.getMonth() + 1).toString().padStart(2, '0');
+
+      const targetDir = path.join(uploadDir, safeShipperName, year, month);
+      
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      
+      cb(null, targetDir);
+    } catch (err) {
+      cb(err as Error, uploadDir);
+    }
   },
   filename: (req, file, cb) => {
     const blNumber = req.body.blNumber || 'unknown';
@@ -52,5 +75,8 @@ router.post('/assign-truck', assignTruck);
 
 // POST /api/tracking/update-status (포워더가 선적 상태 업데이트)
 router.post('/update-status', updateShipmentStatus);
+
+// POST /api/tracking/re-request-docs (포워더가 서류 재요청)
+router.post('/re-request-docs', reRequestDocs);
 
 export default router;

@@ -18,6 +18,7 @@ export default function Layout() {
 
   const [bookingAlerts, setBookingAlerts] = useState<any[]>([]);
   const [chatAlerts, setChatAlerts] = useState<any[]>([]);
+  const [docUploadAlerts, setDocUploadAlerts] = useState<any[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -31,7 +32,7 @@ export default function Layout() {
       }
     });
 
-    // 신규 부킹 요청 알람 리스너 (어드민 전용)
+    // 신규 부킹 요청 및 서류 업로드 알람 리스너 (어드민 전용)
     if (user.role === "admin") {
       socket.on("new_booking_alert", (data) => {
         const uniqueId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
@@ -45,6 +46,22 @@ export default function Layout() {
           hour12: false
         });
         setBookingAlerts((prev) => [...prev, { ...data, alertId: uniqueId, requestTime }]);
+      });
+
+      socket.on("shipment_status_changed", (data) => {
+        if (data.status === "Documents Uploaded") {
+          const uniqueId = `doc_${Date.now()}_${Math.random()}`;
+          const requestTime = new Date().toLocaleString("ko-KR", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false
+          });
+          setDocUploadAlerts((prev) => [...prev, { ...data, alertId: uniqueId, requestTime }]);
+        }
       });
     }
 
@@ -230,44 +247,80 @@ export default function Layout() {
         </main>
       </div>
 
-      {/* Real-time Booking Notification Stack for Admins */}
-      {bookingAlerts.length > 0 && (
+      {/* Real-time Notification Stack for Admins (Bookings and Document Uploads) */}
+      {(bookingAlerts.length > 0 || docUploadAlerts.length > 0) && (
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-4 max-h-[85vh] overflow-y-auto w-80 p-2 scrollbar-thin">
-          {bookingAlerts.map((alertItem) => {
-            return (
-              <div
-                key={alertItem.alertId}
-                className="bg-white border-2 border-red-500 p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  {/* <div className="p-3 bg-red-50 text-red-600 rounded-full animate-bounce">
-                    <BellRing size={28} />
-                  </div>
-                  <button 
-                    onClick={() => handleCloseAlert(alertItem.alertId)} 
-                    className="text-slate-400 hover:text-slate-600 transition"
-                  >
-                    <X size={20} />
-                  </button> */}
-                </div>
-                <h4 className="text-base font-black text-red-600">!새로운 부킹요청!</h4>
-                <p className="text-slate-800 text-sm font-bold mt-2">화주: {alertItem.username} 님</p>
-                <p className="text-slate-500 text-xs mt-1">요청일시: {alertItem.requestTime}</p>
-
-                <div className="mt-4">
-                  <button
-                    onClick={() => {
-                      handleCloseAlert(alertItem.alertId); // 알람창 끄기
-                      navigate("/admin/bookings"); // 부킹 요청 승인 페이지로 강제 이동
-                    }}
-                    className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg font-bold text-xs shadow-sm transition"
-                  >
-                    부킹 요청 확인하러 가기
-                  </button>
-                </div>
+          {/* Document Upload Alerts */}
+          {docUploadAlerts.map((alertItem) => (
+            <div
+              key={alertItem.alertId}
+              className="bg-white border-2 border-green-500 p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300"
+            >
+              <div className="flex justify-between items-start mb-2">
+                <h4 className="text-base font-black text-green-600">📄 서류 업로드 완료</h4>
+                <button 
+                  onClick={() => setDocUploadAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId))} 
+                  className="text-slate-400 hover:text-slate-600 transition"
+                >
+                  <X size={16} />
+                </button>
               </div>
-            );
-          })}
+              <p className="text-slate-800 text-sm font-bold mt-2">B/L 번호: {alertItem.blNumber}</p>
+              <p className="text-slate-500 text-xs mt-1">업로드 시각: {alertItem.requestTime}</p>
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => {
+                    setDocUploadAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId)); // 알람창 끄기
+                    navigate("/admin/shipments"); // 전체화물/선적관리 화면으로 이동
+                  }}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
+                >
+                  확인하러 가기
+                </button>
+                <button
+                  onClick={() => {
+                    setDocUploadAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId));
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg font-bold text-xs transition"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {/* Booking Alerts */}
+          {bookingAlerts.map((alertItem) => (
+            <div
+              key={alertItem.alertId}
+              className="bg-white border-2 border-red-500 p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300"
+            >
+              <div className="flex justify-between items-start mb-2">
+                <h4 className="text-base font-black text-red-600">🚨 새로운 부킹요청</h4>
+                <button 
+                  onClick={() => handleCloseAlert(alertItem.alertId)} 
+                  className="text-slate-400 hover:text-slate-600 transition"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-slate-800 text-sm font-bold mt-2">화주: {alertItem.username} 님</p>
+              <p className="text-slate-500 text-xs mt-1">요청일시: {alertItem.requestTime}</p>
+
+              <div className="mt-4">
+                <button
+                  onClick={() => {
+                    handleCloseAlert(alertItem.alertId); // 알람창 끄기
+                    navigate("/admin/bookings"); // 부킹 요청 승인 페이지로 강제 이동
+                  }}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg font-bold text-xs shadow-sm transition"
+                >
+                  부킹 요청 확인하러 가기
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

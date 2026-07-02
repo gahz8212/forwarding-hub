@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { io } from "socket.io-client";
 import { useTrackingStore } from "../../store/useTrackingStore";
@@ -47,6 +48,23 @@ export default function DashboardPage() {
     fetchAllShipments,
   } = useTrackingStore();
   const [blInput, setBlInput] = React.useState("");
+
+  // URL에서 bl 쿼리 파라미터 가져오기
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryBl = searchParams.get("bl");
+
+  useEffect(() => {
+    if (queryBl) {
+      const trimmed = queryBl.trim();
+      setBlInput(trimmed);
+      fetchTracking(trimmed);
+      
+      // 주소창의 쿼리스트링 비워주기
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete("bl");
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [queryBl, fetchTracking, searchParams, setSearchParams]);
 
   // 실시간 지도 노출 상태 제어
   const [isMapOpen, setIsMapOpen] = React.useState(false);
@@ -590,7 +608,7 @@ export default function DashboardPage() {
                     <label className="block text-xs font-bold text-slate-600 mb-2">상업송장 (Commercial Invoice)</label>
                     <input 
                       type="file" 
-                      accept=".pdf,.png,.jpg,.jpeg" 
+                      accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg" 
                       className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
                     />
@@ -599,7 +617,7 @@ export default function DashboardPage() {
                     <label className="block text-xs font-bold text-slate-600 mb-2">패킹리스트 (Packing List)</label>
                     <input 
                       type="file" 
-                      accept=".pdf,.png,.jpg,.jpeg" 
+                      accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg" 
                       className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       onChange={(e) => setPackingFile(e.target.files?.[0] || null)}
                     />

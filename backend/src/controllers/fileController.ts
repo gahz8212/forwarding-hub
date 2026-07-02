@@ -1,0 +1,337 @@
+import { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import pool from '../config/db';
+import ExcelJS from 'exceljs';
+import { parseExcelToGridData, parsePdfToGridData } from '../services/fileParser';
+
+// 파일 업로드 및 분석 컨트롤러
+export const uploadFile = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: '업로드된 파일이 없습니다.' });
+    }
+
+    const { originalname, path: filePath, mimetype } = req.file;
+    const ext = path.extname(originalname).toLowerCase();
+    let gridData: any[][] = [];
+
+    // 파일 타입 분기 처리
+    if (ext === '.xlsx' || ext === '.xls' || mimetype.includes('spreadsheet') || mimetype.includes('excel')) {
+      gridData = await parseExcelToGridData(filePath);
+    } else if (ext === '.pdf' || mimetype === 'application/pdf') {
+      gridData = await parsePdfToGridData(filePath);
+    } else {
+      // 업로드 임시 파일 삭제
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      return res.status(400).json({ success: false, message: '지원하지 않는 파일 형식입니다. (Excel, PDF만 지원)' });
+    }
+
+    // 파일 고유 UUID 생성
+    const fileKey = crypto.randomUUID();
+
+    // 데이터베이스 임시 테이블에 저장
+    await pool.query(
+      'INSERT INTO temp_file_grids (id, file_name, file_type, grid_data) VALUES (?, ?, ?, ?)',
+      [fileKey, originalname, ext.replace('.', ''), JSON.stringify(gridData)]
+    );
+
+    // 업로드 임시 파일 삭제 (DB 저장했으므로 서버 디스크에서는 즉시 삭제)
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    res.json({
+      success: true,
+      message: '파일 업로드 및 파싱에 성공했습니다.',
+      data: {
+        fileKey,
+        fileName: originalname,
+        rowCount: gridData.length,
+        colCount: gridData[0]?.length || 0
+      }
+    });
+  } catch (error: any) {
+    console.error('파일 업로드/파싱 에러:', error);
+    // 임시 파일 업로드 성공했으나 파싱에서 에러난 경우 파일 삭제
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ success: false, message: '파일 파싱 중 에러가 발생했습니다: ' + error.message });
+  }
+};
+
+// 파일 그리드 데이터 조회 컨트롤러
+export const getFileGrid = async (req: Request, res: Response) => {
+  const { fileKey } = req.params;
+
+  if (!fileKey) {
+    return res.status(400).json({ success: false, message: '파일 키가 누락되었습니다.' });
+  }
+
+  try {
+    const [rows]: any = await pool.query(
+      'SELECT file_name, file_type, grid_data FROM temp_file_grids WHERE id = ?',
+      [fileKey]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: '존재하지 않거나 만료된 임시 파일입니다.' });
+    }
+
+    res.json({
+      success: true,
+      message: '그리드 데이터를 성공적으로 조회했습니다.',
+      data: {
+        fileName: rows[0].file_name,
+        fileType: rows[0].file_type,
+        gridData: rows[0].grid_data // JSON 컬럼이므로 mysql2가 자동으로 객체 파싱해줌
+      }
+    });
+  } catch (error: any) {
+    console.error('그리드 데이터 조회 에러:', error);
+    res.status(500).json({ success: false, message: '그리드 데이터를 가져오는 중 에러가 발생했습니다.' });
+  }
+};
+
+// shipper_mappings 테이블 자동 생성 및 초기화
+const initShipperMappingsTable = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shipper_mappings (
+        shipper_name VARCHAR(100) PRIMARY KEY,
+        mapping_json JSON NOT NULL,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ shipper_mappings 테이블 준비 완료');
+  } catch (err) {
+    console.error('❌ shipper_mappings 테이블 생성 실패:', err);
+  }
+};
+initShipperMappingsTable();
+
+// 화주별 파일 매핑 저장 컨트롤러
+export const saveShipperMapping = async (req: Request, res: Response) => {
+  const { shipperName, mapping } = req.body;
+  if (!shipperName || !mapping) {
+    return res.status(400).json({ success: false, message: '화주명과 매핑 정보가 누락되었습니다.' });
+  }
+  try {
+    await pool.query(
+      'INSERT INTO shipper_mappings (shipper_name, mapping_json) VALUES (?, ?) ON DUPLICATE KEY UPDATE mapping_json = ?, last_updated = CURRENT_TIMESTAMP',
+      [shipperName, JSON.stringify(mapping), JSON.stringify(mapping)]
+    );
+    res.json({ success: true, message: '화주별 매핑 설정이 저장되었습니다.' });
+  } catch (err: any) {
+    console.error('매핑 저장 에러:', err);
+    res.status(500).json({ success: false, message: '매핑 저장 중 오류 발생: ' + err.message });
+  }
+};
+
+// 화주별 파일 매핑 조회 컨트롤러
+export const getShipperMapping = async (req: Request, res: Response) => {
+  const { shipperName } = req.params;
+  if (!shipperName) {
+    return res.status(400).json({ success: false, message: '화주명이 누락되었습니다.' });
+  }
+  try {
+    const [rows]: any = await pool.query(
+      'SELECT mapping_json FROM shipper_mappings WHERE shipper_name = ?',
+      [shipperName]
+    );
+    if (rows.length === 0) {
+      return res.json({ success: true, exists: false, data: null });
+    }
+    res.json({ success: true, exists: true, data: rows[0].mapping_json });
+  } catch (err: any) {
+    console.error('매핑 조회 에러:', err);
+    res.status(500).json({ success: false, message: '매핑 조회 중 오류 발생: ' + err.message });
+  }
+};
+
+// 관세 신고용 엑셀 변환/다운로드 컨트롤러
+export const exportCustomsExcel = async (req: Request, res: Response) => {
+  const { verifierFileName, extractedRows } = req.body;
+  if (!verifierFileName || !extractedRows) {
+    return res.status(400).json({ success: false, message: '파일명 또는 데이터가 누락되었습니다.' });
+  }
+
+  const EXTRACTION_KEYS_MAP: Record<string, string> = {
+    company_name: "회사명",
+    prod_name: "품명",
+    quantity: "수량",
+    unit: "단위",
+    unit_price: "단가",
+    amount: "금액",
+    spec: "규격",
+    hs_code: "HS코드",
+    origin: "제조국"
+  };
+
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Customs Declaration');
+
+    // 1. 타이틀
+    sheet.mergeCells('A1:G1');
+    const titleCell = sheet.getCell('A1');
+    titleCell.value = '관세 신고용 검증 데이터';
+    titleCell.font = { name: 'Malgun Gothic', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E3A8A' } // Navy blue
+    };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    sheet.getRow(1).height = 40;
+
+    const labelStyle = {
+      font: { name: 'Malgun Gothic', size: 10, bold: true, color: { argb: 'FF333333' } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }, // Gray-200
+      alignment: { vertical: 'middle', horizontal: 'center' },
+      border: {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      }
+    };
+    
+    const valueStyle = {
+      font: { name: 'Malgun Gothic', size: 10 },
+      alignment: { vertical: 'middle', horizontal: 'left' },
+      border: {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      }
+    };
+
+    // 2. 스칼라 데이터 (단일 필드) - items와 _rowIndex를 제외한 모든 루트 키를 스칼라 필드로 취급
+    const scalarKeys = Object.keys(extractedRows).filter(k => k !== 'items' && k !== '_rowIndex');
+    let nextSectionRow = 3;
+
+    if (scalarKeys.length > 0) {
+      sheet.getCell('A3').value = '[ 단일 데이터 필드 (스칼라) ]';
+      sheet.getCell('A3').font = { name: 'Malgun Gothic', size: 11, bold: true };
+
+      let currentScalarRowIdx = 4;
+      sheet.getRow(currentScalarRowIdx).height = 25;
+
+      scalarKeys.forEach((keyId, i) => {
+        const colGroupIdx = i % 3; // 한 행에 최대 3개 배치 (A-B, C-D, E-F)
+        if (i > 0 && colGroupIdx === 0) {
+          currentScalarRowIdx++;
+          sheet.getRow(currentScalarRowIdx).height = 25;
+        }
+
+        const colIdx = colGroupIdx * 2 + 1; // Col A (1), C (3), E (5)
+        const label = EXTRACTION_KEYS_MAP[keyId] || keyId;
+        const val = extractedRows[keyId] || '-';
+
+        const labelCell = sheet.getCell(currentScalarRowIdx, colIdx);
+        labelCell.value = label;
+        Object.assign(labelCell, labelStyle);
+
+        const valCell = sheet.getCell(currentScalarRowIdx, colIdx + 1);
+        valCell.value = val;
+        Object.assign(valCell, valueStyle);
+      });
+
+      nextSectionRow = currentScalarRowIdx + 2; // 스칼라 영역 종료 후 2줄 띔
+    }
+
+    // 3. 품목 테이블 데이터
+    sheet.getCell(nextSectionRow, 1).value = '[ 품목 테이블 데이터 ]';
+    sheet.getCell(nextSectionRow, 1).font = { name: 'Malgun Gothic', size: 11, bold: true };
+
+    const headers = [
+      { header: '원본 행', key: '_rowIndex', width: 10 },
+      { header: '품명 (Product Name)', key: 'prod_name', width: 35 },
+      { header: '수량 (Quantity)', key: 'quantity', width: 15 },
+      { header: '단위 (Unit)', key: 'unit', width: 12 },
+      { header: '단가 (Unit Price)', key: 'unit_price', width: 15 },
+      { header: '금액 (Amount)', key: 'amount', width: 15 },
+      { header: '규격 (Specification)', key: 'spec', width: 20 }
+    ];
+
+    const headerRowIdx = nextSectionRow + 1;
+    const headerRow = sheet.getRow(headerRowIdx);
+    headerRow.height = 25;
+
+    headers.forEach((h, colIdx) => {
+      const cell = sheet.getCell(headerRowIdx, colIdx + 1);
+      cell.value = h.header;
+      cell.font = { name: 'Malgun Gothic', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF3B82F6' } // Blue-500
+      };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF1E40AF' } },
+        left: { style: 'thin', color: { argb: 'FF1E40AF' } },
+        bottom: { style: 'thin', color: { argb: 'FF1E40AF' } },
+        right: { style: 'thin', color: { argb: 'FF1E40AF' } }
+      };
+    });
+
+    const items = extractedRows.items || [];
+    items.forEach((item: any, rowIdx: number) => {
+      const currentRawIdx = headerRowIdx + 1 + rowIdx;
+      const row = sheet.getRow(currentRawIdx);
+      row.height = 20;
+
+      headers.forEach((h, colIdx) => {
+        const cell = sheet.getCell(currentRawIdx, colIdx + 1);
+        let val = item[h.key];
+        
+        // 데이터 포맷 설정
+        if (h.key === 'quantity' || h.key === 'unit_price' || h.key === 'amount') {
+          const num = Number(val);
+          if (!isNaN(num)) {
+            cell.value = num;
+            cell.numFmt = '#,##0';
+            cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          } else {
+            cell.value = val || '';
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          }
+        } else {
+          cell.value = val || '';
+          cell.alignment = { vertical: 'middle', horizontal: h.key === '_rowIndex' || h.key === 'unit' ? 'center' : 'left' };
+        }
+
+        cell.font = { name: 'Malgun Gothic', size: 9 };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
+      });
+    });
+
+    // Auto-fit columns
+    sheet.columns.forEach((column, i) => {
+      if (headers[i]) {
+        column.width = headers[i].width;
+      }
+    });
+
+    // Set Response Headers for download
+    const finalFileName = '관세사용_' + verifierFileName;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(finalFileName)}"`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err: any) {
+    console.error('엑셀 수출 에러:', err);
+    res.status(500).json({ success: false, message: '엑셀 파일 생성 중 오류 발생: ' + err.message });
+  }
+};

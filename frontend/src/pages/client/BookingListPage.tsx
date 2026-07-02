@@ -3,7 +3,7 @@ import axios from "axios";
 import { Clock, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react";
 import { useAuthStore } from "../../store/useAuthStore";
 import BookingChatDrawer from "../../components/chat/BookingChatDrawer";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 
 export default function BookingListPage() {
@@ -21,6 +21,7 @@ export default function BookingListPage() {
 
   // 로그인한 화주 정보
   const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   useEffect(() => {
     axios
@@ -111,13 +112,22 @@ export default function BookingListPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {bookings.map((bk) => (
-                  <tr key={bk.id} className="hover:bg-slate-50 transition">
+                  <tr 
+                    key={bk.id} 
+                    className={`hover:bg-slate-50 transition ${bk.status === "Confirmed" && bk.bl_number ? "cursor-pointer" : ""}`}
+                    onClick={() => {
+                      if (bk.status === "Confirmed" && bk.bl_number) {
+                        navigate(`/?bl=${bk.bl_number}`);
+                      }
+                    }}
+                  >
                     <td className="p-4 font-bold text-slate-800 align-top">
                       <div>BK-{bk.id.toString().padStart(5, "0")}</div>
                       {bk.status === "Confirmed" && bk.bl_number && (
                         <div className="mt-1">
                           <span 
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               navigator.clipboard.writeText(bk.bl_number);
                               alert(`B/L 번호 (${bk.bl_number})가 복사되었습니다. 메인 대시보드의 트래킹 창에 붙여넣어 단계를 모니터링할 수 있습니다.`);
                             }}
@@ -156,7 +166,10 @@ export default function BookingListPage() {
                     </td>
                     <td className="p-4 align-top text-center">
                       <button
-                        onClick={() => handleOpenChat(bk)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenChat(bk);
+                        }}
                         className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition flex items-center justify-center gap-1 mx-auto text-xs font-bold shadow-xs"
                       >
                         <MessageSquare size={14} />

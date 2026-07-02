@@ -108,15 +108,51 @@ export const searchSchedules = async (req: Request, res: Response) => {
       params.push(Number(weight));
     }
 
-    // 실제 선편이므로 임의 정렬 대신 출발지 기준 가장 빠른 항차(ETD ASC) 순으로 정렬하여 최대 10개 반환
-    query += ' ORDER BY etd ASC LIMIT 10';
+    // 실제 선편이므로 임의 정렬 대신 출발지 기준 가장 빠른 항차(ETD ASC) 순으로 정렬하여 최대 100개 반환 후 필터링
+    query += ' ORDER BY etd ASC LIMIT 100';
 
     const [rows]: any = await pool.query(query, params);
+
+    const now = new Date();
+    const isDeadlinePassed = (deadlineVal: any): boolean => {
+      if (!deadlineVal) return false;
+      const cleanVal = typeof deadlineVal === 'string' 
+        ? deadlineVal.replace(/(\d+)(st|nd|rd|th)/gi, '$1') 
+        : deadlineVal;
+      const d = new Date(cleanVal);
+      if (isNaN(d.getTime())) return false;
+      return d.getTime() < now.getTime();
+    };
+
+    const filteredRows = rows.filter((sch: any) => {
+      let parsedMeta: any = null;
+      if (sch.metadata) {
+        try {
+          parsedMeta = typeof sch.metadata === 'string' ? JSON.parse(sch.metadata) : sch.metadata;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Check all possible deadlines
+      const deadlines = [
+        sch.doc_closing_date,
+        sch.cargo_closing_date,
+        parsedMeta?.siCutOff,
+        parsedMeta?.vgmCutOff,
+        parsedMeta?.cyCutOff,
+        parsedMeta?.dangerousCutOff,
+        parsedMeta?.reeferCutOff
+      ];
+
+      // If any of the deadlines has passed, exclude this schedule
+      return !deadlines.some(d => isDeadlinePassed(d));
+    }).slice(0, 10);
 
     res.json({
       success: true,
       message: '조건에 맞는 선박 스케줄을 검색했습니다.',
-      data: rows
+      data: filteredRows
     });
 
   } catch (error) {
@@ -134,6 +170,51 @@ export const requestBooking = async (req: Request, res: Response) => {
   }
 
   try {
+    // 0. 마감 일정 초과 여부 검증
+    const [scheduleRows]: any = await pool.query(
+      'SELECT doc_closing_date, cargo_closing_date, metadata FROM schedules WHERE id = ?',
+      [schedule.id]
+    );
+    if (scheduleRows.length > 0) {
+      const dbSch = scheduleRows[0];
+      const now = new Date();
+      const isDeadlinePassed = (deadlineVal: any): boolean => {
+        if (!deadlineVal) return false;
+        const cleanVal = typeof deadlineVal === 'string' 
+          ? deadlineVal.replace(/(\d+)(st|nd|rd|th)/gi, '$1') 
+          : deadlineVal;
+        const d = new Date(cleanVal);
+        if (isNaN(d.getTime())) return false;
+        return d.getTime() < now.getTime();
+      };
+
+      let parsedMeta: any = null;
+      if (dbSch.metadata) {
+        try {
+          parsedMeta = typeof dbSch.metadata === 'string' ? JSON.parse(dbSch.metadata) : dbSch.metadata;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      const deadlines = [
+        dbSch.doc_closing_date,
+        dbSch.cargo_closing_date,
+        parsedMeta?.siCutOff,
+        parsedMeta?.vgmCutOff,
+        parsedMeta?.cyCutOff,
+        parsedMeta?.dangerousCutOff,
+        parsedMeta?.reeferCutOff
+      ];
+
+      if (deadlines.some(d => isDeadlinePassed(d))) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "부킹 마감 일정(서류/화물 반입 등)이 이미 경과하여 해당 스케줄은 예약할 수 없습니다." 
+        });
+      }
+    }
+
     // 1. DB에 부킹 기록 추가
     const [result]: any = await pool.query(
       'INSERT INTO bookings (user_id, schedule_id, status) VALUES (?, ?, ?)',

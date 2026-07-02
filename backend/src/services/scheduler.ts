@@ -13,7 +13,20 @@ export const initScheduler = () => {
   cron.schedule("0 9 * * *", async () => {
     console.log("🔍 [BATCH] 일일 마감 및 알림 대상 선적 조회 시작...");
     await checkAndSendAlerts();
+    console.log("🔍 [BATCH] 24시간이 경과한 임시 파일 그리드 데이터 정리 시작...");
+    await cleanupTempGridData();
   });
+};
+
+export const cleanupTempGridData = async () => {
+  try {
+    const [result]: any = await pool.query(
+      "DELETE FROM temp_file_grids WHERE created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)"
+    );
+    console.log(`[BATCH] 임시 그리드 데이터 정리 완료: ${result.affectedRows}건 삭제됨`);
+  } catch (error) {
+    console.error("[BATCH ERROR] 임시 그리드 데이터 정리 중 에러 발생:", error);
+  }
 };
 
 export const checkAndSendAlerts = async () => {

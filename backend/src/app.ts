@@ -9,6 +9,7 @@ import { Server } from 'socket.io';
 import authRoutes from './routes/authRoutes';
 import trackingRoutes from './routes/trackingRoutes';
 import scheduleRoutes from './routes/scheduleRoutes';
+import fileRoutes from './routes/fileRoutes';
 import { initScheduler } from './services/scheduler';
 
 dotenv.config();
@@ -54,6 +55,7 @@ app.use(session({
 app.use('/api/auth', authRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/schedules', scheduleRoutes);
+app.use('/api/files', fileRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });

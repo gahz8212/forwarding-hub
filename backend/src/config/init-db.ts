@@ -23,6 +23,7 @@ const initDB = async () => {
     await connection.query('DROP TABLE IF EXISTS bookings');
     await connection.query('DROP TABLE IF EXISTS shipments');
     await connection.query('DROP TABLE IF EXISTS schedules');
+    await connection.query('DROP TABLE IF EXISTS temp_file_grids');
 
     // 2. 진행중/완료된 화물 트래킹 및 청구(Invoice) 테이블 생성
     await connection.query(`
@@ -44,6 +45,8 @@ const initDB = async () => {
         is_paid BOOLEAN DEFAULT FALSE COMMENT '결제 여부',
         invoice_file_path VARCHAR(255) NULL,
         packing_list_file_path VARCHAR(255) NULL,
+        invoice_file_key VARCHAR(36) NULL,
+        packing_list_file_key VARCHAR(36) NULL,
         truck_date DATE NULL,
         truck_plate_number VARCHAR(50) NULL,
         truck_driver_phone VARCHAR(20) NULL,
@@ -100,6 +103,19 @@ const initDB = async () => {
       )
     `);
     console.log('✅ booking_messages (부킹별 업무 대화) 테이블 생성 완료');
+
+    // 6. 임시 파일 그리드 데이터 테이블 생성
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS temp_file_grids (
+        id VARCHAR(36) PRIMARY KEY COMMENT 'UUID v4 key',
+        file_name VARCHAR(255) NOT NULL COMMENT 'Original file name',
+        file_type VARCHAR(50) NOT NULL COMMENT 'File type or extension',
+        grid_data JSON NOT NULL COMMENT 'Parsed grid data in JSON format',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Created timestamp',
+        INDEX idx_created_at (created_at)
+      ) COMMENT='Temporary table for storing parsed Excel/PDF grid data'
+    `);
+    console.log('✅ temp_file_grids (임시 파일 그리드) 테이블 생성 완료');
 
     // 임시 관리자 계정 체크
     const [rows]: any = await connection.query(`SELECT id FROM users WHERE username = 'admin'`);
