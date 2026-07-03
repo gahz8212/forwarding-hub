@@ -4,7 +4,10 @@ import path from 'path';
 import crypto from 'crypto';
 import pool from '../config/db';
 import ExcelJS from 'exceljs';
+import AdmZip from 'adm-zip';
+import sharp from 'sharp';
 import { parseExcelToGridData, parsePdfToGridData } from '../services/fileParser';
+import { analyzeVehiclePhoto } from '../services/ocrService';
 
 // 파일 업로드 및 분석 컨트롤러
 export const uploadFile = async (req: Request, res: Response) => {
@@ -159,15 +162,14 @@ export const exportCustomsExcel = async (req: Request, res: Response) => {
   }
 
   const EXTRACTION_KEYS_MAP: Record<string, string> = {
-    company_name: "회사명",
-    prod_name: "품명",
-    quantity: "수량",
-    unit: "단위",
-    unit_price: "단가",
-    amount: "금액",
-    spec: "규격",
-    hs_code: "HS코드",
-    origin: "제조국"
+    vin: "차대번호",
+    make: "제조사",
+    model: "모델명",
+    year: "연식",
+    weight: "중량",
+    cbm: "CBM",
+    drivability: "구동상태",
+    deregistration_no: "말소증번호"
   };
 
   try {
@@ -250,12 +252,14 @@ export const exportCustomsExcel = async (req: Request, res: Response) => {
 
     const headers = [
       { header: '원본 행', key: '_rowIndex', width: 10 },
-      { header: '품명 (Product Name)', key: 'prod_name', width: 35 },
-      { header: '수량 (Quantity)', key: 'quantity', width: 15 },
-      { header: '단위 (Unit)', key: 'unit', width: 12 },
-      { header: '단가 (Unit Price)', key: 'unit_price', width: 15 },
-      { header: '금액 (Amount)', key: 'amount', width: 15 },
-      { header: '규격 (Specification)', key: 'spec', width: 20 }
+      { header: '차대번호 (VIN)', key: 'vin', width: 25 },
+      { header: '제조사 (Make)', key: 'make', width: 15 },
+      { header: '모델명 (Model)', key: 'model', width: 20 },
+      { header: '연식 (Year)', key: 'year', width: 10 },
+      { header: '중량 (Weight)', key: 'weight', width: 12 },
+      { header: '부피 (CBM)', key: 'cbm', width: 12 },
+      { header: '구동상태', key: 'drivability', width: 15 },
+      { header: '말소등록번호', key: 'deregistration_no', width: 20 }
     ];
 
     const headerRowIdx = nextSectionRow + 1;
@@ -291,11 +295,11 @@ export const exportCustomsExcel = async (req: Request, res: Response) => {
         let val = item[h.key];
         
         // 데이터 포맷 설정
-        if (h.key === 'quantity' || h.key === 'unit_price' || h.key === 'amount') {
+        if (h.key === 'weight' || h.key === 'cbm' || h.key === 'year') {
           const num = Number(val);
           if (!isNaN(num)) {
             cell.value = num;
-            cell.numFmt = '#,##0';
+            cell.numFmt = h.key === 'year' ? '0' : '#,##0.00';
             cell.alignment = { vertical: 'middle', horizontal: 'right' };
           } else {
             cell.value = val || '';
@@ -303,7 +307,7 @@ export const exportCustomsExcel = async (req: Request, res: Response) => {
           }
         } else {
           cell.value = val || '';
-          cell.alignment = { vertical: 'middle', horizontal: h.key === '_rowIndex' || h.key === 'unit' ? 'center' : 'left' };
+          cell.alignment = { vertical: 'middle', horizontal: h.key === '_rowIndex' || h.key === 'drivability' || h.key === 'year' ? 'center' : 'left' };
         }
 
         cell.font = { name: 'Malgun Gothic', size: 9 };
@@ -335,3 +339,137 @@ export const exportCustomsExcel = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: '엑셀 파일 생성 중 오류 발생: ' + err.message });
   }
 };
+
+// 중고차량 사진 멀티 업로드 및 OCR 자동 분류 컨트롤러
+export const uploadVehiclePhotos = async (req: Request, res: Response) => {
+  try {
+    const shipmentId = req.body.shipmentId; // 대상 B/L (Shipment ID)
+    const files = req.files as Express.Multer.File[];
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ success: false, message: '업로드된 사진(또는 ZIP 파일)이 없습니다.' });
+    }
+    if (!shipmentId) {
+      return res.status(400).json({ success: false, message: 'Shipment ID가 필요합니다.' });
+    }
+
+    const processedResults = [];
+    const imageQueue: { originalname: string; buffer: Buffer }[] = [];
+
+    // 1. 업로드된 파일들을 확인하여 ZIP 파일이면 압축 해제, 일반 이미지면 큐에 추가
+    for (const file of files) {
+      const ext = path.extname(file.originalname).toLowerCase();
+      
+      if (ext === '.zip' || file.mimetype === 'application/zip') {
+        const zip = new AdmZip(file.path);
+        const zipEntries = zip.getEntries();
+        
+        for (const entry of zipEntries) {
+          if (!entry.isDirectory && entry.entryName.match(/\\.(jpg|jpeg|png)$/i)) {
+            // MacOS에서 생성되는 숨김 파일(__MACOSX, .DS_Store 등) 무시
+            if (entry.entryName.includes('__MACOSX') || entry.name.startsWith('.')) continue;
+            imageQueue.push({
+              originalname: entry.name,
+              buffer: entry.getData() // 메모리에 압축 풀린 바이너리 저장
+            });
+          }
+        }
+      } else if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
+        imageQueue.push({
+          originalname: file.originalname,
+          buffer: fs.readFileSync(file.path)
+        });
+      }
+    }
+
+    if (imageQueue.length === 0) {
+      return res.status(400).json({ success: false, message: '처리할 이미지 파일이 없습니다.' });
+    }
+
+    // 2. 추출된 이미지들을 순회하며 sharp 압축 및 OCR 분석 진행
+    for (const image of imageQueue) {
+      try {
+        // [핵심] Sharp 라이브러리로 이미지 최적화 (FHD 리사이징 및 흑백 변환)
+        // 구글 비전 API 비용 절감 및 업로드 속도 향상을 위함
+        const optimizedBuffer = await sharp(image.buffer)
+          .resize({ width: 1920, withoutEnlargement: true }) // 가로 최대 1920px로 제한
+          .grayscale() // 흑백 변환으로 데이터 최소화
+          .jpeg({ quality: 80 }) // 80% 품질의 JPEG로 압축
+          .toBuffer();
+
+        // 최적화된 이미지를 구글 클라우드 비전 API로 전송
+        const ocrResult = await analyzeVehiclePhoto(optimizedBuffer);
+
+        // 3. 사진 타입이 확인된 경우 DB에 매핑 로직 (Upsert)
+        if (ocrResult.vin || ocrResult.plateNumber) {
+          const [existing]: any = await pool.query(
+            'SELECT id FROM vehicles WHERE shipment_id = ? AND (vin = ? OR deregistration_no = ?)',
+            [shipmentId, ocrResult.vin || 'NULL', ocrResult.plateNumber || 'NULL']
+          );
+
+          // 임시 저장용 파일명 (실무에서는 S3 URL 등 사용)
+          const tempUrl = \`/uploads/extracted_\${Date.now()}_\${image.originalname}\`;
+
+          if (existing.length > 0) {
+            const updateId = existing[0].id;
+            if (ocrResult.type === 'document' && ocrResult.plateNumber) {
+               await pool.query('UPDATE vehicles SET deregistration_no = ? WHERE id = ?', [ocrResult.plateNumber, updateId]);
+            }
+            if (ocrResult.type === 'plate' || ocrResult.type === 'vin') {
+               await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [tempUrl, updateId]);
+            }
+          } else {
+            if (ocrResult.vin) {
+               await pool.query(
+                 'INSERT INTO vehicles (shipment_id, vin, deregistration_no, status, condition_photo_url) VALUES (?, ?, ?, ?, ?)',
+                 [
+                   shipmentId, 
+                   ocrResult.vin, 
+                   ocrResult.plateNumber || null,
+                   'Yard In',
+                   ocrResult.type !== 'document' ? tempUrl : null
+                 ]
+               );
+            }
+          }
+        } else {
+          processedResults.push({
+            fileName: image.originalname,
+            status: 'manual_review',
+            reason: '차대번호 또는 차량번호를 식별하지 못했습니다.'
+          });
+          continue;
+        }
+
+        processedResults.push({
+          fileName: image.originalname,
+          status: 'success',
+          extracted: ocrResult
+        });
+      } catch (imgError) {
+        console.error(\`\${image.originalname} 처리 실패:\`, imgError);
+        processedResults.push({
+          fileName: image.originalname,
+          status: 'error',
+          reason: '이미지 압축 또는 OCR 처리 중 오류 발생'
+        });
+      }
+    }
+
+    // 4. 업로드된 원본 임시 파일들 삭제 (ZIP 포함)
+    for (const file of files) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    }
+
+    res.json({
+      success: true,
+      message: 'ZIP 파일 압축 해제, 이미지 최적화 및 OCR 자동 분류가 완료되었습니다.',
+      data: processedResults
+    });
+
+  } catch (error: any) {
+    console.error('차량 사진/ZIP 업로드 에러:', error);
+    res.status(500).json({ success: false, message: '파일 처리 중 오류가 발생했습니다.' });
+  }
+};
+

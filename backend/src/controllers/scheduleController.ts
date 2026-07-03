@@ -37,8 +37,18 @@ export const searchSchedules = async (req: Request, res: Response) => {
       'ROTTERDAM': 'NLRTM',
       'NLRTM': 'NLRTM',
     };
+    const codeToName: Record<string, string> = {
+      'KRPUS': 'BUSAN',
+      'KRINC': 'INCHEON',
+      'CNSHA': 'SHANGHAI',
+      'USLGB': 'LONG BEACH',
+      'USLAX': 'LOS ANGELES',
+      'USSEA': 'SEATTLE',
+      'NLRTM': 'ROTTERDAM'
+    };
     const code = map[clean] || clean;
-    return { clean, code };
+    const name = codeToName[code] || clean;
+    return { clean, code, name };
   };
 
   const polInfo = pol ? getCleanAndCode(String(pol)) : null;
@@ -86,14 +96,14 @@ export const searchSchedules = async (req: Request, res: Response) => {
 
     // 출발항 필터: 표준 UN/LOCODE, 클렌징된 도시명, 원래 전달받은 원본 문자열 모두를 안전하게 매칭시킵니다.
     if (polInfo) {
-      query += ' AND (pol = ? OR pol LIKE ? OR pol = ?)';
-      params.push(polInfo.code, `%${polInfo.clean}%`, String(pol));
+      query += ' AND (pol = ? OR pol LIKE ? OR pol LIKE ? OR pol = ?)';
+      params.push(polInfo.code, `%${polInfo.clean}%`, `%${polInfo.name}%`, String(pol));
     }
 
     // 도착항 필터: 표준 UN/LOCODE, 클렌징된 도시명, 원래 전달받은 원본 문자열 모두를 안전하게 매칭시킵니다.
     if (podInfo) {
-      query += ' AND (pod = ? OR pod LIKE ? OR pod = ?)';
-      params.push(podInfo.code, `%${podInfo.clean}%`, String(pod));
+      query += ' AND (pod = ? OR pod LIKE ? OR pod LIKE ? OR pod = ?)';
+      params.push(podInfo.code, `%${podInfo.clean}%`, `%${podInfo.name}%`, String(pod));
     }
 
     // 가용 CBM 체크

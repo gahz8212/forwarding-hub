@@ -21,6 +21,7 @@ const initDB = async () => {
     // 기존 테이블 초기화용 DROP (개발 환경 - 외래키 제약 때문에 자식 테이블을 가장 먼저 드롭해야 합니다)
     await connection.query('DROP TABLE IF EXISTS booking_messages');
     await connection.query('DROP TABLE IF EXISTS bookings');
+    await connection.query('DROP TABLE IF EXISTS vehicles');
     await connection.query('DROP TABLE IF EXISTS shipments');
     await connection.query('DROP TABLE IF EXISTS schedules');
     await connection.query('DROP TABLE IF EXISTS temp_file_grids');
@@ -54,6 +55,29 @@ const initDB = async () => {
       )
     `);
     console.log('✅ shipments (트래킹 & 청구서) 테이블 생성 완료');
+
+    // 2-1. 개별 차량(Ro-Ro) 정보 및 상태 트래킹 테이블 생성
+    await connection.query(`
+      CREATE TABLE vehicles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        shipment_id INT NOT NULL,
+        vin VARCHAR(50) NOT NULL COMMENT '차대번호',
+        make VARCHAR(50) COMMENT '제조사',
+        model VARCHAR(50) COMMENT '모델명',
+        year INT COMMENT '연식',
+        weight DECIMAL(8, 2) COMMENT '차량 중량',
+        cbm DECIMAL(8, 2) COMMENT '부피(CBM)',
+        drivability ENUM('Running', 'Towing', 'Forklift') DEFAULT 'Running' COMMENT '구동/선적 상태',
+        status VARCHAR(50) DEFAULT 'Pending' COMMENT '야드 반입, 선적 등 현재 상태',
+        condition_photo_url VARCHAR(255) NULL COMMENT '상태/데미지 리포트 사진 경로',
+        deregistration_no VARCHAR(100) NULL COMMENT '수출말소등록번호',
+        customs_cleared BOOLEAN DEFAULT FALSE COMMENT '수출통관 완료 여부',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('✅ vehicles (로로선 개별 차량) 테이블 생성 완료');
 
     // 3. 미래 선박 스케줄 (가용 CBM/무게 포함) 테이블 생성
     await connection.query(`
@@ -120,7 +144,7 @@ const initDB = async () => {
     // 임시 관리자 계정 체크
     const [rows]: any = await connection.query(`SELECT id FROM users WHERE username = 'admin'`);
     if (rows.length === 0) {
-      await connection.query(`INSERT INTO users (username, password, role) VALUES ('admin', 'admin123', 'admin')`);
+      await connection.query(`INSERT INTO users (username, password, role, mobile) VALUES ('admin', 'admin123', 'admin', '010-0000-0000')`);
     }
 
     // 임시 선박 스케줄 데이터 시딩 (목적지 목록 활성화용)

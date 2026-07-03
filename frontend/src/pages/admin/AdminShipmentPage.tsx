@@ -18,8 +18,10 @@ import {
   Download,
   AlertCircle,
   FileSpreadsheet,
-  X
+  X,
+  Car
 } from "lucide-react";
+import VehicleDashboardModal from "../../components/VehicleDashboardModal";
 
 interface ExtractionKey {
   id: string;
@@ -29,15 +31,14 @@ interface ExtractionKey {
 }
 
 const EXTRACTION_KEYS: ExtractionKey[] = [
-  // { id: "company_name", label: "회사명", desc: "회사명/바이어명", color: "bg-cyan-600 text-white hover:bg-cyan-700 border-cyan-700" },
-  { id: "prod_name", label: "품명", desc: "물품의 품명/상세명칭", color: "bg-blue-600 text-white hover:bg-blue-700 border-blue-700" },
-  { id: "quantity", label: "수량", desc: "물품의 수량", color: "bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-700" },
-  { id: "unit", label: "단위", desc: "수량 단위 (PCS, BOX 등)", color: "bg-teal-600 text-white hover:bg-teal-700 border-teal-700" },
-  { id: "unit_price", label: "단가", desc: "물품 개당 단가", color: "bg-amber-600 text-white hover:bg-amber-700 border-amber-700" },
-  { id: "amount", label: "금액", desc: "총 금액 (수량 x 단가)", color: "bg-violet-600 text-white hover:bg-violet-700 border-violet-700" },
-  { id: "spec", label: "규격", desc: "규격/모델명", color: "bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-700" },
-  { id: "hs_code", label: "HS코드", desc: "수출입 세관 HS Code", color: "bg-pink-600 text-white hover:bg-pink-700 border-pink-700" },
-  { id: "origin", label: "제조국", desc: "원산지 (Origin)", color: "bg-rose-600 text-white hover:bg-rose-700 border-rose-700" }
+  { id: "vin", label: "차대번호", desc: "차량 고유 식별번호(VIN)", color: "bg-blue-600 text-white hover:bg-blue-700 border-blue-700" },
+  { id: "make", label: "제조사", desc: "차량 제조사 (예: Hyundai)", color: "bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-700" },
+  { id: "model", label: "모델명", desc: "차량 모델명", color: "bg-teal-600 text-white hover:bg-teal-700 border-teal-700" },
+  { id: "year", label: "연식", desc: "차량 연식", color: "bg-amber-600 text-white hover:bg-amber-700 border-amber-700" },
+  { id: "weight", label: "중량", desc: "차량 중량 (KGS)", color: "bg-violet-600 text-white hover:bg-violet-700 border-violet-700" },
+  { id: "cbm", label: "CBM", desc: "차량 부피 (CBM)", color: "bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-700" },
+  { id: "drivability", label: "구동상태", desc: "Running / Towing / Forklift", color: "bg-pink-600 text-white hover:bg-pink-700 border-pink-700" },
+  { id: "deregistration_no", label: "말소증번호", desc: "수출말소등록번호", color: "bg-rose-600 text-white hover:bg-rose-700 border-rose-700" }
 ];
 
 export default function AdminShipmentPage() {
@@ -64,18 +65,22 @@ export default function AdminShipmentPage() {
   const [verifierLoading, setVerifierLoading] = useState(false);
 
   // 매핑 관련 상태
-  const [mappedColumns, setMappedColumns] = useState<Record<string, { col: number; startRow: number; endRow: number }>>({}); // keyId -> mapping details
+  const [mappedColumns, setMappedColumns] = useState<Record<string, { col: number; startRow: number; endRow: number; activeRows?: number[] }>>({}); // keyId -> mapping details
   const [selectedColIndices, setSelectedColIndices] = useState<number[]>([]);
   const [dragOverColIndex, setDragOverColIndex] = useState<number | null>(null);
 
   // 셀 드래깅 영역 및 배지 큐
   const [dragStartCell, setDragStartCell] = useState<{ row: number; col: number } | null>(null);
   const [dragEndCell, setDragEndCell] = useState<{ row: number; col: number } | null>(null);
+  const [additionalSelectionBlocks, setAdditionalSelectionBlocks] = useState<{ minRow: number; maxRow: number; minCol: number; maxCol: number }[]>([]);
   const [clickedBadgeQueue, setClickedBadgeQueue] = useState<string[]>([]);
 
   // 최종 추출 데이터 모달 상태
   const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+
+  // 로로선 차량 대시보드 상태
+  const [activeDashboardShipment, setActiveDashboardShipment] = useState<{ id: number; blNumber: string } | null>(null);
 
   const fetchShipments = () => {
     setLoading(true);
@@ -286,26 +291,27 @@ export default function AdminShipmentPage() {
     return letter;
   };
 
-  const getMappedKey = (colIndex: number): ExtractionKey | null => {
-    const entry = Object.entries(mappedColumns).find(([_, mapping]) => mapping.col === colIndex);
-    if (entry) {
-      return EXTRACTION_KEYS.find(k => k.id === entry[0]) || null;
-    }
-    return null;
+  const getMappedKeys = (colIndex: number): ExtractionKey[] => {
+    const entries = Object.entries(mappedColumns).filter(([_, mapping]) => mapping.col === colIndex);
+    return entries.map(entry => EXTRACTION_KEYS.find(k => k.id === entry[0])).filter(Boolean) as ExtractionKey[];
   };
 
   // 현재 셀이 어떤 매핑 데이터의 startRow 한 칸 위(라벨 위치)인지 식별하는 헬퍼
-  const getBadgeForKeyAtCell = (r: number, c: number): ExtractionKey | null => {
-    const entry = Object.entries(mappedColumns).find(([_, mapping]) => {
-      return mapping.col === c && (mapping.startRow - 1 === r);
+  const getBadgesForKeyAtCell = (r: number, c: number): ExtractionKey[] => {
+    const entries = Object.entries(mappedColumns).filter(([_, mapping]) => {
+      const isScalar = mapping.startRow === mapping.endRow;
+      const targetRow = isScalar ? mapping.startRow : mapping.startRow - 1;
+      return mapping.col === c && targetRow === r;
     });
-    if (entry) {
-      return EXTRACTION_KEYS.find(k => k.id === entry[0]) || null;
-    }
-    return null;
+    return entries.map(entry => EXTRACTION_KEYS.find(k => k.id === entry[0])).filter(Boolean) as ExtractionKey[];
   };
 
   const isCellInSelection = (rowIdx: number, colIdx: number): boolean => {
+    for (const block of additionalSelectionBlocks) {
+      if (colIdx >= block.minCol && colIdx <= block.maxCol && rowIdx >= block.minRow && rowIdx <= block.maxRow) {
+        return true;
+      }
+    }
     if (!dragStartCell || !dragEndCell) return false;
     if (dragStartCell.row === -1) {
       const minCol = Math.min(dragStartCell.col, dragEndCell.col);
@@ -317,6 +323,23 @@ export default function AdminShipmentPage() {
     const minRow = Math.min(dragStartCell.row, dragEndCell.row);
     const maxRow = Math.max(dragStartCell.row, dragEndCell.row);
     return colIdx >= minCol && colIdx <= maxCol && rowIdx >= minRow && rowIdx <= maxRow;
+  };
+
+  const getActiveRowsForCol = (colIdx: number) => {
+    const rows: number[] = [];
+    const maxR = verifierGridData ? verifierGridData.length - 1 : 1000;
+    for (let r = 0; r <= maxR; r++) {
+      if (isCellInSelection(r, colIdx)) rows.push(r);
+    }
+    return rows;
+  };
+
+  const createMappingObj = (colIdx: number) => {
+    const rows = getActiveRowsForCol(colIdx);
+    if (rows.length === 0) return { col: colIdx, startRow: 0, endRow: 0, activeRows: [] };
+    const startRow = Math.min(...rows);
+    const endRow = Math.max(...rows);
+    return { col: colIdx, startRow, endRow, activeRows: rows };
   };
 
   const removeMapping = (keyId: string) => {
@@ -331,6 +354,7 @@ export default function AdminShipmentPage() {
     setMappedColumns({});
     setSelectedColIndices([]);
     setClickedBadgeQueue([]);
+    setAdditionalSelectionBlocks([]);
   };
 
   const handleBadgeClick = (keyId: string) => {
@@ -357,19 +381,33 @@ export default function AdminShipmentPage() {
 
     setMappedColumns((prev) => {
       const updated = { ...prev };
-      // 기존에 이 열(colIndex)에 매핑되어 있던 다른 키 삭제
-      Object.keys(updated).forEach(k => {
-        if (updated[k].col === colIndex) delete updated[k];
-      });
       updated[keyId] = { col: colIndex, startRow, endRow };
       return updated;
     });
   };
 
-  const handleCellMouseDown = (rowIdx: number, colIdx: number) => {
+  const handleCellMouseDown = (rowIdx: number, colIdx: number, e: React.MouseEvent) => {
+    const isAppend = e.ctrlKey || e.metaKey;
+    if (isAppend && dragStartCell && dragEndCell) {
+      setAdditionalSelectionBlocks(prev => [
+        ...prev,
+        {
+          minRow: dragStartCell.row === -1 ? 0 : Math.min(dragStartCell.row, dragEndCell.row),
+          maxRow: dragStartCell.row === -1 ? Infinity : Math.max(dragStartCell.row, dragEndCell.row),
+          minCol: Math.min(dragStartCell.col, dragEndCell.col),
+          maxCol: Math.max(dragStartCell.col, dragEndCell.col)
+        }
+      ]);
+    } else if (!isAppend) {
+      setAdditionalSelectionBlocks([]);
+    }
     setDragStartCell({ row: rowIdx, col: colIdx });
     setDragEndCell({ row: rowIdx, col: colIdx });
-    setSelectedColIndices([colIdx]);
+    if (isAppend) {
+      setSelectedColIndices(prev => Array.from(new Set([...prev, colIdx])));
+    } else {
+      setSelectedColIndices([colIdx]);
+    }
   };
 
   const handleCellMouseEnter = (rowIdx: number, colIdx: number, e: React.MouseEvent) => {
@@ -381,7 +419,17 @@ export default function AdminShipmentPage() {
       for (let c = minCol; c <= maxCol; c++) {
         cols.push(c);
       }
-      setSelectedColIndices(cols);
+      const isAppend = e.ctrlKey || e.metaKey;
+      let newCols = [...cols];
+      if (isAppend) {
+        const blockCols = new Set<number>();
+        additionalSelectionBlocks.forEach(b => {
+          for(let c = b.minCol; c <= b.maxCol; c++) blockCols.add(c);
+        });
+        cols.forEach(c => blockCols.add(c));
+        newCols = Array.from(blockCols);
+      }
+      setSelectedColIndices(newCols);
 
       // 드래그 중인 마우스 포인터 셀이 경계선을 넘어가면 자동으로 뷰포트 스크롤
       const cellElement = e.currentTarget as HTMLElement;
@@ -395,10 +443,28 @@ export default function AdminShipmentPage() {
     }
   };
 
-  const handleHeaderMouseDown = (colIndex: number) => {
+  const handleHeaderMouseDown = (colIndex: number, e: React.MouseEvent) => {
+    const isAppend = e.ctrlKey || e.metaKey;
+    if (isAppend && dragStartCell && dragEndCell) {
+      setAdditionalSelectionBlocks(prev => [
+        ...prev,
+        {
+          minRow: dragStartCell.row === -1 ? 0 : Math.min(dragStartCell.row, dragEndCell.row),
+          maxRow: dragStartCell.row === -1 ? Infinity : Math.max(dragStartCell.row, dragEndCell.row),
+          minCol: Math.min(dragStartCell.col, dragEndCell.col),
+          maxCol: Math.max(dragStartCell.col, dragEndCell.col)
+        }
+      ]);
+    } else if (!isAppend) {
+      setAdditionalSelectionBlocks([]);
+    }
     setDragStartCell({ row: -1, col: colIndex });
     setDragEndCell({ row: -1, col: colIndex });
-    setSelectedColIndices([colIndex]);
+    if (isAppend) {
+      setSelectedColIndices(prev => Array.from(new Set([...prev, colIndex])));
+    } else {
+      setSelectedColIndices([colIndex]);
+    }
   };
 
   const handleHeaderMouseEnter = (colIndex: number, e: React.MouseEvent) => {
@@ -410,7 +476,17 @@ export default function AdminShipmentPage() {
       for (let c = minCol; c <= maxCol; c++) {
         cols.push(c);
       }
-      setSelectedColIndices(cols);
+      const isAppend = e.ctrlKey || e.metaKey;
+      let newCols = [...cols];
+      if (isAppend) {
+        const blockCols = new Set<number>();
+        additionalSelectionBlocks.forEach(b => {
+          for(let c = b.minCol; c <= b.maxCol; c++) blockCols.add(c);
+        });
+        cols.forEach(c => blockCols.add(c));
+        newCols = Array.from(blockCols);
+      }
+      setSelectedColIndices(newCols);
 
       const cellElement = e.currentTarget as HTMLElement;
       if (cellElement) {
@@ -438,11 +514,7 @@ export default function AdminShipmentPage() {
       selectedColIndices.forEach((colIdx, idx) => {
         if (idx < keyIds.length) {
           const keyId = keyIds[idx];
-          // 기존에 이 열(colIdx)에 매핑되어 있던 다른 키 삭제
-          Object.keys(updated).forEach(k => {
-            if (updated[k].col === colIdx) delete updated[k];
-          });
-          updated[keyId] = { col: colIdx, startRow: minRow, endRow: maxRow };
+          updated[keyId] = createMappingObj(colIdx);
         }
       });
       return updated;
@@ -465,21 +537,21 @@ export default function AdminShipmentPage() {
             clickedBadgeQueue.forEach(k => delete updated[k]);
 
             let colOffset = 0;
+            
+            const sortedCols = [...selectedColIndices].sort((a,b)=>a-b);
             clickedBadgeQueue.forEach((keyId) => {
-              const colIdx = minCol + colOffset;
-              if (colIdx <= maxCol) {
-                // 기존 매핑 제거
-                Object.keys(updated).forEach(k => {
-                  if (updated[k].col === colIdx) delete updated[k];
-                });
-                updated[keyId] = { col: colIdx, startRow: minRow, endRow: maxRow };
+              const colIdx = sortedCols[colOffset];
+              if (colIdx !== undefined) {
+                updated[keyId] = createMappingObj(colIdx);
               }
               colOffset++;
             });
+
             return updated;
           });
           setClickedBadgeQueue([]);
           setSelectedColIndices([]);
+          setAdditionalSelectionBlocks([]);
         }
       }
       setDragStartCell(null);
@@ -510,7 +582,8 @@ export default function AdminShipmentPage() {
       const mapping = mappedColumns[k];
       const rowVal = verifierGridData[mapping.startRow];
       if (rowVal && mapping.col < rowVal.length) {
-        result[k] = rowVal[mapping.col] || "";
+        const val = rowVal[mapping.col];
+        result[k] = val !== undefined && val !== null ? String(val).trim() : "";
       }
     });
 
@@ -543,10 +616,11 @@ export default function AdminShipmentPage() {
           listKeys.forEach(k => {
             const mapping = mappedColumns[k];
             // 해당 품목 컬럼의 개별 지정 행 범위 내에 포함될 경우에만 데이터 바인딩
-            if (r >= mapping.startRow && r <= mapping.endRow) {
+            const isActive = mapping.activeRows ? mapping.activeRows.includes(r) : (r >= mapping.startRow && r <= mapping.endRow);
+            if (isActive) {
               const val = rowVal[mapping.col];
-              if (val !== undefined && val !== null && val !== "") {
-                rowObj[k] = val;
+              if (val !== undefined && val !== null && String(val).trim() !== "") {
+                rowObj[k] = String(val).trim();
                 hasAnyData = true;
               } else {
                 rowObj[k] = "";
@@ -683,6 +757,12 @@ export default function AdminShipmentPage() {
                               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
                             >
                               <Eye size={14} /> 서류 검증 (인보이스/패킹)
+                            </button>
+                            <button
+                              onClick={() => setActiveDashboardShipment({ id: s.id, blNumber: s.bl_number })}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
+                            >
+                              <Car size={14} /> 차량 현황판 보기
                             </button>
                           </div>
                         </div>
@@ -908,7 +988,7 @@ export default function AdminShipmentPage() {
                             const letter = getColLetter(colIndex);
                             const isSelected = selectedColIndices.includes(colIndex);
                             const isDragOver = dragOverColIndex === colIndex;
-                            const mappedKey = getMappedKey(colIndex);
+                            const mappedKeys = getMappedKeys(colIndex);
 
                             return (
                               <th
@@ -919,7 +999,7 @@ export default function AdminShipmentPage() {
                                       ? 'bg-indigo-50 dark:bg-indigo-950/40 border-dashed border-indigo-400'
                                       : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
                                   }`}
-                                onMouseDown={() => handleHeaderMouseDown(colIndex)}
+                                onMouseDown={(e) => handleHeaderMouseDown(colIndex, e)}
                                 onMouseEnter={(e) => handleHeaderMouseEnter(colIndex, e)}
                                 onDragOver={(e) => { e.preventDefault(); setDragOverColIndex(colIndex); }}
                                 onDragLeave={() => setDragOverColIndex(null)}
@@ -928,8 +1008,8 @@ export default function AdminShipmentPage() {
                                 <div className="flex flex-col items-center justify-center min-h-[44px]">
                                   <span className="text-sm font-extrabold">{letter}</span>
                                   {/* startRow가 0(첫 번째 행)이라 위쪽 칸이 없을 때만 최상단 고정 헤더에 배지 렌더링 */}
-                                  {mappedKey && mappedColumns[mappedKey.id].startRow === 0 && (
-                                    <div className={`mt-1 text-[9px] px-1.5 py-0.5 rounded font-bold flex flex-col items-center gap-0.5 shadow-sm ${mappedKey.color}`}>
+                                  {mappedKeys.filter(k => mappedColumns[k.id].startRow === 0).map(mappedKey => (
+                                    <div key={mappedKey.id} className={`mt-1 text-[9px] px-1.5 py-0.5 rounded font-bold flex flex-col items-center gap-0.5 shadow-sm ${mappedKey.color}`}>
                                       <div className="flex items-center gap-1">
                                         <span>{mappedKey.label}</span>
                                         <button
@@ -948,7 +1028,7 @@ export default function AdminShipmentPage() {
                                           : `${mappedColumns[mappedKey.id].startRow + 1}~${mappedColumns[mappedKey.id].endRow + 1}행`}
                                       </span>
                                     </div>
-                                  )}
+                                  ))}
                                 </div>
                               </th>
                             );
@@ -966,14 +1046,18 @@ export default function AdminShipmentPage() {
                             {row.map((cellVal, colIndex) => {
                               const isSelected = selectedColIndices.includes(colIndex);
                               const isDragOver = dragOverColIndex === colIndex;
-                              const mappedKey = getMappedKey(colIndex);
+                              const mappedKeys = getMappedKeys(colIndex);
                               const isDuplicateToLeft = colIndex > 0 && cellVal !== null && cellVal !== undefined && cellVal !== "" && cellVal === row[colIndex - 1];
                               const displayVal = isDuplicateToLeft
                                 ? ""
                                 : (cellVal === null || cellVal === undefined ? "" : String(cellVal));
 
                               const isHighlighted = isCellInSelection(rowIndex, colIndex);
-                              const cellBadge = getBadgeForKeyAtCell(rowIndex, colIndex);
+                              const cellBadges = getBadgesForKeyAtCell(rowIndex, colIndex);
+                              const isMappedCell = mappedKeys.some(k => {
+                                const mapping = mappedColumns[k.id];
+                                return mapping.activeRows ? mapping.activeRows.includes(rowIndex) : (rowIndex >= mapping.startRow && rowIndex <= mapping.endRow);
+                              });
 
                               return (
                                 <td
@@ -984,34 +1068,34 @@ export default function AdminShipmentPage() {
                                         ? 'bg-blue-50/70 dark:bg-blue-950/10 border-slate-200 dark:border-slate-800'
                                         : isDragOver
                                           ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-slate-200 dark:border-slate-800'
-                                          : cellBadge // 배지가 위치하는 라벨 셀에 부드러운 강조 배경
-                                            ? 'bg-indigo-50/20 dark:bg-indigo-950/10 border-2 border-indigo-400 dark:border-indigo-700'
-                                            : mappedKey
-                                              ? 'bg-indigo-50/20 dark:bg-indigo-950/5 border-x border-dashed border-indigo-200 dark:border-indigo-850'
+                                          : cellBadges.length > 0 // 배지가 위치하는 라벨 셀에 부드러운 강조 배경
+                                            ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-700'
+                                            : isMappedCell
+                                              ? 'bg-blue-50 dark:bg-blue-900/20 border-x border-dashed border-blue-300 dark:border-blue-800'
                                               : 'border-slate-200 dark:border-slate-800'
                                     }`}
-                                  onMouseDown={() => handleCellMouseDown(rowIndex, colIndex)}
+                                  onMouseDown={(e) => handleCellMouseDown(rowIndex, colIndex, e)}
                                   onMouseEnter={(e) => handleCellMouseEnter(rowIndex, colIndex, e)}
                                   onDragOver={(e) => { e.preventDefault(); setDragOverColIndex(colIndex); }}
                                   onDragLeave={() => setDragOverColIndex(null)}
                                   onDrop={(e) => handleColDrop(colIndex, rowIndex, e)}
                                   title={displayVal}
                                 >
-                                  {cellBadge && (
-                                    <div className={`mb-1.5 text-[9.5px] px-1.5 py-0.5 rounded font-extrabold flex items-center justify-between gap-1 shadow-sm ${cellBadge.color}`}>
-                                      <span>{cellBadge.label}</span>
+                                  {cellBadges.map(cb => (
+                                    <div key={cb.id} className={`mb-1.5 text-[9.5px] px-1.5 py-0.5 rounded font-extrabold flex items-center justify-between gap-1 shadow-sm ${cb.color}`}>
+                                      <span>{cb.label}</span>
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          removeMapping(cellBadge.id);
+                                          removeMapping(cb.id);
                                         }}
                                         className="hover:text-red-200 font-bold ml-1"
                                       >
                                         ✕
                                       </button>
                                     </div>
-                                  )}
-                                  <span className={mappedKey ? "font-bold text-indigo-850 dark:text-indigo-300" : "text-slate-900 dark:text-slate-100 font-medium"}>
+                                  ))}
+                                  <span className={isMappedCell ? "font-bold text-blue-900 dark:text-blue-200" : "text-slate-900 dark:text-slate-100 font-medium"}>
                                     {displayVal}
                                   </span>
                                 </td>
@@ -1040,13 +1124,13 @@ export default function AdminShipmentPage() {
                       </div>
                       <div className="flex gap-1 flex-wrap">
                         {selectedColIndices.length === 3 && (
-                          <button onClick={() => handleBatchMap(['prod_name', 'quantity', 'unit'])} className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">품명+수량+단위</button>
+                          <button onClick={() => handleBatchMap(['vin', 'make', 'model'])} className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">VIN+제조사+모델</button>
                         )}
                         {selectedColIndices.length === 4 && (
-                          <button onClick={() => handleBatchMap(['prod_name', 'quantity', 'unit', 'unit_price'])} className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">품명+수량+단위+단가</button>
+                          <button onClick={() => handleBatchMap(['vin', 'make', 'model', 'year'])} className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">VIN+제조사+모델+연식</button>
                         )}
                         {selectedColIndices.length === 5 && (
-                          <button onClick={() => handleBatchMap(['prod_name', 'quantity', 'unit', 'unit_price', 'amount'])} className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">품명+수량+단위+단가+금액</button>
+                          <button onClick={() => handleBatchMap(['vin', 'make', 'model', 'year', 'weight'])} className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">VIN+제조사+모델+연식+중량</button>
                         )}
                         <button onClick={() => setSelectedColIndices([])} className="text-slate-500 px-1">취소</button>
                       </div>
@@ -1108,7 +1192,6 @@ export default function AdminShipmentPage() {
                     </div>
                   ) : (
                     <div className="flex-1 overflow-auto space-y-3 p-1">
-                      {/* 1. 단일 셀 스칼라 값 출력 */}
                       {Object.keys(extractedRows).some(k => k !== "items") && (
                         <div className="bg-slate-50 dark:bg-slate-950 p-2 text-[10px] rounded border border-slate-150 dark:border-slate-850 space-y-1">
                           <div className="font-extrabold text-slate-500 dark:text-slate-400 mb-1 border-b pb-0.5">단일 데이터 필드 (스칼라)</div>
@@ -1117,9 +1200,9 @@ export default function AdminShipmentPage() {
                               if (keyId === "items") return null;
                               const keyInfo = EXTRACTION_KEYS.find(k => k.id === keyId);
                               return (
-                                <div key={keyId} className="flex justify-between border-b border-dashed border-slate-100 dark:border-slate-900 pb-0.5">
-                                  <span className="text-slate-400">{keyInfo?.label || keyId}:</span>
-                                  <span>{String(val)}</span>
+                                <div key={keyId} className="flex items-start gap-2 border-b border-dashed border-slate-100 dark:border-slate-900 pb-0.5">
+                                  <span className="text-slate-400 whitespace-nowrap">{keyInfo?.label || keyId}:</span>
+                                  <span className="break-all">{String(val)}</span>
                                 </div>
                               );
                             })}
@@ -1137,7 +1220,7 @@ export default function AdminShipmentPage() {
                                 <th className="p-1">행</th>
                                 {EXTRACTION_KEYS.map(key => {
                                   const mapping = mappedColumns[key.id];
-                                  if (mapping === undefined || ["company_name", "hs_code", "origin"].includes(key.id)) return null;
+                                  if (mapping === undefined || mapping.startRow === mapping.endRow || ["company_name", "hs_code", "origin"].includes(key.id)) return null;
                                   return <th key={key.id} className="p-1">{key.label}</th>;
                                 })}
                               </tr>
@@ -1148,7 +1231,7 @@ export default function AdminShipmentPage() {
                                   <td className="p-1 font-mono font-bold text-slate-455">{row._rowIndex}</td>
                                   {EXTRACTION_KEYS.map(key => {
                                     const mapping = mappedColumns[key.id];
-                                    if (mapping === undefined || ["company_name", "hs_code", "origin"].includes(key.id)) return null;
+                                    if (mapping === undefined || mapping.startRow === mapping.endRow || ["deregistration_no"].includes(key.id)) return null;
                                     return <td key={key.id} className="p-1 truncate max-w-[60px]" title={row[key.id]}>{row[key.id]}</td>;
                                   })}
                                 </tr>
@@ -1158,7 +1241,7 @@ export default function AdminShipmentPage() {
                         </div>
                       ) : (
                         <div className="text-[10px] text-slate-400 border border-dashed rounded p-3 text-center">
-                          품목 데이터 열 매핑이 없습니다. (품명, 수량, 단위 등 범위를 드래그해 매핑하세요.)
+                          차량 데이터 열 매핑이 없습니다. (차대번호, 제조사, 모델 등 범위를 드래그해 매핑하세요.)
                         </div>
                       )}
                     </div>
@@ -1218,6 +1301,14 @@ export default function AdminShipmentPage() {
             </div>
           </div>
         </div>
+      )}
+      {/* 로로선 차량 현황 모달 */}
+      {activeDashboardShipment && (
+        <VehicleDashboardModal
+          shipmentId={activeDashboardShipment.id}
+          blNumber={activeDashboardShipment.blNumber}
+          onClose={() => setActiveDashboardShipment(null)}
+        />
       )}
     </div>
   );

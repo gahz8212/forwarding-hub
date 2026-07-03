@@ -70,3 +70,11 @@ graph TD
 ```
 
 본 개발 내용은 모든 명세와 편의 기능을 만족하며 배포 빌드 검증을 마쳤습니다.
+
+## [2026-07-03] 로로선 중고차 사진 자동 분류 (OCR) 기능 구축
+- **구현 내용:**
+  - 프론트엔드: `VehicleDashboardModal.tsx`에 대량 사진 및 ZIP 파일 일괄 업로드 기능 추가.
+  - 백엔드: `ocrService.ts` (구글 비전 API 연동) 및 `fileController.ts` (압축 해제 `adm-zip`, 이미지 압축 `sharp`, 정규식 필터링 로직) 구축.
+- **핵심 아키텍처:** 프론트엔드에서 ZIP 전송 -> 백엔드에서 메모리 압축 해제 -> Sharp 흑백/FHD 압축 -> Vision API -> DB(vehicles 테이블) 차대번호 기반 Upsert 자동 저장.
+- **다음 할 일(테스트):** 구글 Cloud Vision API 가입 및 JSON 인증키 발급 후 로컬 환경변수에 등록 (`GOOGLE_APPLICATION_CREDENTIALS`). 이후 프론트엔드 화면에서 실제 사진 올려보기. (자세한 가이드는 `OCR_TEST_GUIDE.md` 참고)
+
