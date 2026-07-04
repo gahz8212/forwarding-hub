@@ -11,7 +11,8 @@ import {
   CheckCircle2, 
   FileUp, 
   FileText, 
-  Truck 
+  Truck,
+  Camera
 } from "lucide-react";
 
 const STEPS = [
@@ -105,6 +106,9 @@ export default function DashboardPage() {
   const [invoiceFile, setInvoiceFile] = React.useState<File | null>(null);
   const [packingFile, setPackingFile] = React.useState<File | null>(null);
   const [uploading, setUploading] = React.useState(false);
+
+  const [photoFiles, setPhotoFiles] = React.useState<FileList | null>(null);
+  const [uploadingPhotos, setUploadingPhotos] = React.useState(false);
 
   useEffect(() => {
     fetchAllShipments();
@@ -397,6 +401,39 @@ export default function DashboardPage() {
     }
   };
 
+  const handlePhotoUploadSubmit = async () => {
+    if (!trackingData || !photoFiles || photoFiles.length === 0) {
+      alert("업로드할 차량 사진을 선택해주세요.");
+      return;
+    }
+    setUploadingPhotos(true);
+    const formData = new FormData();
+    formData.append("shipmentId", trackingData.id.toString());
+    
+    Array.from(photoFiles).slice(0, 20).forEach(file => {
+      formData.append("photos", file);
+    });
+
+    try {
+      const response = await fetch("http://localhost:5000/api/files/upload-vehicle-photos", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`사진 전송 완료! 총 ${data.data.length}장의 사진이 처리되었습니다.`);
+        setPhotoFiles(null);
+      } else {
+        alert("사진 업로드 실패: " + data.message);
+      }
+    } catch (error) {
+      alert("서버와 통신 중 오류가 발생했습니다.");
+    } finally {
+      setUploadingPhotos(false);
+    }
+  };
+
 
 
   return (
@@ -632,6 +669,34 @@ export default function DashboardPage() {
                   {uploading ? "업로드 중..." : "서류 업로드 완료하기"}
                 </button>
               </form>
+            </div>
+          )}
+
+          {/* 차량 사진 (3종) 업로드 패널 (선택) */}
+          {(trackingData.status === "Pending Documents" || trackingData.status === "Documents Uploaded") && (
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-6">
+              <h4 className="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
+                <Camera className="text-emerald-600" size={18} /> 차량 사진 (말소증, 번호판, 차대번호) 업로드 (선택)
+              </h4>
+              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                포워더에게 카카오톡으로 전송하지 않고, 여기서 직접 사진(또는 압축된 ZIP 파일)을 한 번에 업로드할 수 있습니다.
+              </p>
+              <div className="flex items-center gap-4 bg-white p-4 rounded-xl border">
+                <input 
+                  type="file" 
+                  multiple 
+                  accept="image/*,.zip" 
+                  className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                  onChange={(e) => setPhotoFiles(e.target.files)}
+                />
+                <button
+                  onClick={handlePhotoUploadSubmit}
+                  disabled={uploadingPhotos || !photoFiles || photoFiles.length === 0}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg text-xs transition shadow-sm disabled:opacity-50 whitespace-nowrap"
+                >
+                  {uploadingPhotos ? "업로드 중..." : "사진 3종 전송"}
+                </button>
+              </div>
             </div>
           )}
 

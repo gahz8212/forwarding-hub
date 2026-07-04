@@ -320,3 +320,122 @@ export const reRequestDocs = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: '서류 재요청 처리 중 에러가 발생했습니다.' });
   }
 };
+
+export const getVehiclesByShipment = async (req: Request, res: Response) => {
+  try {
+    const { shipmentId } = req.params;
+    const [vehicles]: any = await pool.query('SELECT * FROM vehicles WHERE shipment_id = ? ORDER BY id ASC', [shipmentId]);
+    
+    // 포맷팅 (condition_photo_urls 가 프론트엔드에서는 배열로 쓰이므로 처리)
+    const formattedVehicles = vehicles.map((v: any) => {
+      let urls: string[] = [];
+      if (v.condition_photo_url) {
+        try {
+          urls = JSON.parse(v.condition_photo_url);
+        } catch (e) {
+          urls = [v.condition_photo_url];
+        }
+      }
+      return {
+        id: v.id,
+        vin: v.vin,
+        make: v.make || "Unknown",
+        model: v.model || "Unknown",
+        year: v.year || new Date().getFullYear(),
+        drivability: v.drivability || "Running",
+        status: v.status || "Yard In",
+        condition_photo_urls: urls.map(url => url.startsWith('http') ? url : `http://localhost:5000${url}`),
+        customs_cleared: false,
+        buyer: "",
+        price: 0
+      };
+    });
+
+    return res.json({ success: true, data: formattedVehicles });
+  } catch (error) {
+    console.error('getVehicles Error:', error);
+    return res.status(500).json({ success: false, message: '차량 목록을 불러오는 중 오류가 발생했습니다.' });
+  }
+};
+
+export const assignPhotosToVehicle = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { photoUrls } = req.body; // 배열 ["http://localhost:5000/uploads/2026-07/SHIP_1/unclassified/photo_123.jpg", ...]
+
+    if (!Array.isArray(photoUrls)) {
+      return res.status(400).json({ success: false, message: 'photoUrls는 배열이어야 합니다.' });
+    }
+
+    // 차량 정보(vin, blNumber 등 확인용) 가져오기
+    const [vehicles]: any = await pool.query(
+      'SELECT v.vin, v.condition_photo_url, s.bl_number, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?',
+      [id]
+    );
+
+    if (vehicles.length === 0) {
+      return res.status(404).json({ success: false, message: '차량을 찾을 수 없습니다.' });
+    }
+
+    const vehicle = vehicles[0];
+    const vin = vehicle.vin || 'UNKNOWN_VIN';
+    const shipperName = vehicle.shipper || '일반화주';
+    
+    const dateObj = new Date();
+    const year = dateObj.getFullYear().toString();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    
+    let existingUrls: string[] = [];
+    if (vehicle.condition_photo_url) {
+      try {
+        existingUrls = JSON.parse(vehicle.condition_photo_url);
+      } catch (e) {
+        existingUrls = [vehicle.condition_photo_url];
+      }
+    }
+
+    const newSavedUrls: string[] = [];
+
+    // 파일 물리적 이동
+    for (const fullUrl of photoUrls) {
+      if (!fullUrl) continue;
+      
+      try {
+        // "http://localhost:5000/uploads/..." -> "/uploads/..."
+        const relativeUrl = fullUrl.replace(/^https?:\/\/[^\/]+/, '');
+        const sourcePath = path.join(__dirname, '../../', relativeUrl);
+        
+        if (fs.existsSync(sourcePath)) {
+          // 목표 폴더: uploads/화주명/YYYY/MM/VIN/
+          const fileName = path.basename(relativeUrl);
+          const targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${vin}/${fileName}`;
+          const targetPath = path.join(__dirname, '../../', targetRelativeUrl);
+          const targetDir = path.dirname(targetPath);
+          
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+
+          // 물리적 이동
+          fs.renameSync(sourcePath, targetPath);
+          newSavedUrls.push(targetRelativeUrl);
+        } else {
+          // 이미 이동되었거나 못찾은 경우 그대로 추가
+          newSavedUrls.push(relativeUrl);
+        }
+      } catch (err) {
+        console.error('파일 이동 에러:', err);
+      }
+    }
+
+    // 중복 제거 후 병합
+    const mergedUrls = Array.from(new Set([...existingUrls, ...newSavedUrls]));
+
+    await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify(mergedUrls), id]);
+
+    return res.json({ success: true, message: '배정 완료', data: mergedUrls });
+  } catch (error) {
+    console.error('assignPhotos Error:', error);
+    return res.status(500).json({ success: false, message: '사진 배정 중 서버 에러' });
+  }
+};

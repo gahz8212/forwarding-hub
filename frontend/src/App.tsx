@@ -21,7 +21,7 @@ import AdminShipmentPage from "./pages/admin/AdminShipmentPage";
 import AdminSchedulePage from "./pages/admin/AdminSchedulePage";
 
 function App() {
-  const { isAuthenticated, checkAuth } = useAuthStore();
+  const { isAuthenticated, checkAuth, user } = useAuthStore();
   const [loading, setLoading] = React.useState(true);
 
   useEffect(() => {
@@ -45,7 +45,7 @@ function App() {
         {/* Guest Route */}
         <Route
           path="/login"
-          element={isAuthenticated ? <Navigate to="/" /> : <LoginPage />}
+          element={isAuthenticated ? <Navigate to={user?.role === "admin" ? "/admin/shipments" : "/"} /> : <LoginPage />}
         />
 
         {/* Authenticated Client-Only Routes */}
@@ -58,7 +58,7 @@ function App() {
         {/* Authenticated Shared Shipper Routes */}
         <Route element={<ProtectedRoute allowedRoles={["client", "admin"]} />}>
           <Route element={<Layout />}>
-            <Route path="/" element={<DashboardPage />} />
+            <Route path="/" element={user?.role === "admin" ? <Navigate to="/admin/shipments" replace /> : <DashboardPage />} />
             <Route path="/bookings" element={<BookingListPage />} />
             <Route path="/invoices" element={<InvoiceListPage />} />
             <Route path="/documents" element={<DocumentListPage />} />

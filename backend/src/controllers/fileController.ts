@@ -8,6 +8,7 @@ import AdmZip from 'adm-zip';
 import sharp from 'sharp';
 import { parseExcelToGridData, parsePdfToGridData } from '../services/fileParser';
 import { analyzeVehiclePhoto } from '../services/ocrService';
+import { decodeVin } from '../services/vinService';
 
 // 파일 업로드 및 분석 컨트롤러
 export const uploadFile = async (req: Request, res: Response) => {
@@ -343,7 +344,7 @@ export const exportCustomsExcel = async (req: Request, res: Response) => {
 // 중고차량 사진 멀티 업로드 및 OCR 자동 분류 컨트롤러
 export const uploadVehiclePhotos = async (req: Request, res: Response) => {
   try {
-    const shipmentId = req.body.shipmentId; // 대상 B/L (Shipment ID)
+    const { shipmentId, skipOcr, blNumber } = req.body;
     const files = req.files as Express.Multer.File[];
 
     if (!files || files.length === 0) {
@@ -356,6 +357,20 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
     const processedResults = [];
     const imageQueue: { originalname: string; buffer: Buffer }[] = [];
 
+    // 화주명 조회
+    const [shipment]: any = await pool.query('SELECT shipper FROM shipments WHERE id = ?', [shipmentId]);
+    const shipperName = shipment.length > 0 && shipment[0].shipper ? shipment[0].shipper : '일반화주';
+
+    const dateObj = new Date();
+    const year = dateObj.getFullYear().toString();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+
+    // 임시 폴더 경로 생성
+    const tempFolder = path.join(__dirname, '../../uploads', 'temp');
+    if (!fs.existsSync(tempFolder)) {
+      fs.mkdirSync(tempFolder, { recursive: true });
+    }
+
     // 1. 업로드된 파일들을 확인하여 ZIP 파일이면 압축 해제, 일반 이미지면 큐에 추가
     for (const file of files) {
       const ext = path.extname(file.originalname).toLowerCase();
@@ -365,12 +380,11 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         const zipEntries = zip.getEntries();
         
         for (const entry of zipEntries) {
-          if (!entry.isDirectory && entry.entryName.match(/\\.(jpg|jpeg|png)$/i)) {
-            // MacOS에서 생성되는 숨김 파일(__MACOSX, .DS_Store 등) 무시
+          if (!entry.isDirectory && entry.entryName.match(/\.(jpg|jpeg|png)$/i)) {
             if (entry.entryName.includes('__MACOSX') || entry.name.startsWith('.')) continue;
             imageQueue.push({
               originalname: entry.name,
-              buffer: entry.getData() // 메모리에 압축 풀린 바이너리 저장
+              buffer: entry.getData()
             });
           }
         }
@@ -389,47 +403,84 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
     // 2. 추출된 이미지들을 순회하며 sharp 압축 및 OCR 분석 진행
     for (const image of imageQueue) {
       try {
-        // [핵심] Sharp 라이브러리로 이미지 최적화 (FHD 리사이징 및 흑백 변환)
-        // 구글 비전 API 비용 절감 및 업로드 속도 향상을 위함
         const optimizedBuffer = await sharp(image.buffer)
-          .resize({ width: 1920, withoutEnlargement: true }) // 가로 최대 1920px로 제한
-          .grayscale() // 흑백 변환으로 데이터 최소화
-          .jpeg({ quality: 80 }) // 80% 품질의 JPEG로 압축
+          .resize({ width: 1920, withoutEnlargement: true })
+          .grayscale()
+          .jpeg({ quality: 80 })
           .toBuffer();
 
-        // 최적화된 이미지를 구글 클라우드 비전 API로 전송
-        const ocrResult = await analyzeVehiclePhoto(optimizedBuffer);
+        let ocrResult: any = { rawText: '', plateNumber: null, vin: null, type: 'unknown' };
+        
+        if (skipOcr !== 'true') {
+          ocrResult = await analyzeVehiclePhoto(optimizedBuffer);
+        }
 
-        // 3. 사진 타입이 확인된 경우 DB에 매핑 로직 (Upsert)
+        // 한글 파일명 깨짐을 방지하기 위해 완전한 난수로 파일명 생성
+        const randomString = Math.random().toString(36).substring(2, 10);
+        const tempFileName = `photo_${Date.now()}_${randomString}.jpg`;
+        const tempRelativeUrl = `/uploads/temp/${tempFileName}`;
+        const tempPath = path.join(tempFolder, tempFileName);
+        
+        fs.writeFileSync(tempPath, optimizedBuffer);
+
+        ocrResult.serverUrl = `http://localhost:5000${tempRelativeUrl}`;
+
+        // 3. 사진 타입이 확인된 경우 DB에 매핑 및 파일 물리적 이동
         if (ocrResult.vin || ocrResult.plateNumber) {
           const [existing]: any = await pool.query(
-            'SELECT id FROM vehicles WHERE shipment_id = ? AND (vin = ? OR deregistration_no = ?)',
+            'SELECT id, vin FROM vehicles WHERE shipment_id = ? AND (vin = ? OR deregistration_no = ?)',
             [shipmentId, ocrResult.vin || 'NULL', ocrResult.plateNumber || 'NULL']
           );
 
-          // 임시 저장용 파일명 (실무에서는 S3 URL 등 사용)
-          const tempUrl = \`/uploads/extracted_\${Date.now()}_\${image.originalname}\`;
+          let finalVin = ocrResult.vin;
+          let updateId = null;
 
           if (existing.length > 0) {
-            const updateId = existing[0].id;
+            updateId = existing[0].id;
+            finalVin = existing[0].vin || ocrResult.vin;
+          }
+
+          if (!finalVin) finalVin = 'UNKNOWN_VIN';
+
+          // 정식 폴더로 이동 (uploads/화주명/YYYY/MM/VIN)
+          const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, finalVin);
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          const targetPath = path.join(targetDir, tempFileName);
+          const targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${finalVin}/${tempFileName}`;
+          
+          fs.renameSync(tempPath, targetPath);
+          ocrResult.serverUrl = `http://localhost:5000${targetRelativeUrl}`;
+
+          if (existing.length > 0) {
             if (ocrResult.type === 'document' && ocrResult.plateNumber) {
                await pool.query('UPDATE vehicles SET deregistration_no = ? WHERE id = ?', [ocrResult.plateNumber, updateId]);
             }
             if (ocrResult.type === 'plate' || ocrResult.type === 'vin') {
-               await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [tempUrl, updateId]);
+               await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify([targetRelativeUrl]), updateId]);
             }
           } else {
             if (ocrResult.vin) {
+               const specs = await decodeVin(ocrResult.vin);
                await pool.query(
-                 'INSERT INTO vehicles (shipment_id, vin, deregistration_no, status, condition_photo_url) VALUES (?, ?, ?, ?, ?)',
+                 'INSERT INTO vehicles (shipment_id, vin, deregistration_no, make, model, year, status, condition_photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                  [
                    shipmentId, 
                    ocrResult.vin, 
                    ocrResult.plateNumber || null,
+                   specs ? specs.make : null,
+                   specs ? specs.model : null,
+                   specs ? specs.year : null,
                    'Yard In',
-                   ocrResult.type !== 'document' ? tempUrl : null
+                   ocrResult.type !== 'document' ? JSON.stringify([targetRelativeUrl]) : null
                  ]
                );
+               
+               // 프론트엔드로 보내주기 위해 ocrResult.extracted 확장
+               (ocrResult as any).make = specs ? specs.make : null;
+               (ocrResult as any).model = specs ? specs.model : null;
+               (ocrResult as any).year = specs ? specs.year : null;
             }
           }
         } else {
@@ -447,7 +498,7 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
           extracted: ocrResult
         });
       } catch (imgError) {
-        console.error(\`\${image.originalname} 처리 실패:\`, imgError);
+        console.error(`${image.originalname} 처리 실패:`, imgError);
         processedResults.push({
           fileName: image.originalname,
           status: 'error',

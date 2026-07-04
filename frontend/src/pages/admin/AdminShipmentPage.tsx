@@ -195,9 +195,14 @@ export default function AdminShipmentPage() {
         { withCredentials: true }
       );
       if (res.data.success) {
-        alert(res.data.message);
         setIsVerifierOpen(false);
         fetchShipments();
+        const targetShipment = shipments.find(s => s.bl_number === blNumber);
+        if (targetShipment && window.confirm(`${res.data.message}\n\n화주가 아직 차량 사진 3종을 업로드하지 않은 경우, 포워더 대행을 위해 차량 현황판으로 이동하시겠습니까?`)) {
+          setActiveDashboardShipment({ id: targetShipment.id, blNumber: targetShipment.bl_number });
+        } else if (!targetShipment) {
+          alert(res.data.message);
+        }
       }
     } catch (err: any) {
       alert(err.response?.data?.message || "서류 검증 처리 실패");
@@ -736,6 +741,16 @@ export default function AdminShipmentPage() {
                       </span>
                     </td>
                     <td className="p-4 align-top">
+                      {/* 공통 기능: 차량 현황판 (포워더 대행을 위해 상태 무관 노출) */}
+                      <div className="mb-3">
+                        <button
+                          onClick={() => setActiveDashboardShipment({ id: s.id, blNumber: s.bl_number })}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
+                        >
+                          <Car size={14} /> 차량 현황판 (사진/수기입력)
+                        </button>
+                      </div>
+
                       {/* 1단계: 서류 업로드 대기 */}
                       {s.status === "Pending Documents" && (
                         <span className="text-xs text-slate-400 font-medium italic">화주의 인보이스/패킹리스트 제출을 대기하고 있습니다.</span>
@@ -754,15 +769,9 @@ export default function AdminShipmentPage() {
                                 setVerifierActiveTab("invoice");
                                 setIsVerifierOpen(true);
                               }}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
                             >
                               <Eye size={14} /> 서류 검증 (인보이스/패킹)
-                            </button>
-                            <button
-                              onClick={() => setActiveDashboardShipment({ id: s.id, blNumber: s.bl_number })}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm"
-                            >
-                              <Car size={14} /> 차량 현황판 보기
                             </button>
                           </div>
                         </div>

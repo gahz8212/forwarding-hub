@@ -69,7 +69,7 @@ const initDB = async () => {
         cbm DECIMAL(8, 2) COMMENT '부피(CBM)',
         drivability ENUM('Running', 'Towing', 'Forklift') DEFAULT 'Running' COMMENT '구동/선적 상태',
         status VARCHAR(50) DEFAULT 'Pending' COMMENT '야드 반입, 선적 등 현재 상태',
-        condition_photo_url VARCHAR(255) NULL COMMENT '상태/데미지 리포트 사진 경로',
+        condition_photo_url TEXT NULL COMMENT '상태/데미지 리포트 사진 경로 (JSON 배열)',
         deregistration_no VARCHAR(100) NULL COMMENT '수출말소등록번호',
         customs_cleared BOOLEAN DEFAULT FALSE COMMENT '수출통관 완료 여부',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

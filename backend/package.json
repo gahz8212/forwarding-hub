@@ -24,6 +24,7 @@
     "multer": "^2.2.0",
     "mysql2": "^3.22.5",
     "node-cron": "^4.5.0",
+    "path": "^0.12.7",
     "pdf-parse": "^2.4.5",
     "puppeteer": "^25.2.1",
     "puppeteer-extra": "^3.3.6",

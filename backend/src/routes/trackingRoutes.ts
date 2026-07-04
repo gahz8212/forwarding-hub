@@ -6,7 +6,9 @@ import {
   verifyDocs, 
   assignTruck,
   updateShipmentStatus,
-  reRequestDocs
+  reRequestDocs,
+  getVehiclesByShipment,
+  assignPhotosToVehicle
 } from '../controllers/trackingController';
 import multer from 'multer';
 import path from 'path';
@@ -78,5 +80,11 @@ router.post('/update-status', updateShipmentStatus);
 
 // POST /api/tracking/re-request-docs (포워더가 서류 재요청)
 router.post('/re-request-docs', reRequestDocs);
+
+// GET /api/tracking/vehicles/:shipmentId (저장된 차량 목록 불러오기)
+router.get('/vehicles/:shipmentId', getVehiclesByShipment);
+
+// POST /api/tracking/vehicles/:id/photos (사진 배정 및 물리적 폴더 이동)
+router.post('/vehicles/:id/photos', assignPhotosToVehicle);
 
 export default router;

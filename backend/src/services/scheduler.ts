@@ -1,5 +1,7 @@
 import cron from "node-cron";
 import pool from "../config/db";
+import fs from "fs";
+import path from "path";
 
 // 날짜 포맷팅 함수 (YYYY-MM-DD)
 const formatDate = (date: Date) => {
@@ -15,7 +17,39 @@ export const initScheduler = () => {
     await checkAndSendAlerts();
     console.log("🔍 [BATCH] 24시간이 경과한 임시 파일 그리드 데이터 정리 시작...");
     await cleanupTempGridData();
+    console.log("🔍 [BATCH] 1주일이 경과한 미분류 임시 사진(temp) 정리 시작...");
+    cleanupTempPhotos();
   });
+};
+
+export const cleanupTempPhotos = () => {
+  try {
+    const tempFolder = path.join(__dirname, '../../uploads', 'temp');
+    if (!fs.existsSync(tempFolder)) return;
+
+    const files = fs.readdirSync(tempFolder);
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    
+    let deletedCount = 0;
+
+    files.forEach(file => {
+      const filePath = path.join(tempFolder, file);
+      const stat = fs.statSync(filePath);
+      
+      if (stat.mtimeMs < oneWeekAgo) {
+        try {
+          fs.unlinkSync(filePath);
+          deletedCount++;
+        } catch (err) {
+          console.error(`파일 삭제 실패: ${filePath}`, err);
+        }
+      }
+    });
+
+    console.log(`[BATCH] 임시 사진 파일 정리 완료: ${deletedCount}개 삭제됨`);
+  } catch (error) {
+    console.error("[BATCH ERROR] 임시 사진 정리 중 에러 발생:", error);
+  }
 };
 
 export const cleanupTempGridData = async () => {
