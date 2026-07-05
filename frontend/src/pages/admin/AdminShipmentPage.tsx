@@ -19,7 +19,8 @@ import {
   AlertCircle,
   FileSpreadsheet,
   X,
-  Car
+  Car,
+  BellRing
 } from "lucide-react";
 import VehicleDashboardModal from "../../components/VehicleDashboardModal";
 
@@ -82,6 +83,9 @@ export default function AdminShipmentPage() {
   // 로로선 차량 대시보드 상태
   const [activeDashboardShipment, setActiveDashboardShipment] = useState<{ id: number; blNumber: string } | null>(null);
 
+  // 화주 대기 서류 알림 토스트 상태
+  const [docAlert, setDocAlert] = useState<{ blNumber: string; count: number; shipmentId: number } | null>(null);
+
   const fetchShipments = () => {
     setLoading(true);
     axios
@@ -112,6 +116,13 @@ export default function AdminShipmentPage() {
       console.log("실시간 선적 상태 업데이트 수신:", data);
       // 목록 갱신
       fetchShipments();
+    });
+
+    socket.on("new_shipper_docs_alert", (data) => {
+      console.log("화주 서류 업로드 수신:", data);
+      setDocAlert(data);
+      // 15초 후 자동 닫힘
+      setTimeout(() => setDocAlert(null), 15000);
     });
 
     return () => {
@@ -1319,6 +1330,39 @@ export default function AdminShipmentPage() {
           onClose={() => setActiveDashboardShipment(null)}
         />
       )}
+
+      {/* 화주 서류 업로드 알림 토스트 */}
+      {docAlert && (
+        <div className="fixed bottom-6 right-6 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border-l-4 border-blue-500 p-5 w-80 z-[100] animate-in slide-in-from-bottom-5">
+          <div className="flex justify-between items-start">
+            <div className="flex gap-3">
+              <div className="bg-blue-100 text-blue-600 p-2 rounded-full h-fit">
+                <BellRing size={20} className="animate-pulse" />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-800 dark:text-white text-sm">새로운 차량 사진 도착</h4>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  B/L: <span className="font-bold">{docAlert.blNumber}</span><br/>
+                  화주가 <span className="font-bold text-blue-600">{docAlert.count}</span>장의 대기 서류를 올렸습니다.
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setDocAlert(null)} className="text-slate-400 hover:text-slate-600">
+              <X size={18} />
+            </button>
+          </div>
+          <button 
+            onClick={() => {
+              setActiveDashboardShipment({ id: docAlert.shipmentId, blNumber: docAlert.blNumber });
+              setDocAlert(null);
+            }}
+            className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            차량 관리 대시보드 열기
+          </button>
+        </div>
+      )}
+
     </div>
   );
 }

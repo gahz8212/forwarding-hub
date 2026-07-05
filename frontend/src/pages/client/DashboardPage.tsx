@@ -408,7 +408,9 @@ export default function DashboardPage() {
     }
     setUploadingPhotos(true);
     const formData = new FormData();
-    formData.append("shipmentId", trackingData.id.toString());
+    formData.append("shipmentId", trackingData.id?.toString() || trackingData.bl_number);
+    formData.append("skipOcr", "true");
+    formData.append("blNumber", trackingData.bl_number);
     
     Array.from(photoFiles).slice(0, 20).forEach(file => {
       formData.append("photos", file);

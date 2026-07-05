@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { X, Camera, CheckCircle, Truck, Ship, AlertTriangle, Upload, FileImage, Loader2, Send, GripHorizontal, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { io } from "socket.io-client";
+import { X, Camera, CheckCircle, Truck, Ship, AlertTriangle, Upload, FileImage, Loader2, Send, GripHorizontal, ChevronLeft, ChevronRight, Save, Trash2, BellRing } from "lucide-react";
+import BuyerInfoModal from './BuyerInfoModal';
+import PendingDocsModal from './PendingDocsModal';
 
 interface Vehicle {
   id: number;
@@ -37,8 +40,12 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
   const [unclassifiedPhotos, setUnclassifiedPhotos] = useState<string[]>([]);
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showBuyerModal, setShowBuyerModal] = useState(false);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [buyerInfo, setBuyerInfo] = useState({ name: '', address: '', phone: '', email: '' });
   const [uploading, setUploading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [globalBuyer, setGlobalBuyer] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fastFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -95,12 +102,16 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
               make: res.extracted.make || "Unknown",
               model: res.extracted.model || "Unknown",
               year: res.extracted.year || new Date().getFullYear(),
-              drivability: "Running",
+              drivability: "",
               status: "Yard In",
               condition_photo_urls: [],
               customs_cleared: false,
               buyer: "",
-              price: 0
+              price: 0,
+              plate_number: "",
+              mileage: "",
+              initial_registration_date: "",
+              vehicle_type: ""
             };
 
             // 문서 사진에서 추출된 추가 제원 정보 병합
@@ -178,6 +189,61 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     setVehicles(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
   };
 
+  const handlePendingDocsConfirm = async (selectedUrls: string[]) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/files/analyze-pending-photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          shipmentId,
+          blNumber,
+          photoUrls: selectedUrls 
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert(`분석 완료! ${data.data.newVehiclesCount}대의 차량이 생성되었습니다.`);
+        fetchVehicles();
+        fetchUnclassifiedPhotos();
+      } else {
+        alert("분석 실패: " + data.message);
+      }
+    } catch (err) {
+      console.error(err);
+      throw err;
+    }
+  };
+
+  const handleSaveAll = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}/save-all`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blNumber,
+          vehicles
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert('모든 데이터가 성공적으로 저장되었습니다.');
+        // 저장 후 남아있는(정리된) 뱃지나 미분류 사진 등을 최신화
+        fetchUnclassifiedPhotos();
+      } else {
+        alert('저장 실패: ' + data.message);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('저장 중 서버 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isSaveDisabled = vehicles.some(v => v.plate_number?.includes('?') || !v.drivability);
+
   const handleDragStart = (e: React.DragEvent, photoUrl: string) => {
     e.dataTransfer.setData("photoUrl", photoUrl);
     e.dataTransfer.effectAllowed = "move";
@@ -200,7 +266,6 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       alert(`최대 10장 제한으로 인해 ${spaceLeft}장만 배정되었습니다.`);
     }
 
-    // 낙관적 UI 업데이트
     setUnclassifiedPhotos(unclass => unclass.filter(url => !photosToAdd.includes(url)));
     setSelectedPhotos([]);
 
@@ -212,7 +277,6 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       return v;
     }));
 
-    // 백엔드 API 호출 (물리적 파일 이동 및 DB 업데이트)
     try {
       const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${vehicleId}/photos`, {
         method: "POST",
@@ -295,32 +359,51 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     }
   };
 
-  useEffect(() => {
-    const fetchVehicles = async () => {
-      setLoading(true);
-      try {
-        const [vehiclesRes, photosRes] = await Promise.all([
-          fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}`),
-          fetch(`http://localhost:5000/api/files/unclassified-photos/${blNumber}`)
-        ]);
-        
-        const vehiclesData = await vehiclesRes.json();
-        if (vehiclesData.success) {
-          setVehicles(vehiclesData.data);
-        }
-        
-        const photosData = await photosRes.json();
-        if (photosData.success) {
-          setUnclassifiedPhotos(photosData.data);
-        }
-      } catch (err) {
-        console.error("차량 목록 조회 실패:", err);
-      } finally {
-        setLoading(false);
+  const fetchVehicles = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}`);
+      const data = await res.json();
+      if (data.success) {
+        setVehicles(data.data);
       }
-    };
+    } catch (err) {
+      console.error("차량 목록 조회 실패:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchUnclassifiedPhotos = async () => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/files/unclassified-photos/${blNumber}`);
+      const data = await res.json();
+      if (data.success) {
+        setUnclassifiedPhotos(data.data);
+      }
+    } catch (err) {
+      console.error("미분류 사진 조회 실패:", err);
+    }
+  };
+
+  useEffect(() => {
     fetchVehicles();
-  }, [shipmentId]);
+    fetchUnclassifiedPhotos();
+
+    const socket = io("http://localhost:5000");
+    socket.emit("join", { role: "admin" });
+
+    socket.on("new_shipper_docs_alert", (data) => {
+      // If the currently open dashboard matches the shipment that received photos
+      if (data.blNumber === blNumber || data.shipmentId === shipmentId) {
+        fetchUnclassifiedPhotos();
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [shipmentId, blNumber]);
 
   const handleReset = async () => {
     if (!window.confirm("정말 이 B/L의 모든 차량 정보와 미분류 사진을 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) {
@@ -370,75 +453,106 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-[1200px] max-h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center">
-              <Ship className="mr-2 text-blue-600" size={20} />
-              로로선 차량 관리 대시보드
-            </h2>
-            <p className="text-sm text-slate-500 mt-1">B/L 번호: <span className="font-mono font-bold text-blue-600">{blNumber}</span></p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={handleReset}
-              disabled={loading}
-              className="flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 border border-red-200 dark:border-red-800"
-              title="이 B/L의 모든 차량 정보와 미분류 사진을 초기화합니다."
-            >
-              <Trash2 size={16} />
-              초기화
-            </button>
-            <button 
-              onClick={handleGeneratePDF}
-              disabled={isSending}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
-            >
-              {isSending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-              {isSending ? "생성 및 전송 중..." : "PDF 자동생성 및 카톡 전송"}
-            </button>
-            
-            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 ml-2">
-              {/* Button 1: Fast Upload (No OCR) */}
-              <input 
-                type="file" 
-                multiple 
-                accept="image/*,.zip" 
-                className="hidden" 
-                ref={fastFileInputRef}
-                onChange={(e) => handleFileUpload(e, true)}
-              />
-              <button 
-                onClick={() => fastFileInputRef.current?.click()}
-                disabled={uploading}
-                className="flex items-center gap-1.5 bg-white dark:bg-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded text-sm font-bold shadow-sm transition-colors disabled:opacity-50 border border-slate-200 dark:border-slate-600 mr-2"
-                title="AI 분석 없이 사진을 1초 만에 미분류함으로 밀어넣습니다."
-              >
-                {uploading ? <Loader2 size={16} className="animate-spin" /> : <span className="text-amber-500">⚡</span>}
-                외관 사진만 고속 추가
-              </button>
+        <div className="flex flex-col p-4 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 relative">
+          <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+            <X size={20} className="text-slate-500" />
+          </button>
 
-              {/* Button 2: Full OCR Upload */}
-              <input 
-                type="file" 
-                multiple 
-                accept="image/*,.zip" 
-                className="hidden" 
-                ref={fileInputRef}
-                onChange={(e) => handleFileUpload(e, false)}
-              />
+          <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2 mb-4">
+            B/L {blNumber} 
+            <span className="text-slate-400 font-normal ml-2">차량 관리 대시보드</span>
+            {unclassifiedPhotos.length > 0 && (
               <button 
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
+                onClick={() => setShowPendingModal(true)}
+                className="ml-4 flex items-center gap-1.5 bg-rose-50 border border-rose-200 text-rose-600 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-rose-100 transition-colors animate-pulse shadow-sm"
               >
-                {uploading ? <Loader2 size={16} className="animate-spin" /> : <FileImage size={16} />}
-                {uploading ? "OCR 분석 중..." : "차량 등록 (AI 자동 매핑)"}
+                <BellRing size={14} className="animate-bounce" />
+                화주 대기 서류 {unclassifiedPhotos.length}장 확인
               </button>
+            )}
+          </h2>
+          
+          {/* Controls Bar */}
+          <div className="flex items-end justify-between w-full pr-10">
+            {/* Left Controls (BL & Buyer) */}
+            <div className="flex items-center gap-6">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">B/L Number</span>
+                <span className="font-mono text-sm font-bold text-blue-600">{blNumber}</span>
+              </div>
+              
+              <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
+              
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Buyer</span>
+                <button 
+                  onClick={() => setShowBuyerModal(true)}
+                  className={`text-left text-xs px-2.5 py-1.5 border ${globalBuyer ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800' : 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'} rounded focus:border-indigo-500 w-48 transition-colors text-slate-700 dark:text-slate-300 overflow-hidden text-ellipsis whitespace-nowrap`}
+                >
+                  {globalBuyer || <span className="text-blue-500 dark:text-blue-400 font-medium">수입자(바이어) 정보 입력...</span>}
+                </button>
+              </div>
             </div>
 
-            <button onClick={onClose} className="p-2 ml-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
-              <X size={20} className="text-slate-500" />
-            </button>
+            {/* Right Controls (Buttons) */}
+            <div className="flex items-center gap-2.5">
+              <button 
+                onClick={handleReset}
+                disabled={loading}
+                className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 px-3 py-1.5 rounded text-xs font-bold transition-colors disabled:opacity-50 border border-red-200 dark:border-red-800"
+              >
+                <Trash2 size={14} />
+                초기화
+              </button>
+              
+              <div className="flex gap-1.5">
+                <button 
+                  onClick={handleSaveAll}
+                  disabled={isSaveDisabled || loading}
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                  title={isSaveDisabled ? "차량번호 '?' 수정 및 구동상태를 모두 선택해야 저장할 수 있습니다." : "모든 변경사항 저장"}
+                >
+                  <Save size={14} />
+                  전체 저장
+                </button>
+                
+                <div className="flex bg-slate-100 dark:bg-slate-800 rounded p-1 ml-1 border border-slate-200 dark:border-slate-700">
+                  <input 
+                    type="file" 
+                    multiple 
+                    accept="image/*,.zip" 
+                    className="hidden" 
+                    ref={fastFileInputRef}
+                    onChange={(e) => handleFileUpload(e, true)}
+                  />
+                  <button 
+                    onClick={() => fastFileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex items-center gap-1.5 bg-white dark:bg-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-sm text-xs font-bold shadow-sm transition-colors disabled:opacity-50 border border-slate-200 dark:border-slate-600 mr-1"
+                  >
+                    {uploading ? <Loader2 size={14} className="animate-spin" /> : <span className="text-amber-500">⚡</span>}
+                    외관 사진 추가
+                  </button>
+
+                  <input 
+                    type="file" 
+                    multiple 
+                    accept="image/*,.zip" 
+                    className="hidden" 
+                    ref={fileInputRef}
+                    onChange={(e) => handleFileUpload(e, false)}
+                  />
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-sm text-xs font-bold shadow-sm transition-colors disabled:opacity-50"
+                  >
+                    {uploading ? <Loader2 size={14} className="animate-spin" /> : <FileImage size={14} />}
+                    {uploading ? "분석 중..." : "AI 차량 등록"}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -453,90 +567,113 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
             ) : (
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 sticky top-0 z-10 shadow-sm">
                     <tr>
                       <th className="p-3 font-bold w-40">차대번호 (VIN)</th>
-                      <th className="p-3 font-bold w-64">제원 및 식별정보</th>
-                      <th className="p-3 font-bold w-48">수출 정보 (바이어/단가)</th>
+                      <th className="p-3 font-bold w-[450px]">제원 및 단가 정보</th>
                       <th className="p-3 font-bold w-32">구동 여부</th>
                       <th className="p-3 font-bold text-center w-36">데미지 사진 (외관)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {vehicles.map((v) => (
-                      <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td className="p-3 font-mono font-bold text-slate-700 dark:text-slate-200">{v.vin}</td>
-                        <td className="p-3">
-                          <div className="font-bold text-slate-800 dark:text-white mb-1.5">{v.make} {v.model} <span className="text-xs text-slate-500 font-normal">({v.year}년식)</span></div>
-                          <div className="grid grid-cols-2 gap-1.5 w-full">
-                            <input 
-                              type="text" 
-                              placeholder="차량번호" 
-                              value={v.plate_number || ""} 
-                              onChange={(e) => handleInputChange(v.id, "plate_number", e.target.value)}
-                              className="text-[11px] px-2 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500"
-                              title="차량번호 (수동 수정 가능)"
-                            />
-                            <input 
-                              type="text" 
-                              placeholder="주행거리(km)" 
-                              value={v.mileage || ""} 
-                              onChange={(e) => handleInputChange(v.id, "mileage", e.target.value)}
-                              className="text-[11px] px-2 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500"
-                              title="주행거리"
-                            />
-                            <input 
-                              type="text" 
-                              placeholder="최초등록일(YYYY-MM-DD)" 
-                              value={v.initial_registration_date || ""} 
-                              onChange={(e) => handleInputChange(v.id, "initial_registration_date", e.target.value)}
-                              className="text-[11px] px-2 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500"
-                              title="최초등록일"
-                            />
-                            <input 
-                              type="text" 
-                              placeholder="차종(승용/화물..)" 
-                              value={v.vehicle_type || ""} 
-                              onChange={(e) => handleInputChange(v.id, "vehicle_type", e.target.value)}
-                              className="text-[11px] px-2 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500"
-                              title="차종"
-                            />
-                          </div>
-                          <div className="mt-2">{getStatusBadge(v.status)}</div>
+                      <tr key={v.id} className={`transition-colors ${
+                        (v.plate_number?.includes('?') || !v.drivability) 
+                          ? 'bg-red-50/50 dark:bg-red-900/10' 
+                          : 'even:bg-slate-50 dark:even:bg-slate-800/30 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                      }`}>
+                        <td className="p-3 align-top">
+                          <input 
+                            type="text" 
+                            value={v.vin || ""} 
+                            onChange={(e) => handleInputChange(v.id, "vin", e.target.value)}
+                            placeholder="차대번호 입력"
+                            className="font-mono font-bold text-slate-700 dark:text-slate-200 mb-2 w-full px-2 py-1 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-blue-500 rounded bg-transparent focus:bg-white dark:focus:bg-slate-800 outline-none transition-colors"
+                          />
+                          <div>{getStatusBadge(v.status)}</div>
                         </td>
-                        <td className="p-3">
-                          <div className="flex flex-col gap-1.5 w-full">
-                            <input 
-                              type="text" 
-                              placeholder="바이어명 입력" 
-                              value={v.buyer || ""} 
-                              onChange={(e) => handleInputChange(v.id, "buyer", e.target.value)}
-                              className="text-xs px-2.5 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500 transition-colors"
-                            />
-                            <div className="relative">
-                              <span className="absolute left-2.5 top-1.5 text-xs font-bold text-slate-400">$</span>
+                        <td className="p-3 align-top">
+                          <div className="font-bold text-slate-800 dark:text-white mb-3">
+                            {v.make !== 'Unknown' ? v.make : ''} {v.model !== 'Unknown' ? v.model : ''}
+                            {v.year ? <span className="text-xs text-slate-500 font-normal ml-1">({v.year}년식)</span> : null}
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2 w-full">
+                            <div className="flex items-center text-[11px]">
+                              <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">차량번호:</span>
                               <input 
-                                type="number" 
-                                placeholder="가격(USD)" 
-                                value={v.price || ""} 
-                                onChange={(e) => handleInputChange(v.id, "price", parseFloat(e.target.value) || "")}
-                                className="text-xs pl-6 pr-2.5 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500 transition-colors w-full"
+                                type="text" 
+                                value={v.plate_number || ""} 
+                                onChange={(e) => handleInputChange(v.id, "plate_number", e.target.value)}
+                                className={`flex-1 min-w-0 px-2 py-1 border rounded outline-none transition-colors ${
+                                  v.plate_number?.includes('?') 
+                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 focus:border-red-600 focus:ring-1 focus:ring-red-500' 
+                                    : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-blue-500'
+                                }`}
                               />
+                            </div>
+                            <div className="flex items-center text-[11px]">
+                              <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">주행거리:</span>
+                              <input 
+                                type="text" 
+                                value={v.mileage || ""} 
+                                onChange={(e) => handleInputChange(v.id, "mileage", e.target.value)}
+                                className="flex-1 min-w-0 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                              />
+                            </div>
+                            <div className="flex items-center text-[11px]">
+                              <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">최초등록:</span>
+                              <input 
+                                type="text" 
+                                value={v.initial_registration_date || ""} 
+                                onChange={(e) => handleInputChange(v.id, "initial_registration_date", e.target.value)}
+                                className="flex-1 min-w-0 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                              />
+                            </div>
+                            <div className="flex items-center text-[11px]">
+                              <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">차종:</span>
+                              <input 
+                                type="text" 
+                                value={v.vehicle_type || ""} 
+                                onChange={(e) => handleInputChange(v.id, "vehicle_type", e.target.value)}
+                                className="flex-1 min-w-0 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                              />
+                            </div>
+                            
+                            {/* 단가 항목 */}
+                            <div className="flex items-center text-[11px]">
+                              <span className="w-16 font-bold text-emerald-600 dark:text-emerald-400 shrink-0">수출단가:</span>
+                              <div className="relative flex-1 min-w-0">
+                                <span className="absolute left-2.5 top-1.5 text-xs font-bold text-slate-400">$</span>
+                                <input 
+                                  type="number" 
+                                  placeholder="가격 (USD)" 
+                                  value={v.price || ""} 
+                                  onChange={(e) => handleInputChange(v.id, "price", parseFloat(e.target.value) || "")}
+                                  className="w-full pl-6 pr-2.5 py-1 border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 rounded outline-none focus:border-emerald-500 transition-colors"
+                                />
+                              </div>
                             </div>
                           </div>
                         </td>
-                        <td className="p-3">
+                        <td className="p-3 align-top">
                           <div className="flex flex-col gap-2">
                             {getDrivabilityIcon(v.drivability)}
-                            <select 
-                              value={v.drivability} 
-                              onChange={(e) => handleInputChange(v.id, "drivability", e.target.value)}
-                              className="text-[11px] p-1 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500 cursor-pointer text-slate-600 dark:text-slate-300 w-full"
-                            >
-                              <option value="Running">운행 가능 (Running)</option>
-                              <option value="Towing">견인 필요 (Towing)</option>
-                              <option value="Forklift">지게차 필요 (Forklift)</option>
-                            </select>
+                            <div className="flex flex-col gap-1.5 mt-1 border-t border-slate-200 dark:border-slate-700 pt-2">
+                              {["Running", "Towing", "Forklift"].map(status => (
+                                <label key={status} className="flex items-center gap-1.5 text-[11px] cursor-pointer text-slate-700 dark:text-slate-300 hover:text-blue-600 transition-colors">
+                                  <input 
+                                    type="radio" 
+                                    name={`drivability-${v.id}`} 
+                                    value={status} 
+                                    checked={v.drivability === status} 
+                                    onChange={(e) => handleInputChange(v.id, "drivability", e.target.value)} 
+                                    className="cursor-pointer accent-blue-600"
+                                  />
+                                  {status === 'Running' ? '운행 가능' : status === 'Towing' ? '견인 필요' : '지게차 필요'}
+                                </label>
+                              ))}
+                            </div>
                           </div>
                         </td>
                         <td 
@@ -693,6 +830,23 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
           </div>
         </div>
       )}
+      <BuyerInfoModal 
+        isOpen={showBuyerModal} 
+        onClose={() => setShowBuyerModal(false)}
+        buyerInfo={buyerInfo}
+        setBuyerInfo={setBuyerInfo}
+        onSave={() => {
+          setGlobalBuyer(buyerInfo.name);
+          setShowBuyerModal(false);
+          // TODO: Save buyerInfo to backend
+        }}
+      />
+      <PendingDocsModal
+        isOpen={showPendingModal}
+        onClose={() => setShowPendingModal(false)}
+        unclassifiedPhotos={unclassifiedPhotos}
+        onConfirm={handlePendingDocsConfirm}
+      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ interface TrackingEvent {
 }
 
 interface TrackingData {
+  id?: number;
   bl_number: string;
   vessel_name: string;
   status: string;

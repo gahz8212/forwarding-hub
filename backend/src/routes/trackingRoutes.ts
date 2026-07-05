@@ -9,7 +9,8 @@ import {
   reRequestDocs,
   getVehiclesByShipment,
   assignPhotosToVehicle,
-  resetDashboardData
+  resetDashboardData,
+  saveAllVehicles
 } from '../controllers/trackingController';
 import multer from 'multer';
 import path from 'path';
@@ -90,5 +91,8 @@ router.post('/vehicles/:id/photos', assignPhotosToVehicle);
 
 // DELETE /api/tracking/vehicles/:shipmentId/reset (대시보드 데이터 및 미분류 사진 초기화)
 router.delete('/vehicles/:shipmentId/reset', resetDashboardData);
+
+// PUT /api/tracking/vehicles/:shipmentId/save-all (차량 전체 저장 및 완료된 뱃지 사진 정리)
+router.put('/vehicles/:shipmentId/save-all', saveAllVehicles);
 
 export default router;

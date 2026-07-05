@@ -471,3 +471,49 @@ export const resetDashboardData = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: '초기화 중 서버 에러가 발생했습니다.' });
   }
 };
+
+export const saveAllVehicles = async (req: Request, res: Response) => {
+  try {
+    const { shipmentId } = req.params;
+    const { blNumber, vehicles } = req.body;
+
+    if (!shipmentId || !blNumber) {
+      return res.status(400).json({ success: false, message: '선적 ID와 BL 번호가 필요합니다.' });
+    }
+
+    // 1. 차량 정보 업데이트 (vehicles 배열 순회)
+    if (vehicles && Array.isArray(vehicles)) {
+      for (const v of vehicles) {
+        await pool.query(
+          `UPDATE vehicles 
+           SET vin = ?, plate_number = ?, vehicle_type = ?, mileage = ?, initial_registration_date = ?, 
+               make = ?, model = ?, year = ?, price = ?, drivability = ?
+           WHERE id = ? AND shipment_id = ?`,
+          [
+            v.vin || null, v.plate_number || null, v.vehicle_type || null, v.mileage || null, v.initial_registration_date || null,
+            v.make || null, v.model || null, v.year || null, v.price || null, v.drivability || 'Running',
+            v.id, shipmentId
+          ]
+        );
+      }
+    }
+
+    // 2. 임시 폴더 내의 분석된 사진 및 원본 백업 파일 삭제 (미분류 외관 사진은 유지)
+    const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const tempFolder = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
+    
+    if (fs.existsSync(tempFolder)) {
+      const files = fs.readdirSync(tempFolder);
+      for (const file of files) {
+        if (file.startsWith('analyzed_') || file.startsWith('original_')) {
+          fs.unlinkSync(path.join(tempFolder, file));
+        }
+      }
+    }
+
+    return res.json({ success: true, message: '모든 데이터가 저장되었습니다.' });
+  } catch (error) {
+    console.error('전체 저장 에러:', error);
+    return res.status(500).json({ success: false, message: '저장 중 서버 에러가 발생했습니다.' });
+  }
+};

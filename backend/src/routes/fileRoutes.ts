@@ -7,7 +7,8 @@ import {
   getShipperMapping, 
   exportCustomsExcel,
   uploadVehiclePhotos,
-  getUnclassifiedPhotos
+  getUnclassifiedPhotos,
+  analyzePendingPhotos
 } from '../controllers/fileController';
 
 const router = Router();
@@ -23,6 +24,9 @@ router.post('/upload-vehicle-photos', upload.array('photos', 20), uploadVehicleP
 
 // 특정 BL의 미분류 사진 조회 엔드포인트
 router.get('/unclassified-photos/:blNumber', getUnclassifiedPhotos);
+
+// 대기 중인 사진 AI 분석 실행
+router.post('/analyze-pending-photos', analyzePendingPhotos);
 
 // 분석 완료된 그리드 데이터 조회 엔드포인트
 router.get('/view/:fileKey', getFileGrid);

@@ -31,17 +31,27 @@ function extractVehicleInfo(text: string): OcrResult {
     type: 'unknown',
   };
 
-  const cleanText = text.replace(/[\s\-_:\.]/g, '').toUpperCase();
+  // 모든 공백 및 특수문자(기호, 괄호 등)를 제거하여 OCR 노이즈에 유연하게 대응
+  const cleanText = text.replace(/[\s\-_:\.,\|'\"\[\]\(\)\<\>]/g, '').toUpperCase();
 
-  // 1. 차량번호 정규식
-  const plateMatch2 = cleanText.match(/등록번호([0-9]{2,3}[가-힣]?[0-9]{4})|등록번호([0-9가-힣]+)차종/);
+  // 실제 대한민국 자동차 번호판에 사용되는 받침 없는 한글 40자 (군용, 외교용 제외 민수용)
+  const validChars = '가나다라마거너더러머버서어저고노도로모보소오조구누두루무부수우주바사아자배허하호';
+  
+  // 1. 차량번호 정규식 (유연하게 매칭)
+  const plateMatch2 = text.match(new RegExp(`등록번호\\s*[:\-\s]?\\s*([0-9]{2,3}[${validChars}][0-9]{4})`)) 
+                   || cleanText.match(new RegExp(`등록번호([0-9]{2,3}[${validChars}][0-9]{4})`));
   if (plateMatch2) {
-    result.plateNumber = plateMatch2[1] || plateMatch2[2];
+    result.plateNumber = plateMatch2[1];
   } else {
-    const plateRegex = /\d{2,3}[가-힣]\d{4}/g;
+    const plateRegex = new RegExp(`\\d{2,3}[${validChars}]\\d{4}|\\d{6,7}`, 'g');
     const plateMatch = cleanText.match(plateRegex);
     if (plateMatch && plateMatch.length > 0) {
-      result.plateNumber = plateMatch[0];
+      const match = plateMatch[0];
+      if (/^\d{6,7}$/.test(match)) {
+        result.plateNumber = match.slice(0, -4) + '?' + match.slice(-4);
+      } else {
+        result.plateNumber = match;
+      }
     }
   }
 
@@ -63,14 +73,15 @@ function extractVehicleInfo(text: string): OcrResult {
     result.vehicleType = typeMatch2[1];
   }
 
-  // 4. 주행거리 (숫자 + km 또는 '주행거리'와 '차명' 사이의 숫자)
-  const mileageMatch2 = cleanText.match(/주행거리(\d+)KM/) || cleanText.match(/주행거리(\d+)차명/) || cleanText.match(/(\d+)KM/);
+  // 4. 주행거리 (숫자 + km 또는 숫자 연속)
+  const mileageMatch2 = cleanText.match(/주행거리(\d+)(KM)?/) || text.match(/주행거리\s*[:\-\s]*([0-9,]+)/);
   if (mileageMatch2) {
-    result.mileage = mileageMatch2[1] || mileageMatch2[2] || mileageMatch2[3];
+    const rawMileage = mileageMatch2[1] || mileageMatch2[2] || '';
+    result.mileage = rawMileage.replace(/,/g, '');
   }
 
   // 5. 모델연도 (4자리 숫자)
-  const yearMatch2 = cleanText.match(/모델연도(\d{4})/) || cleanText.match(/연식(\d{4})/);
+  const yearMatch2 = cleanText.match(/모델연도(\d{4})/) || cleanText.match(/연식(\d{4})/) || text.match(/모델연도\s*[:\-\s]*(\d{4})/);
   if (yearMatch2) {
     result.modelYear = parseInt(yearMatch2[1], 10);
   }
@@ -86,7 +97,7 @@ function extractVehicleInfo(text: string): OcrResult {
   }
 
   // 7. 최초등록일 (YYYY.MM.DD 등)
-  const dateMatch2 = cleanText.match(/최초등록일(\d{4})년?(\d{1,2})월?(\d{1,2})/);
+  const dateMatch2 = cleanText.match(/최초등록일(\d{4})년?(\d{1,2})월?(\d{1,2})일?/);
   if (dateMatch2) {
     result.initialRegistrationDate = `${dateMatch2[1]}-${dateMatch2[2].padStart(2, '0')}-${dateMatch2[3].padStart(2, '0')}`;
   } else {
@@ -117,8 +128,14 @@ function extractVehicleInfo(text: string): OcrResult {
  */
 export async function analyzeVehiclePhoto(imageBuffer: Buffer): Promise<OcrResult> {
   try {
-    // 구글 비전 API로 텍스트 감지 요청
-    const [result] = await client.textDetection(imageBuffer);
+    // 구글 비전 API로 텍스트 감지 요청 (종이 서류(문서)에 최적화된 documentTextDetection 사용 및 한글 힌트 추가)
+    const request = {
+      image: { content: imageBuffer },
+      imageContext: {
+        languageHints: ['ko', 'en'], // 한글 차량번호 인식을 위한 언어 힌트
+      },
+    };
+    const [result] = await client.documentTextDetection(request);
     const detections = result.textAnnotations;
     
     if (!detections || detections.length === 0) {
