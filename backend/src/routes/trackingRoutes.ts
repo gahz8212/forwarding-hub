@@ -8,7 +8,8 @@ import {
   updateShipmentStatus,
   reRequestDocs,
   getVehiclesByShipment,
-  assignPhotosToVehicle
+  assignPhotosToVehicle,
+  resetDashboardData
 } from '../controllers/trackingController';
 import multer from 'multer';
 import path from 'path';
@@ -86,5 +87,8 @@ router.get('/vehicles/:shipmentId', getVehiclesByShipment);
 
 // POST /api/tracking/vehicles/:id/photos (사진 배정 및 물리적 폴더 이동)
 router.post('/vehicles/:id/photos', assignPhotosToVehicle);
+
+// DELETE /api/tracking/vehicles/:shipmentId/reset (대시보드 데이터 및 미분류 사진 초기화)
+router.delete('/vehicles/:shipmentId/reset', resetDashboardData);
 
 export default router;

@@ -118,6 +118,9 @@ export const searchSchedules = async (req: Request, res: Response) => {
       params.push(Number(weight));
     }
 
+    // 이미 출항한 과거 스케줄은 DB 쿼리 단계에서 제외 (핵심 버그 수정)
+    query += ' AND etd >= CURDATE()';
+
     // 실제 선편이므로 임의 정렬 대신 출발지 기준 가장 빠른 항차(ETD ASC) 순으로 정렬하여 최대 100개 반환 후 필터링
     query += ' ORDER BY etd ASC LIMIT 100';
 
@@ -157,7 +160,7 @@ export const searchSchedules = async (req: Request, res: Response) => {
 
       // If any of the deadlines has passed, exclude this schedule
       return !deadlines.some(d => isDeadlinePassed(d));
-    }).slice(0, 10);
+    });
 
     res.json({
       success: true,

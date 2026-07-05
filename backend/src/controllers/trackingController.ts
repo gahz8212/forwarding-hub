@@ -439,3 +439,35 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: '사진 배정 중 서버 에러' });
   }
 };
+
+export const resetDashboardData = async (req: Request, res: Response) => {
+  try {
+    const { shipmentId } = req.params;
+    const blNumber = req.query.blNumber as string;
+
+    if (!shipmentId) {
+      return res.status(400).json({ success: false, message: '선적 ID가 필요합니다.' });
+    }
+
+    // 1. DB에서 차량 정보 전체 삭제
+    await pool.query('DELETE FROM vehicles WHERE shipment_id = ?', [shipmentId]);
+
+    // 2. 미분류 사진함 (temp 폴더 내 BL번호 폴더) 비우기
+    if (blNumber) {
+      const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const tempFolder = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
+      
+      if (fs.existsSync(tempFolder)) {
+        const files = fs.readdirSync(tempFolder);
+        for (const file of files) {
+          fs.unlinkSync(path.join(tempFolder, file));
+        }
+      }
+    }
+
+    return res.json({ success: true, message: '대시보드 데이터 및 미분류 사진이 모두 초기화되었습니다.' });
+  } catch (error) {
+    console.error('대시보드 초기화 에러:', error);
+    return res.status(500).json({ success: false, message: '초기화 중 서버 에러가 발생했습니다.' });
+  }
+};

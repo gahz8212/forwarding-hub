@@ -210,7 +210,7 @@ export default function SchedulePage() {
 
       {/* Schedule Results */}
       {schedules.length > 0 ? (
-        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col">
             <div className="p-6 border-b bg-slate-50 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-800 flex items-center">
                 <span>추천 선박 스케줄 목록</span>
@@ -219,7 +219,7 @@ export default function SchedulePage() {
                 </span>
               </h3>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto min-h-[500px]">
               <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-100">
                   <tr>

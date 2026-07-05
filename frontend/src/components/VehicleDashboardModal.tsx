@@ -13,6 +13,10 @@ interface Vehicle {
   customs_cleared: boolean;
   buyer?: string;
   price?: number;
+  plate_number?: string;
+  vehicle_type?: string;
+  mileage?: string;
+  initial_registration_date?: string;
 }
 
 interface Props {
@@ -85,21 +89,30 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
           
           if (res.status === 'success' && res.extracted?.vin) {
             const vin = res.extracted.vin;
-            if (!newVehiclesMap.has(vin)) {
-              newVehiclesMap.set(vin, {
-                id: Math.floor(Math.random() * 1000000), // 임시 ID
-                vin: vin,
-                make: res.extracted.make || "Unknown",
-                model: res.extracted.model || "Unknown",
-                year: res.extracted.year || new Date().getFullYear(),
-                drivability: "Running",
-                status: "Yard In",
-                condition_photo_urls: [],
-                customs_cleared: false,
-                buyer: "",
-                price: 0
-              });
-            }
+            const existingVeh = newVehiclesMap.get(vin) || {
+              id: res.extracted.id || Math.floor(Math.random() * 1000000),
+              vin: vin,
+              make: res.extracted.make || "Unknown",
+              model: res.extracted.model || "Unknown",
+              year: res.extracted.year || new Date().getFullYear(),
+              drivability: "Running",
+              status: "Yard In",
+              condition_photo_urls: [],
+              customs_cleared: false,
+              buyer: "",
+              price: 0
+            };
+
+            // 문서 사진에서 추출된 추가 제원 정보 병합
+            if (res.extracted.makeModel || res.extracted.make) existingVeh.make = res.extracted.makeModel || res.extracted.make;
+            if (res.extracted.model) existingVeh.model = res.extracted.model;
+            if (res.extracted.modelYear || res.extracted.year) existingVeh.year = res.extracted.modelYear || res.extracted.year;
+            if (res.extracted.plateNumber) existingVeh.plate_number = res.extracted.plateNumber;
+            if (res.extracted.vehicleType) existingVeh.vehicle_type = res.extracted.vehicleType;
+            if (res.extracted.mileage) existingVeh.mileage = res.extracted.mileage;
+            if (res.extracted.initialRegistrationDate) existingVeh.initial_registration_date = res.extracted.initialRegistrationDate;
+
+            newVehiclesMap.set(vin, existingVeh);
           } else {
             // 차대번호를 못 찾은 사진(외관 사진 등)은 미분류함으로
             if (serverUrl) {
@@ -108,12 +121,26 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
           }
         });
 
-        // 기존 차량 목록에 새로 인식된 차량 추가 (VIN 중복 방지)
+        // 기존 차량 목록에 새로 인식된 차량 추가 및 병합
         setVehicles(prev => {
           const combined = [...prev];
           newVehiclesMap.forEach((newVeh, vin) => {
-            if (!combined.find(v => v.vin === vin)) {
+            const existingIdx = combined.findIndex(v => v.vin === vin);
+            if (existingIdx === -1) {
               combined.push(newVeh);
+            } else {
+              // 기존에 화면에 떠있는 차량이라도 새로 추출된 정보(plate_number 등)가 있다면 덮어쓰기 병합
+              const oldVeh = combined[existingIdx];
+              combined[existingIdx] = {
+                ...oldVeh,
+                make: newVeh.make !== 'Unknown' ? newVeh.make : oldVeh.make,
+                model: newVeh.model !== 'Unknown' ? newVeh.model : oldVeh.model,
+                year: newVeh.year !== new Date().getFullYear() ? newVeh.year : oldVeh.year,
+                plate_number: newVeh.plate_number || oldVeh.plate_number,
+                vehicle_type: newVeh.vehicle_type || oldVeh.vehicle_type,
+                mileage: newVeh.mileage || oldVeh.mileage,
+                initial_registration_date: newVeh.initial_registration_date || oldVeh.initial_registration_date
+              };
             }
           });
           return combined;
@@ -272,12 +299,19 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     const fetchVehicles = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}`);
-        const data = await response.json();
-        if (data.success) {
-          // 서버 데이터 최우선 로드 (단, 데미지 사진 URL은 로컬 URL로 덮어쓰기 위해 프론트 캐싱 필요시 여기서 머지)
-          // 현재는 서버에 저장된 단일 사진만 불러옵니다.
-          setVehicles(data.data);
+        const [vehiclesRes, photosRes] = await Promise.all([
+          fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}`),
+          fetch(`http://localhost:5000/api/files/unclassified-photos/${blNumber}`)
+        ]);
+        
+        const vehiclesData = await vehiclesRes.json();
+        if (vehiclesData.success) {
+          setVehicles(vehiclesData.data);
+        }
+        
+        const photosData = await photosRes.json();
+        if (photosData.success) {
+          setUnclassifiedPhotos(photosData.data);
         }
       } catch (err) {
         console.error("차량 목록 조회 실패:", err);
@@ -287,6 +321,32 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     };
     fetchVehicles();
   }, [shipmentId]);
+
+  const handleReset = async () => {
+    if (!window.confirm("정말 이 B/L의 모든 차량 정보와 미분류 사진을 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}/reset?blNumber=${encodeURIComponent(blNumber)}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert("모든 데이터가 초기화되었습니다.");
+        setVehicles([]);
+        setUnclassifiedPhotos([]);
+      } else {
+        alert("초기화 실패: " + data.message);
+      }
+    } catch (err) {
+      console.error("초기화 에러:", err);
+      alert("초기화 중 서버 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -319,6 +379,15 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
             <p className="text-sm text-slate-500 mt-1">B/L 번호: <span className="font-mono font-bold text-blue-600">{blNumber}</span></p>
           </div>
           <div className="flex items-center gap-3">
+            <button 
+              onClick={handleReset}
+              disabled={loading}
+              className="flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50 border border-red-200 dark:border-red-800"
+              title="이 B/L의 모든 차량 정보와 미분류 사진을 초기화합니다."
+            >
+              <Trash2 size={16} />
+              초기화
+            </button>
             <button 
               onClick={handleGeneratePDF}
               disabled={isSending}
@@ -387,7 +456,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                   <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                     <tr>
                       <th className="p-3 font-bold w-40">차대번호 (VIN)</th>
-                      <th className="p-3 font-bold w-40">제원 (Make/Model)</th>
+                      <th className="p-3 font-bold w-64">제원 및 식별정보</th>
                       <th className="p-3 font-bold w-48">수출 정보 (바이어/단가)</th>
                       <th className="p-3 font-bold w-32">구동 여부</th>
                       <th className="p-3 font-bold text-center w-36">데미지 사진 (외관)</th>
@@ -398,9 +467,42 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                       <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                         <td className="p-3 font-mono font-bold text-slate-700 dark:text-slate-200">{v.vin}</td>
                         <td className="p-3">
-                          <div className="font-bold text-slate-800 dark:text-white">{v.make} {v.model}</div>
-                          <div className="text-xs text-slate-500">{v.year}년식</div>
-                          <div className="mt-1">{getStatusBadge(v.status)}</div>
+                          <div className="font-bold text-slate-800 dark:text-white mb-1.5">{v.make} {v.model} <span className="text-xs text-slate-500 font-normal">({v.year}년식)</span></div>
+                          <div className="grid grid-cols-2 gap-1.5 w-full">
+                            <input 
+                              type="text" 
+                              placeholder="차량번호" 
+                              value={v.plate_number || ""} 
+                              onChange={(e) => handleInputChange(v.id, "plate_number", e.target.value)}
+                              className="text-[11px] px-2 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500"
+                              title="차량번호 (수동 수정 가능)"
+                            />
+                            <input 
+                              type="text" 
+                              placeholder="주행거리(km)" 
+                              value={v.mileage || ""} 
+                              onChange={(e) => handleInputChange(v.id, "mileage", e.target.value)}
+                              className="text-[11px] px-2 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500"
+                              title="주행거리"
+                            />
+                            <input 
+                              type="text" 
+                              placeholder="최초등록일(YYYY-MM-DD)" 
+                              value={v.initial_registration_date || ""} 
+                              onChange={(e) => handleInputChange(v.id, "initial_registration_date", e.target.value)}
+                              className="text-[11px] px-2 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500"
+                              title="최초등록일"
+                            />
+                            <input 
+                              type="text" 
+                              placeholder="차종(승용/화물..)" 
+                              value={v.vehicle_type || ""} 
+                              onChange={(e) => handleInputChange(v.id, "vehicle_type", e.target.value)}
+                              className="text-[11px] px-2 py-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded outline-none focus:border-blue-500"
+                              title="차종"
+                            />
+                          </div>
+                          <div className="mt-2">{getStatusBadge(v.status)}</div>
                         </td>
                         <td className="p-3">
                           <div className="flex flex-col gap-1.5 w-full">
