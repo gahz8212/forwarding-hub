@@ -8,9 +8,21 @@ interface PendingDocsModalProps {
   onConfirm: (selectedUrls: string[]) => Promise<void>;
 }
 
+// URL이 상대경로인 경우 localhost 기준으로 보정
+function normalizeUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith('/uploads/')) {
+    return `http://localhost:5000${url}`;
+  }
+  return url;
+}
+
 const HoverZoomImage = ({ url, isSelected, onClick }: { url: string, isSelected: boolean, onClick: () => void }) => {
   const [zoomStyle, setZoomStyle] = useState<React.CSSProperties>({});
   const [isHovered, setIsHovered] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  const normalizedUrl = normalizeUrl(url);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
@@ -19,7 +31,7 @@ const HoverZoomImage = ({ url, isSelected, onClick }: { url: string, isSelected:
     
     setZoomStyle({
       transformOrigin: `${x}% ${y}%`,
-      transform: 'scale(3)' // 3배 확대
+      transform: 'scale(3)'
     });
   };
 
@@ -31,30 +43,43 @@ const HoverZoomImage = ({ url, isSelected, onClick }: { url: string, isSelected:
       onMouseMove={handleMouseMove}
       className={`relative aspect-square rounded-xl overflow-hidden cursor-pointer border-2 transition-all duration-200 ${
         isSelected 
-          ? 'border-blue-500 shadow-md' 
-          : 'border-transparent opacity-60 hover:opacity-100'
+          ? 'border-blue-500 shadow-lg shadow-blue-200' 
+          : 'border-transparent opacity-70 hover:opacity-100 hover:border-slate-300'
       }`}
     >
-      <img 
-        src={url} 
-        alt="대기 사진" 
-        className="w-full h-full object-cover transition-transform duration-[50ms] ease-out"
-        style={isHovered ? zoomStyle : {}}
-      />
+      {hasError ? (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 text-slate-400 gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span className="text-xs text-center px-2 leading-tight">사진을 불러올 수 없습니다</span>
+        </div>
+      ) : (
+        <img 
+          src={normalizedUrl} 
+          alt="대기 사진" 
+          className="w-full h-full object-cover transition-transform duration-[50ms] ease-out"
+          style={isHovered ? zoomStyle : {}}
+          onError={(e) => {
+            console.warn('[PendingDocsModal] 이미지 로드 실패:', normalizedUrl);
+            setHasError(true);
+          }}
+        />
+      )}
       
       {/* Checkbox Overlay */}
       <div className="absolute top-2 right-2 pointer-events-none">
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 shadow-sm ${
           isSelected 
             ? 'bg-blue-500 border-blue-500 text-white' 
             : 'bg-white/80 border-slate-300 text-transparent'
         }`}>
-          <CheckCircle size={16} className={isSelected ? 'block' : 'hidden'} />
+          <CheckCircle size={18} className={isSelected ? 'block' : 'hidden'} />
         </div>
       </div>
 
-      {/* Exclude overlay if not selected (투명도 조절로 호버 시 가리지 않게) */}
-      {!isSelected && (
+      {/* Filename tooltip at bottom */}
+      {!isSelected && !hasError && (
         <div 
           className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none transition-opacity duration-200"
           style={{ opacity: isHovered ? 0 : 1 }}
@@ -139,7 +164,7 @@ export default function PendingDocsModal({ isOpen, onClose, unclassifiedPhotos, 
               <p>대기 중인 사진이 없습니다.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-5">
               {unclassifiedPhotos.map((url, idx) => {
                 const isSelected = selectedUrls.has(url);
                 return (

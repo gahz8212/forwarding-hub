@@ -1,9 +1,29 @@
 import { Request, Response } from 'express';
+import puppeteer from 'puppeteer';
+import axios from 'axios';
 import pool from '../config/db';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { parseExcelToGridData, parsePdfToGridData } from '../services/fileParser';
+import { saveVehiclePhotoAndDeduplicate } from '../utils/photoHelper';
+
+function parseDateForDb(dateStr: any): string | null {
+  if (!dateStr) return null;
+  const str = String(dateStr).trim();
+  if (str.includes('T')) {
+    return str.split('T')[0];
+  }
+  const cleaned = str.replace(/\//g, '-');
+  if (cleaned.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    return cleaned;
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+  return null;
+}
 
 export const getAllShipments = async (req: Request, res: Response) => {
   try {
@@ -342,12 +362,30 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
         make: v.make || "Unknown",
         model: v.model || "Unknown",
         year: v.year || new Date().getFullYear(),
-        drivability: v.drivability || "Running",
+        drivability: v.drivability || "", // 빈 값(null)으로 전달하여 대기 중 분석 시에도 구동여부 미선택 상태 유지
         status: v.status || "Yard In",
         condition_photo_urls: urls.map(url => url.startsWith('http') ? url : `http://localhost:5000${url}`),
-        customs_cleared: false,
+        deregistration_photo_urls: (() => {
+          let dUrls = [];
+          if (v.deregistration_photo_url) {
+            try { dUrls = JSON.parse(v.deregistration_photo_url); } catch (e) { dUrls = [v.deregistration_photo_url]; }
+          }
+          return dUrls.map((url: string) => url.startsWith('http') ? url : `http://localhost:5000${url}`);
+        })(),
+        vin_photo_urls: (() => {
+          let vUrls = [];
+          if (v.vin_photo_url) {
+            try { vUrls = JSON.parse(v.vin_photo_url); } catch (e) { vUrls = [v.vin_photo_url]; }
+          }
+          return vUrls.map((url: string) => url.startsWith('http') ? url : `http://localhost:5000${url}`);
+        })(),
+        customs_cleared: !!v.customs_cleared,
         buyer: "",
-        price: 0
+        price: v.price || 0,
+        plate_number: v.plate_number || "",
+        mileage: v.mileage || "",
+        initial_registration_date: v.initial_registration_date || "",
+        vehicle_type: v.vehicle_type || ""
       };
     });
 
@@ -367,9 +405,12 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'photoUrls는 배열이어야 합니다.' });
     }
 
+    const { type } = req.body; // 'document' | 'vin' | 'plate' (default)
+    const targetColumn = type === 'document' ? 'deregistration_photo_url' : type === 'vin' ? 'vin_photo_url' : 'condition_photo_url';
+
     // 차량 정보(vin, blNumber 등 확인용) 가져오기
     const [vehicles]: any = await pool.query(
-      'SELECT v.vin, v.condition_photo_url, s.bl_number, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?',
+      `SELECT v.vin, v.condition_photo_url, v.deregistration_photo_url, v.vin_photo_url, s.bl_number, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?`,
       [id]
     );
 
@@ -386,11 +427,12 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
     
     let existingUrls: string[] = [];
-    if (vehicle.condition_photo_url) {
+    const dbVal = vehicle[targetColumn];
+    if (dbVal) {
       try {
-        existingUrls = JSON.parse(vehicle.condition_photo_url);
+        existingUrls = JSON.parse(dbVal);
       } catch (e) {
-        existingUrls = [vehicle.condition_photo_url];
+        existingUrls = [dbVal];
       }
     }
 
@@ -407,18 +449,20 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
         
         if (fs.existsSync(sourcePath)) {
           // 목표 폴더: uploads/화주명/YYYY/MM/VIN/
-          const fileName = path.basename(relativeUrl);
-          const targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${vin}/${fileName}`;
-          const targetPath = path.join(__dirname, '../../', targetRelativeUrl);
-          const targetDir = path.dirname(targetPath);
+          const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, vin);
+          const fileBuffer = fs.readFileSync(sourcePath);
+          const newRelativeUrl = saveVehiclePhotoAndDeduplicate(
+            fileBuffer,
+            targetDir,
+            vin,
+            shipperName,
+            year,
+            month
+          );
           
-          if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-          }
-
-          // 물리적 이동
-          fs.renameSync(sourcePath, targetPath);
-          newSavedUrls.push(targetRelativeUrl);
+          // 원래 임시 파일은 삭제
+          fs.unlinkSync(sourcePath);
+          newSavedUrls.push(newRelativeUrl);
         } else {
           // 이미 이동되었거나 못찾은 경우 그대로 추가
           newSavedUrls.push(relativeUrl);
@@ -431,7 +475,7 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
     // 중복 제거 후 병합
     const mergedUrls = Array.from(new Set([...existingUrls, ...newSavedUrls]));
 
-    await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify(mergedUrls), id]);
+    await pool.query(`UPDATE vehicles SET ${targetColumn} = ? WHERE id = ?`, [JSON.stringify(mergedUrls), id]);
 
     return res.json({ success: true, message: '배정 완료', data: mergedUrls });
   } catch (error) {
@@ -458,10 +502,8 @@ export const resetDashboardData = async (req: Request, res: Response) => {
       const tempFolder = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
       
       if (fs.existsSync(tempFolder)) {
-        const files = fs.readdirSync(tempFolder);
-        for (const file of files) {
-          fs.unlinkSync(path.join(tempFolder, file));
-        }
+        fs.rmSync(tempFolder, { recursive: true, force: true });
+        fs.mkdirSync(tempFolder, { recursive: true });
       }
     }
 
@@ -490,8 +532,8 @@ export const saveAllVehicles = async (req: Request, res: Response) => {
                make = ?, model = ?, year = ?, price = ?, drivability = ?
            WHERE id = ? AND shipment_id = ?`,
           [
-            v.vin || null, v.plate_number || null, v.vehicle_type || null, v.mileage || null, v.initial_registration_date || null,
-            v.make || null, v.model || null, v.year || null, v.price || null, v.drivability || 'Running',
+            v.vin || null, v.plate_number || null, v.vehicle_type || null, v.mileage || null, parseDateForDb(v.initial_registration_date),
+            v.make || null, v.model || null, v.year || null, v.price || null, v.drivability || null,
             v.id, shipmentId
           ]
         );
@@ -502,18 +544,210 @@ export const saveAllVehicles = async (req: Request, res: Response) => {
     const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
     const tempFolder = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
     
-    if (fs.existsSync(tempFolder)) {
-      const files = fs.readdirSync(tempFolder);
-      for (const file of files) {
-        if (file.startsWith('analyzed_') || file.startsWith('original_')) {
-          fs.unlinkSync(path.join(tempFolder, file));
+    const cleanDir = (dir: string) => {
+      if (fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const filePath = path.join(dir, file);
+          if (fs.statSync(filePath).isFile()) {
+            if (file.startsWith('analyzed_') || file.startsWith('original_')) {
+              fs.unlinkSync(filePath);
+            }
+          }
         }
       }
-    }
+    };
+
+    cleanDir(tempFolder);
+    cleanDir(path.join(tempFolder, 'docs'));
+    cleanDir(path.join(tempFolder, 'exterior'));
 
     return res.json({ success: true, message: '모든 데이터가 저장되었습니다.' });
   } catch (error) {
     console.error('전체 저장 에러:', error);
     return res.status(500).json({ success: false, message: '저장 중 서버 에러가 발생했습니다.' });
+  }
+};
+
+
+export const removePhotoFromVehicle = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { photoUrl, type } = req.body; // 'document' | 'vin' | 'plate' (default)
+
+    if (!photoUrl) {
+      return res.status(400).json({ success: false, message: 'photoUrl이 필요합니다.' });
+    }
+
+    const targetColumn = type === 'document' ? 'deregistration_photo_url' : type === 'vin' ? 'vin_photo_url' : 'condition_photo_url';
+
+    const [vehicles]: any = await pool.query(
+      `SELECT v.vin, v.condition_photo_url, v.deregistration_photo_url, v.vin_photo_url, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?`,
+      [id]
+    );
+
+    if (vehicles.length === 0) {
+      return res.status(404).json({ success: false, message: '차량을 찾을 수 없습니다.' });
+    }
+
+    const vehicle = vehicles[0];
+    const relativeUrl = photoUrl.replace(/^https?:\/\/[^\/]+/, '');
+
+    let existingUrls: string[] = [];
+    const dbVal = vehicle[targetColumn];
+    if (dbVal) {
+      try {
+        existingUrls = JSON.parse(dbVal);
+      } catch (e) {
+        existingUrls = [dbVal];
+      }
+    }
+
+    const updatedUrls = existingUrls.filter((url: string) => url !== relativeUrl);
+
+    await pool.query(`UPDATE vehicles SET ${targetColumn} = ? WHERE id = ?`, [JSON.stringify(updatedUrls), id]);
+
+    return res.json({ success: true, message: '제거 완료', data: updatedUrls });
+  } catch (error) {
+    console.error('removePhoto Error:', error);
+    return res.status(500).json({ success: false, message: '사진 제거 중 서버 에러' });
+  }
+};
+
+export const sendPdfToShipper = async (req: Request, res: Response) => {
+  const { shipmentId } = req.params;
+  const { blNumber } = req.body;
+  const userSession = (req.session as any).user;
+
+  if (!userSession?.kakaoToken) {
+    return res.status(403).json({ 
+      success: false, 
+      message: '카카오 로그인이 필요합니다. (포워더가 카카오로 로그인해야 카톡 알림 발송이 가능합니다)' 
+    });
+  }
+
+  try {
+    // 1. 선적 정보 및 차량 목록 가져오기
+    const [shipments]: any = await pool.query('SELECT * FROM shipments WHERE id = ?', [shipmentId]);
+    if (shipments.length === 0) {
+      return res.status(404).json({ success: false, message: '선적 정보를 찾을 수 없습니다.' });
+    }
+    const shipment = shipments[0];
+
+    const [vehicles]: any = await pool.query('SELECT * FROM vehicles WHERE shipment_id = ?', [shipmentId]);
+
+    // 2. HTML 컨텐츠 생성 (Commercial Invoice & Packing List 통합 양식)
+    const htmlContent = `
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: sans-serif; padding: 40px; color: #333; }
+            h1 { text-align: center; font-size: 24px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 12px; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .section-title { font-size: 16px; font-weight: bold; margin-top: 30px; border-bottom: 2px solid #333; padding-bottom: 5px; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+            .info-box { border: 1px solid #ccc; padding: 15px; border-radius: 5px; font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <h1>COMMERCIAL INVOICE & PACKING LIST</h1>
+          <div class="info-grid">
+            <div class="info-box">
+              <strong>Shipper (Exporter):</strong><br/>
+              ${shipment.shipper || '일반 화주'}<br/>
+              B/L No: ${blNumber}<br/>
+              POL: ${shipment.pol || ''}
+            </div>
+            <div class="info-box">
+              <strong>Consignee (Importer/Buyer):</strong><br/>
+              ${shipment.buyer || 'Unknown Buyer'}<br/>
+              Vessel: ${shipment.vessel_name || ''}<br/>
+              POD: ${shipment.pod || ''}
+            </div>
+          </div>
+          
+          <div class="section-title">VEHICLE LIST (차량 내역)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>VIN (차대번호)</th>
+                <th>Make/Model (제조사/차명)</th>
+                <th>Year (연식)</th>
+                <th>Plate Number (차량번호)</th>
+                <th>Price (USD)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${vehicles.map((v: any, idx: number) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td>${v.vin}</td>
+                  <td>${v.make || 'Unknown'} / ${v.model || 'Unknown'}</td>
+                  <td>${v.year || ''}</td>
+                  <td>${v.plate_number || ''}</td>
+                  <td>$${(v.price || 0).toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <div style="margin-top: 40px; text-align: right; font-weight: bold; font-size: 16px;">
+            Total Price: ${vehicles.reduce((sum: number, v: any) => sum + (v.price || 0), 0).toLocaleString()}
+          </div>
+        </body>
+      </html>
+    `;
+
+    // 3. Puppeteer를 이용한 PDF 파일 생성
+    const pdfDir = path.join(__dirname, '../../uploads/pdf');
+    if (!fs.existsSync(pdfDir)) {
+      fs.mkdirSync(pdfDir, { recursive: true });
+    }
+    const pdfPath = path.join(pdfDir, `${blNumber}.pdf`);
+
+    const browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    const page = await browser.newPage();
+    await page.setContent(htmlContent);
+    await page.pdf({ path: pdfPath, format: 'A4', printBackground: true });
+    await browser.close();
+
+    const pdfRelativeUrl = `/uploads/pdf/${blNumber}.pdf`;
+    const pdfAbsoluteUrl = `http://localhost:5000${pdfRelativeUrl}`;
+
+    // 4. Kakao Talk 나에게 보내기 API를 사용하여 알림톡 발송
+    const messageText = `[선적 서류 및 PDF 통지]\nB/L: ${blNumber}\n화주명: ${shipment.shipper || '일반화주'}\n차량 대수: ${vehicles.length}대\n\n상업송장 및 패킹리스트 PDF 생성이 완료되어 카카오톡으로 전송되었습니다. 아래 버튼을 눌러 모바일 서류를 바로 확인해 주세요.`;
+
+    await axios.post(
+      'https://kapi.kakao.com/v2/api/talk/memo/default/send',
+      `template_object=${JSON.stringify({
+        object_type: 'text',
+        text: messageText,
+        link: { web_url: pdfAbsoluteUrl, mobile_web_url: pdfAbsoluteUrl },
+        button_title: 'PDF 서류 보기'
+      })}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${userSession.kakaoToken}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    // 5. DB에 생성된 PDF 파일 경로 업데이트 (shipments 테이블)
+    await pool.query(
+      'UPDATE shipments SET invoice_file_path = ?, packing_list_file_path = ? WHERE id = ?',
+      [pdfRelativeUrl, pdfRelativeUrl, shipmentId]
+    );
+
+    res.json({ success: true, message: 'PDF 생성 및 카카오톡 전송 성공', data: { pdfUrl: pdfAbsoluteUrl } });
+  } catch (error: any) {
+    console.error('PDF 생성 및 전송 오류:', error);
+    res.status(500).json({ success: false, message: 'PDF 생성 또는 카카오톡 전송 중 서버 오류: ' + (error.response?.data?.message || error.message) });
   }
 };

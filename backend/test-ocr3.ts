@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { analyzeVehiclePhoto } from './src/services/ocrService';
 import fs from 'fs';
 

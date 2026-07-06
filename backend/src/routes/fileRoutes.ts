@@ -7,6 +7,7 @@ import {
   getShipperMapping, 
   exportCustomsExcel,
   uploadVehiclePhotos,
+  downloadFile,
   getUnclassifiedPhotos,
   analyzePendingPhotos
 } from '../controllers/fileController';
@@ -37,5 +38,8 @@ router.get('/mapping/:shipperName', getShipperMapping);
 
 // 관세 신고용 엑셀 다운로드 엔드포인트
 router.post('/export-customs-excel', exportCustomsExcel);
+
+// 파일 안전 다운로드 엔드포인트 (한글 파일명 깨짐 해결)
+router.get('/download', downloadFile);
 
 export default router;

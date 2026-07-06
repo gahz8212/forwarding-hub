@@ -107,8 +107,11 @@ export default function DashboardPage() {
   const [packingFile, setPackingFile] = React.useState<File | null>(null);
   const [uploading, setUploading] = React.useState(false);
 
-  const [photoFiles, setPhotoFiles] = React.useState<FileList | null>(null);
-  const [uploadingPhotos, setUploadingPhotos] = React.useState(false);
+  const [exteriorFiles, setExteriorFiles] = React.useState<FileList | null>(null);
+  const [uploadingExterior, setUploadingExterior] = React.useState(false);
+
+  const [docFiles, setDocFiles] = React.useState<FileList | null>(null);
+  const [uploadingDocs, setUploadingDocs] = React.useState(false);
 
   useEffect(() => {
     fetchAllShipments();
@@ -401,18 +404,19 @@ export default function DashboardPage() {
     }
   };
 
-  const handlePhotoUploadSubmit = async () => {
-    if (!trackingData || !photoFiles || photoFiles.length === 0) {
-      alert("업로드할 차량 사진을 선택해주세요.");
+  const handleExteriorUploadSubmit = async () => {
+    if (!trackingData || !exteriorFiles || exteriorFiles.length === 0) {
+      alert("업로드할 차량 외관 사진을 선택해주세요.");
       return;
     }
-    setUploadingPhotos(true);
+    setUploadingExterior(true);
     const formData = new FormData();
     formData.append("shipmentId", trackingData.id?.toString() || trackingData.bl_number);
     formData.append("skipOcr", "true");
     formData.append("blNumber", trackingData.bl_number);
+    formData.append("photoType", "exterior");
     
-    Array.from(photoFiles).slice(0, 20).forEach(file => {
+    Array.from(exteriorFiles).slice(0, 30).forEach(file => {
       formData.append("photos", file);
     });
 
@@ -424,15 +428,51 @@ export default function DashboardPage() {
       const data = await response.json();
       
       if (data.success) {
-        alert(`사진 전송 완료! 총 ${data.data.length}장의 사진이 처리되었습니다.`);
-        setPhotoFiles(null);
+        alert(`차량 외관 사진 전송 완료! 총 ${data.data.length}장의 사진이 처리되었습니다.`);
+        setExteriorFiles(null);
       } else {
         alert("사진 업로드 실패: " + data.message);
       }
     } catch (error) {
       alert("서버와 통신 중 오류가 발생했습니다.");
     } finally {
-      setUploadingPhotos(false);
+      setUploadingExterior(false);
+    }
+  };
+
+  const handleDocUploadSubmit = async () => {
+    if (!trackingData || !docFiles || docFiles.length === 0) {
+      alert("업로드할 차대번호/말소증 사진을 선택해주세요.");
+      return;
+    }
+    setUploadingDocs(true);
+    const formData = new FormData();
+    formData.append("shipmentId", trackingData.id?.toString() || trackingData.bl_number);
+    formData.append("skipOcr", "true");
+    formData.append("blNumber", trackingData.bl_number);
+    formData.append("photoType", "docs");
+    
+    Array.from(docFiles).slice(0, 20).forEach(file => {
+      formData.append("photos", file);
+    });
+
+    try {
+      const response = await fetch("http://localhost:5000/api/files/upload-vehicle-photos", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`차대번호/말소증 서류 전송 완료! 총 ${data.data.length}장의 사진이 AI 분석 처리되었습니다.`);
+        setDocFiles(null);
+      } else {
+        alert("서류 업로드 실패: " + data.message);
+      }
+    } catch (error) {
+      alert("서버와 통신 중 오류가 발생했습니다.");
+    } finally {
+      setUploadingDocs(false);
     }
   };
 
@@ -674,30 +714,57 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* 차량 사진 (3종) 업로드 패널 (선택) */}
+          {/* 차량 사진 및 서류 업로드 패널 (선택) */}
           {(trackingData.status === "Pending Documents" || trackingData.status === "Documents Uploaded") && (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-6">
-              <h4 className="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
-                <Camera className="text-emerald-600" size={18} /> 차량 사진 (말소증, 번호판, 차대번호) 업로드 (선택)
-              </h4>
-              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                포워더에게 카카오톡으로 전송하지 않고, 여기서 직접 사진(또는 압축된 ZIP 파일)을 한 번에 업로드할 수 있습니다.
-              </p>
-              <div className="flex items-center gap-4 bg-white p-4 rounded-xl border">
-                <input 
-                  type="file" 
-                  multiple 
-                  accept="image/*,.zip" 
-                  className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
-                  onChange={(e) => setPhotoFiles(e.target.files)}
-                />
-                <button
-                  onClick={handlePhotoUploadSubmit}
-                  disabled={uploadingPhotos || !photoFiles || photoFiles.length === 0}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg text-xs transition shadow-sm disabled:opacity-50 whitespace-nowrap"
-                >
-                  {uploadingPhotos ? "업로드 중..." : "사진 3종 전송"}
-                </button>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-6 space-y-6">
+              <div>
+                <h4 className="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
+                  <Camera className="text-blue-600" size={18} /> 1. 차량 사진 업로드 (외관/데미지)
+                </h4>
+                <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+                  선적할 중고차량들의 외관 및 상태 사진들(또는 압축된 ZIP 파일)을 등록해 주세요.
+                </p>
+                <div className="flex items-center gap-4 bg-white p-4 rounded-xl border">
+                  <input 
+                    type="file" 
+                    multiple 
+                    accept="image/*,.zip" 
+                    className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    onChange={(e) => setExteriorFiles(e.target.files)}
+                  />
+                  <button
+                    onClick={handleExteriorUploadSubmit}
+                    disabled={uploadingExterior || !exteriorFiles || exteriorFiles.length === 0}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded-lg text-xs transition shadow-sm disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {uploadingExterior ? "업로드 중..." : "외관 사진 전송"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t pt-6">
+                <h4 className="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
+                  <FileText className="text-emerald-600" size={18} /> 2. 차대번호 각인 및 말소증 업로드 (OCR 분석용)
+                </h4>
+                <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+                  차량의 차대번호 스티커/각인 사진과 말소사실증명서 사진을 등록해 주세요. 시스템이 차대번호를 AI 분석합니다.
+                </p>
+                <div className="flex items-center gap-4 bg-white p-4 rounded-xl border">
+                  <input 
+                    type="file" 
+                    multiple 
+                    accept="image/*" 
+                    className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                    onChange={(e) => setDocFiles(e.target.files)}
+                  />
+                  <button
+                    onClick={handleDocUploadSubmit}
+                    disabled={uploadingDocs || !docFiles || docFiles.length === 0}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg text-xs transition shadow-sm disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {uploadingDocs ? "분석 및 전송 중..." : "서류/차대 사진 전송"}
+                  </button>
+                </div>
               </div>
             </div>
           )}

@@ -1,8 +1,10 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
-import dotenv from 'dotenv';
 import http from 'http';
 import path from 'path';
 import { Server } from 'socket.io';
@@ -11,8 +13,6 @@ import trackingRoutes from './routes/trackingRoutes';
 import scheduleRoutes from './routes/scheduleRoutes';
 import fileRoutes from './routes/fileRoutes';
 import { initScheduler } from './services/scheduler';
-
-dotenv.config();
 
 // 백그라운드 크론 스케줄러 가동
 initScheduler();

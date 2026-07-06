@@ -1,4 +1,4 @@
-import pool from './config/database';
+import pool from './config/db';
 async function run() {
   await pool.query('ALTER TABLE vehicles MODIFY condition_photo_url TEXT');
   console.log('Column modified to TEXT');

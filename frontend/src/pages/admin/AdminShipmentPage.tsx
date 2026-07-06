@@ -84,7 +84,7 @@ export default function AdminShipmentPage() {
   const [activeDashboardShipment, setActiveDashboardShipment] = useState<{ id: number; blNumber: string } | null>(null);
 
   // 화주 대기 서류 알림 토스트 상태
-  const [docAlert, setDocAlert] = useState<{ blNumber: string; count: number; shipmentId: number } | null>(null);
+  const [docAlert, setDocAlert] = useState<{ blNumber: string; count: number; shipmentId: number; photoType?: string } | null>(null);
 
   const fetchShipments = () => {
     setLoading(true);
@@ -695,7 +695,7 @@ export default function AdminShipmentPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="animate-fade-in-up space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-bold text-slate-800">화물 및 선적 전체 관리 (어드민 전용)</h2>
@@ -1333,34 +1333,51 @@ export default function AdminShipmentPage() {
 
       {/* 화주 서류 업로드 알림 토스트 */}
       {docAlert && (
-        <div className="fixed bottom-6 right-6 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border-l-4 border-blue-500 p-5 w-80 z-[100] animate-in slide-in-from-bottom-5">
-          <div className="flex justify-between items-start">
-            <div className="flex gap-3">
-              <div className="bg-blue-100 text-blue-600 p-2 rounded-full h-fit">
-                <BellRing size={20} className="animate-pulse" />
+        <>
+          <style>{`
+            @keyframes wiggle-horizontal {
+              0%, 100%, 50% { transform: translateX(0); }
+              60%, 80% { transform: translateX(-6px); }
+              70%, 90% { transform: translateX(6px); }
+            }
+            .animate-wiggle-horizontal {
+              animation: wiggle-horizontal 2s ease-in-out infinite;
+            }
+          `}</style>
+          <div className="fixed bottom-6 right-6 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border-l-4 border-blue-500 p-5 w-80 z-[100] animate-wiggle-horizontal">
+            <div className="flex justify-between items-start">
+              <div className="flex gap-3">
+                <div className="bg-blue-100 text-blue-600 p-2 rounded-full h-fit">
+                  <BellRing size={20} className="animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 dark:text-white text-sm">
+                    {docAlert.photoType === 'docs' ? '새로운 서류/차대 사진 도착' : '새로운 차량 외관 사진 도착'}
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    B/L: <span className="font-bold">{docAlert.blNumber}</span><br/>
+                    {docAlert.photoType === 'docs' 
+                      ? <>화주가 <span className="font-bold text-emerald-600">{docAlert.count}</span>장의 차대/말소증 서류를 올렸습니다.</>
+                      : <>화주가 <span className="font-bold text-blue-600">{docAlert.count}</span>장의 차량 외관 사진을 올렸습니다.</>
+                    }
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-bold text-slate-800 dark:text-white text-sm">새로운 차량 사진 도착</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  B/L: <span className="font-bold">{docAlert.blNumber}</span><br/>
-                  화주가 <span className="font-bold text-blue-600">{docAlert.count}</span>장의 대기 서류를 올렸습니다.
-                </p>
-              </div>
+              <button onClick={() => setDocAlert(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
             </div>
-            <button onClick={() => setDocAlert(null)} className="text-slate-400 hover:text-slate-600">
-              <X size={18} />
+            <button 
+              onClick={() => {
+                setActiveDashboardShipment({ id: docAlert.shipmentId, blNumber: docAlert.blNumber });
+                setDocAlert(null);
+              }}
+              className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              차량 관리 대시보드 열기
             </button>
           </div>
-          <button 
-            onClick={() => {
-              setActiveDashboardShipment({ id: docAlert.shipmentId, blNumber: docAlert.blNumber });
-              setDocAlert(null);
-            }}
-            className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            차량 관리 대시보드 열기
-          </button>
-        </div>
+        </>
       )}
 
     </div>

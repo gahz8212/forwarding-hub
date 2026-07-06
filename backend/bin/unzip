@@ -1,0 +1,29 @@
+#!/bin/bash
+# A lightweight mock unzip wrapper using Python's zipfile module
+# Arguments can be: unzip -q -o <archive> -d <destination>
+
+archive=""
+destination=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -d)
+      destination="$2"
+      shift 2
+      ;;
+    -q|-o)
+      shift 1
+      ;;
+    *)
+      archive="$1"
+      shift 1
+      ;;
+  esac
+done
+
+if [ -n "$archive" ] && [ -n "$destination" ]; then
+  python3 -m zipfile -e "$archive" "$destination"
+else
+  # Fallback to python3 zipfile
+  python3 -m zipfile -e "$@"
+fi
