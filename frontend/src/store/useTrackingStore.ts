@@ -22,9 +22,17 @@ interface TrackingData {
   cargo_closing_date?: string;
   invoice_file_path?: string;
   packing_list_file_path?: string;
+  invoice_file_key?: string;
+  packing_list_file_key?: string;
+  invoice_approved?: number;
+  packing_approved?: number;
   truck_date?: string;
   truck_plate_number?: string;
   truck_driver_phone?: string;
+  vehicleStats?: {
+    total: number;
+    yardInCount: number;
+  };
 }
 
 interface TrackingState {

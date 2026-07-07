@@ -12,7 +12,11 @@ import {
   resetDashboardData,
   saveAllVehicles,
   removePhotoFromVehicle,
-  sendPdfToShipper
+  sendPdfToShipper,
+  approveDoc,
+  deleteDoc,
+  updateVehicleStatus,
+  getVehicleSpecByVIN
 } from '../controllers/trackingController';
 import multer from 'multer';
 import path from 'path';
@@ -100,5 +104,17 @@ router.put('/vehicles/:shipmentId/save-all', saveAllVehicles);
 
 // POST /api/tracking/shipments/:shipmentId/send-pdf (PDF 생성 및 카카오톡 전송)
 router.post('/shipments/:shipmentId/send-pdf', sendPdfToShipper);
+
+// POST /api/tracking/approve-doc (화주가 서류 승인)
+router.post('/approve-doc', approveDoc);
+
+// POST /api/tracking/delete-doc (화주가 서류 삭제)
+router.post('/delete-doc', deleteDoc);
+
+// POST /api/tracking/vehicles/:id/status (개별 차량 상태 업데이트)
+router.post('/vehicles/:id/status', updateVehicleStatus);
+
+// GET /api/tracking/vehicles/vin/:vin (차대번호 기반 제원 조회)
+router.get('/vehicles/vin/:vin', getVehicleSpecByVIN);
 
 export default router;

@@ -24,6 +24,22 @@ async function migrate() {
       console.log('[Migration] Column packing_list_file_key already exists.');
     }
 
+    if (!columnNames.includes('invoice_approved')) {
+      console.log('[Migration] Adding column invoice_approved...');
+      await pool.query('ALTER TABLE shipments ADD COLUMN invoice_approved TINYINT DEFAULT 0');
+      console.log('[Migration] Column invoice_approved added.');
+    } else {
+      console.log('[Migration] Column invoice_approved already exists.');
+    }
+
+    if (!columnNames.includes('packing_approved')) {
+      console.log('[Migration] Adding column packing_approved...');
+      await pool.query('ALTER TABLE shipments ADD COLUMN packing_approved TINYINT DEFAULT 0');
+      console.log('[Migration] Column packing_approved added.');
+    } else {
+      console.log('[Migration] Column packing_approved already exists.');
+    }
+
     console.log('[Migration] Migration completed successfully.');
     process.exit(0);
   } catch (error: any) {

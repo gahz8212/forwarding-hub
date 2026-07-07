@@ -22,6 +22,11 @@ interface Vehicle {
   vehicle_type?: string;
   mileage?: string;
   initial_registration_date?: string;
+  length?: number;
+  width?: number;
+  height?: number;
+  weight?: number;
+  cbm?: number;
 }
 
 interface ViewerState {
@@ -55,6 +60,8 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
   const [buyerInfo, setBuyerInfo] = useState({ name: '', address: '', phone: '', email: '' });
   const [uploading, setUploading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [vinLoadingId, setVinLoadingId] = useState<number | null>(null);
+  const [expandedVehicles, setExpandedVehicles] = useState<Record<number, boolean>>({});
   const [globalBuyer, setGlobalBuyer] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fastFileInputRef = useRef<HTMLInputElement>(null);
@@ -274,7 +281,108 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
   };
 
   const handleInputChange = (id: number, field: keyof Vehicle, value: any) => {
-    setVehicles(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
+    setVehicles(prev => prev.map(v => {
+      if (v.id === id) {
+        const updated = { ...v, [field]: value };
+        if (['length', 'width', 'height'].includes(String(field))) {
+          const l = parseFloat(String(updated.length || 0)) / 1000;
+          const w = parseFloat(String(updated.width || 0)) / 1000;
+          const h = parseFloat(String(updated.height || 0)) / 1000;
+          updated.cbm = Math.round((l * w * h) * 1000) / 1000;
+        }
+        return updated;
+      }
+      return v;
+    }));
+  };
+
+  const toggleVehicleExpand = (id: number) => {
+    setExpandedVehicles(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const autoVinLookup = async (id: number, vin: string) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/vin/${encodeURIComponent(vin)}`);
+      const res = await response.json();
+      if (res.success) {
+        const { data } = res;
+        setVehicles(prev => prev.map(v => v.id === id ? {
+          ...v,
+          model: data.modelName,
+          make: data.make,
+          year: data.year,
+          initial_registration_date: data.initialRegistrationDate,
+          length: data.dimensions.length,
+          width: data.dimensions.width,
+          height: data.dimensions.height,
+          weight: data.weight,
+          cbm: data.cbm
+        } : v));
+      }
+    } catch (err) {
+      console.error('자동 차대번호 조회 실패:', vin, err);
+    }
+  };
+
+  const handleVinLookup = async (id: number, vin: string) => {
+    if (!vin || vin.length !== 17) {
+      alert('차대번호 17자리를 정확히 입력해주세요.');
+      return;
+    }
+    setVinLoadingId(id);
+    try {
+      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/vin/${encodeURIComponent(vin)}`);
+      const res = await response.json();
+      if (res.success) {
+        const { data } = res;
+        setVehicles(prev => prev.map(v => v.id === id ? {
+          ...v,
+          model: data.modelName,
+          make: data.make,
+          year: data.year,
+          initial_registration_date: data.initialRegistrationDate,
+          length: data.dimensions.length,
+          width: data.dimensions.width,
+          height: data.dimensions.height,
+          weight: data.weight,
+          cbm: data.cbm
+        } : v));
+      } else {
+        alert('차대번호 조회 실패: ' + res.message);
+      }
+    } catch (err) {
+      console.error('차대번호 조회 중 에러:', err);
+      alert('차대번호 제원 조회 중 오류가 발생했습니다.');
+    } finally {
+      setVinLoadingId(null);
+    }
+  };
+
+  const handleVehicleStatusChange = async (vehicleId: number, newStatus: string, oldStatus: string) => {
+    const isOldYard = oldStatus === "Yard In" || oldStatus === "Loaded";
+    const isNewNotYard = newStatus === "Pending" || newStatus === "Trucking";
+
+    if (isOldYard && isNewNotYard) {
+      const ok = window.confirm("이미 야드반입(또는 선적완료)된 차량입니다. 다시 운송중(또는 대기중) 상태로 변경하시겠습니까? (반입 수량이 차감되며 전체 선적의 진행단계가 트럭운송 단계로 복구될 수 있습니다.)");
+      if (!ok) return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${vehicleId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus })
+      });
+      const res = await response.json();
+      if (res.success) {
+        fetchVehicles();
+      } else {
+        alert("상태 변경 실패: " + res.message);
+      }
+    } catch (err) {
+      console.error("차량 상태 변경 에러:", err);
+      alert("차량 상태 변경 중 에러가 발생했습니다.");
+    }
   };
 
   const handlePendingDocsConfirm = async (selectedUrls: string[]) => {
@@ -496,7 +604,13 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       const res = await fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}`);
       const data = await res.json();
       if (data.success) {
-        setVehicles(data.data);
+        const list = data.data || [];
+        setVehicles(list);
+        for (const v of list) {
+          if (v.vin && v.vin.length === 17 && (!v.model || !v.length)) {
+            autoVinLookup(v.id, v.vin);
+          }
+        }
       }
     } catch (err) {
       console.error("차량 목록 조회 실패:", err);
@@ -586,8 +700,8 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-[95vw] xl:max-w-[1600px] max-h-[95vh] rounded-xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900">
+      <div className="bg-white dark:bg-slate-900 w-full h-full flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex flex-col p-4 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 relative">
           <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
@@ -685,7 +799,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                     className="flex items-center gap-1.5 bg-white dark:bg-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-sm text-sm font-bold shadow-sm transition-colors disabled:opacity-50 border border-slate-200 dark:border-slate-600 mr-1"
                   >
                     {uploading ? <Loader2 size={16} className="animate-spin" /> : <span className="text-amber-500">⚡</span>}
-                    외관 사진 추가
+                    외관사진 추가
                   </button>
 
                   <input
@@ -702,7 +816,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                     className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-sm text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
                   >
                     {uploading ? <Loader2 size={16} className="animate-spin" /> : <FileImage size={16} />}
-                    {uploading ? "분석 중..." : "AI 차량 등록"}
+                    {uploading ? "분석 중..." : "차량 등록"}
                   </button>
                 </div>
               </div>
@@ -742,12 +856,12 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                             >
                               말소증
                             </button>
-                            <button
+                            {/* <button
                               onClick={() => setGlobalPhotoTab('vin')}
                               className={`px-2 py-0.5 rounded transition-colors ${globalPhotoTab === 'vin' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
                             >
                               차대
-                            </button>
+                            </button> */}
                           </div>
                         </div>
                       </th>
@@ -766,14 +880,41 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                       return (
                         <tr key={v.id} className={`transition-colors hover:bg-yellow-50 dark:hover:bg-yellow-950/10 ${rowBgClass} ${isCurrentViewingRow ? 'shadow-[0_4px_20px_rgba(239,68,68,0.15)]' : ''}`}>
                           <td className={`p-3 align-top transition-all duration-150 ${isCurrentViewingRow ? 'border-l-4 border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
-                            <input
-                              type="text"
-                              value={v.vin || ""}
-                              onChange={(e) => handleInputChange(v.id, "vin", e.target.value)}
-                              placeholder="차대번호 입력"
-                              className="font-mono font-black text-[17px] text-slate-900 dark:text-white mb-2 w-full px-2.5 py-1.5 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-blue-500 rounded bg-transparent focus:bg-white dark:focus:bg-slate-800 outline-none transition-colors"
-                            />
-                            <div>{getStatusBadge(v.status)}</div>
+                            <div className="flex gap-1.5 items-center mb-2">
+                              <input
+                                type="text"
+                                maxLength={17}
+                                value={v.vin || ""}
+                                onChange={(e) => handleInputChange(v.id, "vin", e.target.value)}
+                                placeholder="차대번호 입력"
+                                className="font-mono font-black text-[16px] text-slate-900 dark:text-white flex-1 min-w-0 px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                              />
+                              <button
+                                onClick={() => handleVinLookup(v.id, v.vin || "")}
+                                disabled={vinLoadingId === v.id}
+                                className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-colors flex items-center justify-center shrink-0 disabled:bg-slate-300"
+                                title="차대번호 제원 조회"
+                              >
+                                {vinLoadingId === v.id ? (
+                                  <Loader2 size={16} className="animate-spin" />
+                                ) : (
+                                  <Search size={16} />
+                                )}
+                              </button>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                              <select
+                                value={v.status || "Pending"}
+                                onChange={(e) => handleVehicleStatusChange(v.id, e.target.value, v.status || "Pending")}
+                                className="px-2 py-1 text-xs font-bold rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-750 dark:text-slate-200 focus:border-blue-500 outline-none transition-colors"
+                              >
+                                <option value="Pending">대기중</option>
+                                <option value="Trucking">운송중</option>
+                                <option value="Yard In">야드반입</option>
+                                <option value="Loaded">선적완료</option>
+                              </select>
+                              {getStatusBadge(v.status)}
+                            </div>
                           </td>
                           <td className={`p-3 align-top transition-all duration-150 ${isCurrentViewingRow ? 'border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
                             {/* 차명, 연식, 수출단가 한 행 구성 */}
@@ -821,48 +962,132 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                               </div>
                             </div>
 
-                            {/* 하단 제원 2x2 그리드 */}
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-3 w-full">
-                              <div className="flex items-center text-sm">
-                                <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">차량번호:</span>
-                                <input
-                                  type="text"
-                                  value={v.plate_number || ""}
-                                  onChange={(e) => handleInputChange(v.id, "plate_number", e.target.value)}
-                                  className={`flex-1 min-w-0 px-2.5 py-1.5 text-sm border rounded outline-none transition-colors ${v.plate_number?.includes('?')
-                                      ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 focus:border-red-600 focus:ring-1 focus:ring-red-500'
-                                      : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-blue-500'
-                                    }`}
-                                />
+                            {/* CBM / 중량 기본 표시 및 상세 제원 펼치기 버튼 */}
+                            <div className="mt-2 flex justify-between items-center bg-slate-50 dark:bg-slate-850 px-3 py-2 rounded-lg border border-slate-200/60 dark:border-slate-800">
+                              <div className="flex gap-4 text-xs font-bold items-center">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-slate-500 font-medium">부피:</span>
+                                  <span className="text-blue-600 dark:text-blue-400 font-black text-sm">{v.cbm || 0} CBM</span>
+                                </div>
+                                <div className="border-l border-slate-200 dark:border-slate-700 h-4" />
+                                <div className="flex items-center gap-1">
+                                  <span className="text-slate-500 font-medium">중량:</span>
+                                  <span className="text-slate-700 dark:text-slate-300 font-black text-sm">
+                                    {v.weight ? `${Number(v.weight).toLocaleString()} kg` : "0 kg"}
+                                    <span className="text-xs font-bold text-slate-400 ml-1">({((v.weight || 0) / 1000).toFixed(3)} Ton)</span>
+                                  </span>
+                                </div>
                               </div>
-                              <div className="flex items-center text-sm">
-                                <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">제작사:</span>
-                                <input
-                                  type="text"
-                                  value={v.make || ""}
-                                  onChange={(e) => handleInputChange(v.id, "make", e.target.value)}
-                                  className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                />
-                              </div>
-                              <div className="flex items-center text-sm">
-                                <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">최초등록:</span>
-                                <input
-                                  type="text"
-                                  value={formatDateToSlash(v.initial_registration_date)}
-                                  onChange={(e) => handleInputChange(v.id, "initial_registration_date", e.target.value)}
-                                  className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                />
-                              </div>
-                              <div className="flex items-center text-sm">
-                                <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">차종:</span>
-                                <input
-                                  type="text"
-                                  value={v.vehicle_type || ""}
-                                  onChange={(e) => handleInputChange(v.id, "vehicle_type", e.target.value)}
-                                  className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                />
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleVehicleExpand(v.id)}
+                                className="text-xs font-extrabold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-lg shadow-sm transition-all"
+                              >
+                                {expandedVehicles[v.id] ? "제원 편집 접기" : "상세 제원 / 실측 입력"}
+                              </button>
                             </div>
+
+                            {/* 상세 제원 및 실측 입력 (토글 영역) */}
+                            {expandedVehicles[v.id] && (
+                              <div className="mt-3 p-3 bg-slate-50/50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4 animate-fadeIn">
+                                <style>{`
+                                  @keyframes fadeIn {
+                                    from { opacity: 0; transform: translateY(-4px); }
+                                    to { opacity: 1; transform: translateY(0); }
+                                  }
+                                  .animate-fadeIn {
+                                    animation: fadeIn 0.15s ease-out forwards;
+                                  }
+                                `}</style>
+
+                                {/* 하단 제원 2x2 그리드 */}
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-3 w-full">
+                                  <div className="flex items-center text-sm">
+                                    <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">차량번호:</span>
+                                    <input
+                                      type="text"
+                                      value={v.plate_number || ""}
+                                      onChange={(e) => handleInputChange(v.id, "plate_number", e.target.value)}
+                                      className={`flex-1 min-w-0 px-2.5 py-1.5 text-sm border rounded outline-none transition-colors ${v.plate_number?.includes('?')
+                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 focus:border-red-600 focus:ring-1 focus:ring-red-500'
+                                        : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-blue-500'
+                                        }`}
+                                    />
+                                  </div>
+                                  <div className="flex items-center text-sm">
+                                    <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">제작사:</span>
+                                    <input
+                                      type="text"
+                                      value={v.make || ""}
+                                      onChange={(e) => handleInputChange(v.id, "make", e.target.value)}
+                                      className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                  </div>
+                                  <div className="flex items-center text-sm">
+                                    <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">최초등록:</span>
+                                    <input
+                                      type="text"
+                                      value={formatDateToSlash(v.initial_registration_date)}
+                                      onChange={(e) => handleInputChange(v.id, "initial_registration_date", e.target.value)}
+                                      className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                  </div>
+                                  <div className="flex items-center text-sm">
+                                    <span className="w-16 font-bold text-slate-600 dark:text-slate-400 shrink-0">차종:</span>
+                                    <input
+                                      type="text"
+                                      value={v.vehicle_type || ""}
+                                      onChange={(e) => handleInputChange(v.id, "vehicle_type", e.target.value)}
+                                      className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* 제원 및 부피/중량 실측 관리 그리드 */}
+                                <div className="grid grid-cols-4 gap-3 w-full bg-slate-100/50 dark:bg-slate-800 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[11px] font-black text-slate-500">전장 (L, mm)</span>
+                                    <input
+                                      type="number"
+                                      value={v.length || ""}
+                                      onChange={(e) => handleInputChange(v.id, "length", e.target.value ? parseInt(e.target.value, 10) : "")}
+                                      placeholder="전장"
+                                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold outline-none focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[11px] font-black text-slate-500">전폭 (W, mm)</span>
+                                    <input
+                                      type="number"
+                                      value={v.width || ""}
+                                      onChange={(e) => handleInputChange(v.id, "width", e.target.value ? parseInt(e.target.value, 10) : "")}
+                                      placeholder="전폭"
+                                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold outline-none focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[11px] font-black text-slate-500">전고 (H, mm)</span>
+                                    <input
+                                      type="number"
+                                      value={v.height || ""}
+                                      onChange={(e) => handleInputChange(v.id, "height", e.target.value ? parseInt(e.target.value, 10) : "")}
+                                      placeholder="전고"
+                                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold outline-none focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[11px] font-black text-slate-500">중량 (Weight, kg)</span>
+                                    <input
+                                      type="number"
+                                      value={v.weight || ""}
+                                      onChange={(e) => handleInputChange(v.id, "weight", e.target.value ? parseFloat(e.target.value) : "")}
+                                      placeholder="중량"
+                                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold outline-none focus:border-blue-500"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </td>
                           <td className={`p-3 align-top transition-all duration-150 ${isCurrentViewingRow ? 'border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
                             <div className="flex flex-col gap-2.5">
@@ -900,8 +1125,8 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                               return (
                                 <div
                                   className={`min-h-[80px] w-full border-2 border-dashed rounded-lg p-2 bg-slate-50/50 flex items-center justify-center transition-all cursor-pointer ${selectedPhotos.length > 0
-                                      ? 'border-emerald-500 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse'
-                                      : 'border-slate-300 dark:border-slate-700 hover:bg-indigo-50 hover:border-indigo-300'
+                                    ? 'border-emerald-500 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse'
+                                    : 'border-slate-300 dark:border-slate-700 hover:bg-indigo-50 hover:border-indigo-300'
                                     }`}
                                   onClick={() => {
                                     if (selectedPhotos.length > 0) {
@@ -968,8 +1193,8 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                       );
                     }}
                     className={`relative group p-1 rounded-lg shadow-sm border cursor-pointer active:cursor-grabbing transition-all ${selectedPhotos.includes(url)
-                        ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500 scale-95'
-                        : 'bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md'
+                      ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500 scale-95'
+                      : 'bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md'
                       }`}
                   >
                     {selectedPhotos.includes(url) && (

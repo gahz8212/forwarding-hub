@@ -3,24 +3,26 @@ import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { io } from "socket.io-client";
 import { useTrackingStore } from "../../store/useTrackingStore";
-import { 
-  Search, 
-  Ship, 
-  MapPin, 
-  Calendar, 
-  CheckCircle2, 
-  FileUp, 
-  FileText, 
+import {
+  Search,
+  Ship,
+  MapPin,
+  Calendar,
+  CheckCircle2,
+  FileUp,
+  FileText,
   Truck,
-  Camera
+  Camera,
+  AlertTriangle
 } from "lucide-react";
 
 const STEPS = [
   { key: "Pending Documents", label: "서류 업로드" },
   { key: "Documents Verified", label: "서류 검증" },
-  { key: "Trucking", label: "트럭 운송" },
+  { key: "Trucking", label: "운송" },
   { key: "Gate In", label: "CY 입고" },
   { key: "Loaded on Vessel", label: "선적 완료" },
+  { key: "Departed", label: "출항" },
   { key: "In Transit", label: "해상 운송" },
   { key: "Delivered", label: "배송 완료" }
 ];
@@ -29,12 +31,13 @@ const getStepIndex = (status: string) => {
   switch (status) {
     case "Pending Documents": return 0;
     case "Documents Uploaded": return 1; // 화주가 업로드 완료하여 서류 검증 단계(1) 대기 중
-    case "Documents Verified": return 2; // 서류 검증 완료, 트럭 배정 단계(2) 대기 중
-    case "Trucking": return 3;           // 트럭 운송 중, CY 입고 단계(3) 대기 중
+    case "Documents Verified": return 2; // 서류 검증 완료, 운송 단계(2) 대기 중
+    case "Trucking": return 3;           // 운송 중, CY 입고 단계(3) 대기 중
     case "Gate In": return 4;            // 입고 완료, 선적 완료 단계(4) 대기 중
-    case "Loaded on Vessel": return 5;   // 선적 완료, 해상 운송 단계(5) 대기 중
-    case "In Transit": return 6;         // 해상 운송 중, 배송 완료 단계(6) 대기 중
-    case "Delivered": return 7;          // 완료
+    case "Loaded on Vessel": return 5;   // 선적 완료, 출항 단계(5) 대기 중
+    case "Departed": return 6;           // 출항, 해상 운송 단계(6) 대기 중
+    case "In Transit": return 7;         // 해상 운송 중, 배송 완료 단계(7) 대기 중
+    case "Delivered": return 8;          // 완료
     default: return -1;
   }
 };
@@ -49,6 +52,46 @@ export default function DashboardPage() {
     fetchAllShipments,
   } = useTrackingStore();
   const [blInput, setBlInput] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<'in-progress' | 'completed'>('in-progress');
+
+  // 1. 상태 필터링된 선적 목록 계산 및 최근 발행일(ETD 역순) 정렬
+  const filteredShipments = React.useMemo(() => {
+    const filtered = shipments.filter(s => {
+      if (statusFilter === 'completed') {
+        return s.status === 'Delivered';
+      } else {
+        return s.status !== 'Delivered';
+      }
+    });
+
+    return filtered.sort((a, b) => {
+      const dateA = a.etd || a.last_updated || "";
+      const dateB = b.etd || b.last_updated || "";
+      return dateB.localeCompare(dateA);
+    });
+  }, [shipments, statusFilter]);
+
+  // 2. 필터가 변경되거나 선적 정보가 로드되었을 때 가장 최근 B/L 자동 로드
+  useEffect(() => {
+    if (filteredShipments.length > 0) {
+      const currentBl = trackingData?.bl_number;
+      // 현재 조회중인 B/L이 현재 필터링 목록에 없는 경우에만 첫 번째(최근) B/L 자동 로드
+      const exists = filteredShipments.some(s => s.bl_number === currentBl);
+      if (!exists) {
+        setIsMapOpen(false);
+        fetchTracking(filteredShipments[0].bl_number);
+        setBlInput(filteredShipments[0].bl_number);
+      }
+    }
+  }, [filteredShipments, trackingData?.bl_number, fetchTracking]);
+
+  // 3. 현재 조회중인 B/L의 상태와 진행/완료 필터 탭 동기화
+  useEffect(() => {
+    if (trackingData) {
+      const isCompleted = trackingData.status === 'Delivered';
+      setStatusFilter(isCompleted ? 'completed' : 'in-progress');
+    }
+  }, [trackingData?.bl_number, trackingData?.status]);
 
   // URL에서 bl 쿼리 파라미터 가져오기
   const [searchParams, setSearchParams] = useSearchParams();
@@ -59,7 +102,7 @@ export default function DashboardPage() {
       const trimmed = queryBl.trim();
       setBlInput(trimmed);
       fetchTracking(trimmed);
-      
+
       // 주소창의 쿼리스트링 비워주기
       const newParams = new URLSearchParams(searchParams);
       newParams.delete("bl");
@@ -163,7 +206,7 @@ export default function DashboardPage() {
   const getAdjustedCoords = (polName: string, podName: string): { pol: [number, number], pod: [number, number], isCrossDateLine: boolean } => {
     const pol = getPortCoordinates(polName);
     const pod = getPortCoordinates(podName);
-    
+
     // 경도 차이가 180도보다 크면 날짜변경선을 통과하는 것임
     if (Math.abs(pod[1] - pol[1]) > 180) {
       if (pol[1] > pod[1]) {
@@ -180,7 +223,7 @@ export default function DashboardPage() {
   // 실시간 지도 동적 로딩, 진행률 애니메이션 및 그리기 훅
   const [mapLoaded, setMapLoaded] = React.useState(false);
   const [animatedProgress, setAnimatedProgress] = React.useState<number | null>(null);
-  
+
   const mapInstanceRef = React.useRef<any>(null);
   const shipMarkerRef = React.useRef<any>(null);
 
@@ -364,6 +407,8 @@ export default function DashboardPage() {
     }
   }, [animatedProgress, isMapOpen, trackingData?.bl_number]);
 
+
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (blInput.trim()) {
@@ -415,7 +460,7 @@ export default function DashboardPage() {
     formData.append("skipOcr", "true");
     formData.append("blNumber", trackingData.bl_number);
     formData.append("photoType", "exterior");
-    
+
     Array.from(exteriorFiles).slice(0, 30).forEach(file => {
       formData.append("photos", file);
     });
@@ -426,7 +471,7 @@ export default function DashboardPage() {
         body: formData,
       });
       const data = await response.json();
-      
+
       if (data.success) {
         alert(`차량 외관 사진 전송 완료! 총 ${data.data.length}장의 사진이 처리되었습니다.`);
         setExteriorFiles(null);
@@ -451,7 +496,7 @@ export default function DashboardPage() {
     formData.append("skipOcr", "true");
     formData.append("blNumber", trackingData.bl_number);
     formData.append("photoType", "docs");
-    
+
     Array.from(docFiles).slice(0, 20).forEach(file => {
       formData.append("photos", file);
     });
@@ -462,7 +507,7 @@ export default function DashboardPage() {
         body: formData,
       });
       const data = await response.json();
-      
+
       if (data.success) {
         alert(`차대번호/말소증 서류 전송 완료! 총 ${data.data.length}장의 사진이 AI 분석 처리되었습니다.`);
         setDocFiles(null);
@@ -480,28 +525,68 @@ export default function DashboardPage() {
 
   return (
     <div className="animate-fade-in-up space-y-8">
-      {/* Search Section */}
+      {/* B/L Selection & Search Control Panel */}
       <div className="bg-white rounded-2xl shadow-sm border p-8">
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800">
+        <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800 mb-2">
           <Search className="text-blue-600" />
           내 화물 B/L 트래킹
         </h2>
-        <form onSubmit={handleSearch} className="flex gap-4">
-          <input
-            type="text"
-            placeholder="B/L 번호를 입력하세요 (예: KMTC1234)"
-            className="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg shadow-sm text-slate-800 transition"
-            value={blInput}
-            onChange={(e) => setBlInput(e.target.value)}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-sm disabled:opacity-50"
-          >
-            {loading ? "조회 중..." : "상세조회"}
-          </button>
-        </form>
+        <p className="text-xs text-slate-400 mb-6">
+          진행 중이거나 완료된 B/L 선적 건을 선택하여 트래킹 상태를 모니터링할 수 있습니다.
+        </p>
+
+        <div className="flex flex-col gap-4 max-w-xl">
+          {/* 진행 / 완료 라디오 버튼 */}
+          <div className="flex items-center gap-6 bg-slate-50 border border-slate-100 px-4 py-2.5 rounded-xl w-fit">
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-black text-slate-700">
+              <input
+                type="radio"
+                name="statusFilter"
+                checked={statusFilter === 'in-progress'}
+                onChange={() => setStatusFilter('in-progress')}
+                className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+              />
+              진행 중 화물
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-black text-slate-700">
+              <input
+                type="radio"
+                name="statusFilter"
+                checked={statusFilter === 'completed'}
+                onChange={() => setStatusFilter('completed')}
+                className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+              />
+              완료된 화물
+            </label>
+          </div>
+
+          {/* B/L 드롭다운 선택기 */}
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold text-slate-500">선적 B/L 선택 (최근 일자 순)</label>
+            <select
+              value={trackingData?.bl_number || ""}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setIsMapOpen(false);
+                  fetchTracking(e.target.value);
+                  setBlInput(e.target.value);
+                }
+              }}
+              className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white text-slate-800 shadow-sm transition font-mono font-bold"
+            >
+              {filteredShipments.length === 0 ? (
+                <option value="">조회된 B/L 번호가 없습니다.</option>
+              ) : (
+                filteredShipments.map(s => (
+                  <option key={s.bl_number} value={s.bl_number}>
+                    {s.bl_number} ({s.vessel_name || '선명 미정'} - ETD: {s.etd || '미정'})
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+        </div>
+
         {error && (
           <p className="text-red-500 mt-4 text-sm font-semibold">{error}</p>
         )}
@@ -516,14 +601,12 @@ export default function DashboardPage() {
                 {trackingData.bl_number}
               </h3>
               <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold ${
-                  trackingData.status === "Delivered" ? "bg-slate-100 text-slate-700" : "bg-green-100 text-green-700"
-                }`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold ${trackingData.status === "Delivered" ? "bg-slate-100 text-slate-700" : "bg-green-100 text-green-700"
+                  }`}
               >
                 <span
-                  className={`w-2 h-2 rounded-full ${
-                    trackingData.status === "Delivered" ? "bg-slate-500" : "bg-green-500"
-                  }`}
+                  className={`w-2 h-2 rounded-full ${trackingData.status === "Delivered" ? "bg-slate-500" : "bg-green-500"
+                    }`}
                 ></span>
                 {trackingData.status}
               </span>
@@ -543,7 +626,17 @@ export default function DashboardPage() {
           </div>
 
           {/* 가로형 Stepper UI */}
-          <div className="flex items-center justify-between w-full my-10 overflow-x-auto py-4 scrollbar-thin">
+          <style>{`
+            @keyframes wiggle-x {
+              0%, 100% { transform: translateX(0); }
+              25% { transform: translateX(-3px); }
+              75% { transform: translateX(3px); }
+            }
+            .animate-wiggle {
+              animation: wiggle-x 0.5s ease-in-out infinite;
+            }
+          `}</style>
+          <div className="flex items-start justify-between w-full my-10 overflow-x-auto py-4 scrollbar-thin">
             {STEPS.map((step, idx) => {
               const isCompleted = activeIdx > idx;
               const isActive = activeIdx === idx;
@@ -552,43 +645,83 @@ export default function DashboardPage() {
 
               return (
                 <React.Fragment key={step.key}>
-                  <div className="flex flex-col items-center flex-1 min-w-[90px]">
+                  <div className="flex flex-col items-center flex-1 min-w-[75px] text-center px-1">
+                    {/* 상단 배지 영역 고정 높이 (h-6) 로 일관된 원형 세로 위치 보장 */}
+                    <div className="h-6 flex items-center justify-center mb-1.5 w-full">
+                      {/* 마감일 배지: 서류 업로드 단계 */}
+                      {step.key === "Pending Documents" && trackingData?.doc_closing_date && (() => {
+                        const deadline = new Date(trackingData.doc_closing_date);
+                        const diffDays = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
+                        const isUrgent = diffDays >= 0 && diffDays <= 1 && !isCompleted;
+                        const isWarn = diffDays > 1 && diffDays <= 3;
+                        const formattedDate = `${deadline.getMonth() + 1}/${deadline.getDate()}`;
+                        return (
+                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto
+                            ${diffDays < 0 ? 'bg-red-100 text-red-600' : isUrgent ? 'bg-red-100 text-red-600 animate-wiggle' : isWarn ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                            {(isUrgent || diffDays < 0) && <AlertTriangle size={8} className="shrink-0" />}
+                            <span>서류마감: {formattedDate}</span>
+                          </span>
+                        );
+                      })()}
+                      {/* 마감일 배지: CY 입고 단계 */}
+                      {step.key === "Gate In" && trackingData?.cargo_closing_date && (() => {
+                        const deadline = new Date(trackingData.cargo_closing_date);
+                        const diffDays = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
+                        const isUrgent = diffDays >= 0 && diffDays <= 1 && !isCompleted;
+                        const isWarn = diffDays > 1 && diffDays <= 3;
+                        const formattedDate = `${deadline.getMonth() + 1}/${deadline.getDate()}`;
+                        return (
+                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto
+                            ${diffDays < 0 ? 'bg-red-100 text-red-600' : isUrgent ? 'bg-red-100 text-red-600 animate-wiggle' : isWarn ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                            {(isUrgent || diffDays < 0) && <AlertTriangle size={8} className="shrink-0" />}
+                            <span>cy입고마감: {formattedDate}</span>
+                          </span>
+                        );
+                      })()}
+                      {/* 출항 예정일 배지: 출항 단계 */}
+                      {step.key === "Departed" && trackingData?.etd && (
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto">
+                          <span>ETD: {trackingData.etd.substring(5, 10).replace('-', '/')}</span>
+                        </span>
+                      )}
+                    </div>
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition shadow-sm ${
-                        isCompleted
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition shadow-sm ${isCompleted
                           ? "bg-green-500 text-white"
                           : isWaitingVerify
-                          ? "bg-amber-500 text-white animate-pulse"
-                          : isActive
-                          ? "bg-blue-600 text-white ring-4 ring-blue-100"
-                          : "bg-slate-100 text-slate-400"
-                      }`}
+                            ? "bg-amber-500 text-white animate-pulse"
+                            : isActive
+                              ? "bg-blue-600 text-white ring-4 ring-blue-100"
+                              : "bg-slate-100 text-slate-400"
+                        }`}
                     >
                       {isCompleted ? <CheckCircle2 size={18} /> : idx + 1}
                     </div>
                     <span
-                      className={`text-xs font-bold mt-2 whitespace-nowrap ${
-                        isWaitingVerify
+                      className={`text-xs font-bold mt-2 whitespace-nowrap ${isWaitingVerify
                           ? "text-amber-500"
                           : isActive
-                          ? "text-blue-600"
-                          : isCompleted
-                          ? "text-green-600"
-                          : "text-slate-400"
-                      }`}
+                            ? "text-blue-600"
+                            : isCompleted
+                              ? "text-green-600"
+                              : "text-slate-400"
+                        }`}
                     >
                       {step.label}
                     </span>
                     {isWaitingVerify && (
                       <span className="text-[9px] text-amber-500 font-bold mt-0.5">검증 대기</span>
                     )}
+                    {step.key === "Trucking" && trackingData?.vehicleStats && trackingData.vehicleStats.total > 0 && (
+                      <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1 bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-700 px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm">
+                        반입: {trackingData.vehicleStats.yardInCount} / {trackingData.vehicleStats.total}대
+                      </span>
+                    )}
                   </div>
                   {idx < STEPS.length - 1 && (
-                    <div
-                      className={`h-0.5 flex-1 mx-2 min-w-[20px] ${
-                        activeIdx > idx + 0.5 ? "bg-green-500" : "bg-slate-200"
-                      }`}
-                    />
+                    <div className="flex-1 min-w-[20px] flex items-center self-start pt-[44px]">
+                      <div className={`h-0.5 w-full mx-2 ${activeIdx > idx + 0.5 ? "bg-green-500" : "bg-slate-200"}`} />
+                    </div>
                   )}
                 </React.Fragment>
               );
@@ -625,8 +758,8 @@ export default function DashboardPage() {
               </div>
 
               {/* Leaflet 맵 타겟 컨테이너 (BL 번호별 고유 key를 부여하여 DOM 재사용으로 인한 Leaflet 충돌 방지) */}
-              <div 
-                id="simulated-map" 
+              <div
+                id="simulated-map"
                 key={trackingData.bl_number}
                 className="w-full h-[400px] rounded-xl border border-slate-100 relative"
                 style={{ zIndex: 0 }}
@@ -685,18 +818,18 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-4 bg-white rounded-xl border">
                     <label className="block text-xs font-bold text-slate-600 mb-2">상업송장 (Commercial Invoice)</label>
-                    <input 
-                      type="file" 
-                      accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg" 
+                    <input
+                      type="file"
+                      accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
                       className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
                     />
                   </div>
                   <div className="p-4 bg-white rounded-xl border">
                     <label className="block text-xs font-bold text-slate-600 mb-2">패킹리스트 (Packing List)</label>
-                    <input 
-                      type="file" 
-                      accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg" 
+                    <input
+                      type="file"
+                      accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
                       className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       onChange={(e) => setPackingFile(e.target.files?.[0] || null)}
                     />
@@ -725,10 +858,10 @@ export default function DashboardPage() {
                   선적할 중고차량들의 외관 및 상태 사진들(또는 압축된 ZIP 파일)을 등록해 주세요.
                 </p>
                 <div className="flex items-center gap-4 bg-white p-4 rounded-xl border">
-                  <input 
-                    type="file" 
-                    multiple 
-                    accept="image/*,.zip" 
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,.zip"
                     className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                     onChange={(e) => setExteriorFiles(e.target.files)}
                   />
@@ -750,10 +883,10 @@ export default function DashboardPage() {
                   차량의 차대번호 스티커/각인 사진과 말소사실증명서 사진을 등록해 주세요. 시스템이 차대번호를 AI 분석합니다.
                 </p>
                 <div className="flex items-center gap-4 bg-white p-4 rounded-xl border">
-                  <input 
-                    type="file" 
-                    multiple 
-                    accept="image/*" 
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
                     className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
                     onChange={(e) => setDocFiles(e.target.files)}
                   />
@@ -865,48 +998,47 @@ export default function DashboardPage() {
               {shipments
                 .filter((s: any) => s.status === "Delivered")
                 .map((shipment: any, idx) => (
-                <tr
-                  key={idx}
-                  className="hover:bg-blue-50 transition cursor-pointer"
-                  onClick={() => fetchTracking(shipment.bl_number)}
-                >
-                  <td className="p-4 font-bold text-blue-600">
-                    {shipment.bl_number}
-                  </td>
-                  <td className="p-4 text-slate-800 font-medium">
-                    {shipment.vessel_name}
-                  </td>
-                  <td className="p-4">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${
-                        shipment.status === "Delivered" ? "bg-slate-100 text-slate-700" : "bg-blue-100 text-blue-700"
-                      }`}
-                    >
-                      {shipment.status}
-                    </span>
-                  </td>
-                  <td className="p-4 text-slate-600 text-sm">
-                    {shipment.pol.split(",")[0]} ➔ {shipment.pod.split(",")[0]}
-                  </td>
-                  <td className="p-4 text-slate-800 text-sm">
-                    {shipment.eta}
-                  </td>
-                  <td className="p-4 text-sm font-semibold text-right text-red-600">
-                    ${Number(shipment.invoice_amount).toLocaleString()}
-                  </td>
-                  <td className="p-4 text-center">
-                    {shipment.is_paid ? (
-                      <span className="text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded border border-green-200">
-                        완료
+                  <tr
+                    key={idx}
+                    className="hover:bg-blue-50 transition cursor-pointer"
+                    onClick={() => fetchTracking(shipment.bl_number)}
+                  >
+                    <td className="p-4 font-bold text-blue-600">
+                      {shipment.bl_number}
+                    </td>
+                    <td className="p-4 text-slate-800 font-medium">
+                      {shipment.vessel_name}
+                    </td>
+                    <td className="p-4">
+                      <span
+                        className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${shipment.status === "Delivered" ? "bg-slate-100 text-slate-700" : "bg-blue-100 text-blue-700"
+                          }`}
+                      >
+                        {shipment.status}
                       </span>
-                    ) : (
-                      <span className="text-red-500 text-xs font-bold bg-red-50 px-2 py-1 rounded border border-red-200">
-                        미납
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-4 text-slate-600 text-sm">
+                      {shipment.pol.split(",")[0]} ➔ {shipment.pod.split(",")[0]}
+                    </td>
+                    <td className="p-4 text-slate-800 text-sm">
+                      {shipment.eta}
+                    </td>
+                    <td className="p-4 text-sm font-semibold text-right text-red-600">
+                      ${Number(shipment.invoice_amount).toLocaleString()}
+                    </td>
+                    <td className="p-4 text-center">
+                      {shipment.is_paid ? (
+                        <span className="text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded border border-green-200">
+                          완료
+                        </span>
+                      ) : (
+                        <span className="text-red-500 text-xs font-bold bg-red-50 px-2 py-1 rounded border border-red-200">
+                          미납
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>

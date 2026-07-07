@@ -55,12 +55,23 @@ export const getTrackingInfo = async (req: Request, res: Response) => {
 
     const shipment = rows[0];
 
+    // Fetch vehicle statistics for progress rate
+    const [vehicles]: any = await pool.query(
+      "SELECT COUNT(*) as total, SUM(CASE WHEN status IN ('Yard In', 'Loaded') THEN 1 ELSE 0 END) as yard_in_count FROM vehicles WHERE shipment_id = ?",
+      [shipment.id]
+    );
+    const vehicleStats = vehicles.length > 0 ? vehicles[0] : { total: 0, yard_in_count: 0 };
+
     // DB에서 가져온 데이터에 가상의 타임라인(Events)을 덧붙여서 응답
     const mockData = {
       ...shipment,
       // Date 객체일 경우 문자열로 변환 (yyyy-mm-dd)
       etd: shipment.etd ? shipment.etd.toISOString().split('T')[0] : '',
       eta: shipment.eta ? shipment.eta.toISOString().split('T')[0] : '',
+      vehicleStats: {
+        total: Number(vehicleStats.total || 0),
+        yardInCount: Number(vehicleStats.yard_in_count || 0)
+      },
       events: [
         { date: shipment.etd ? shipment.etd.toISOString().split('T')[0] + ' 14:00' : '2024-05-08 14:00', location: shipment.pol, status: 'Gate In Empty' },
         { date: shipment.etd ? shipment.etd.toISOString().split('T')[0] + ' 18:00' : '2024-05-10 18:00', location: shipment.pol, status: 'Vessel Departed' }
@@ -184,6 +195,13 @@ export const verifyDocs = async (req: Request, res: Response) => {
       `UPDATE shipments SET status = 'Documents Verified' WHERE bl_number = ?`,
       [blNumber]
     );
+
+    // Update all pending vehicles to 'Trucking'
+    const [shipmentRows]: any = await pool.query('SELECT id FROM shipments WHERE bl_number = ?', [blNumber]);
+    if (shipmentRows.length > 0) {
+      const shipmentId = shipmentRows[0].id;
+      await pool.query("UPDATE vehicles SET status = 'Trucking' WHERE shipment_id = ? AND status = 'Pending'", [shipmentId]);
+    }
 
     // B/L 룸 소켓 실시간 이벤트 발행
     const io = req.app.get('io');
@@ -385,7 +403,12 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
         plate_number: v.plate_number || "",
         mileage: v.mileage || "",
         initial_registration_date: v.initial_registration_date || "",
-        vehicle_type: v.vehicle_type || ""
+        vehicle_type: v.vehicle_type || "",
+        length: v.length || 0,
+        width: v.width || 0,
+        height: v.height || 0,
+        cbm: v.cbm || 0,
+        weight: v.weight || 0
       };
     });
 
@@ -529,11 +552,13 @@ export const saveAllVehicles = async (req: Request, res: Response) => {
         await pool.query(
           `UPDATE vehicles 
            SET vin = ?, plate_number = ?, vehicle_type = ?, mileage = ?, initial_registration_date = ?, 
-               make = ?, model = ?, year = ?, price = ?, drivability = ?
+               make = ?, model = ?, year = ?, price = ?, drivability = ?,
+               length = ?, width = ?, height = ?, weight = ?, cbm = ?
            WHERE id = ? AND shipment_id = ?`,
           [
             v.vin || null, v.plate_number || null, v.vehicle_type || null, v.mileage || null, parseDateForDb(v.initial_registration_date),
             v.make || null, v.model || null, v.year || null, v.price || null, v.drivability || null,
+            v.length || null, v.width || null, v.height || null, v.weight || null, v.cbm || null,
             v.id, shipmentId
           ]
         );
@@ -636,13 +661,16 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
 
     const [vehicles]: any = await pool.query('SELECT * FROM vehicles WHERE shipment_id = ?', [shipmentId]);
 
-    // 2. HTML 컨텐츠 생성 (Commercial Invoice & Packing List 통합 양식)
-    const htmlContent = `
+    // 2. Commercial Invoice HTML 생성
+    const invoiceHtml = `
       <html>
         <head>
           <meta charset="utf-8">
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
           <style>
-            body { font-family: sans-serif; padding: 40px; color: #333; }
+            body { font-family: 'Noto Sans KR', sans-serif; padding: 40px; color: #333; }
             h1 { text-align: center; font-size: 24px; margin-bottom: 20px; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 12px; }
@@ -653,7 +681,7 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
           </style>
         </head>
         <body>
-          <h1>COMMERCIAL INVOICE & PACKING LIST</h1>
+          <h1>COMMERCIAL INVOICE (상업 송장)</h1>
           <div class="info-grid">
             <div class="info-box">
               <strong>Shipper (Exporter):</strong><br/>
@@ -669,7 +697,7 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
             </div>
           </div>
           
-          <div class="section-title">VEHICLE LIST (차량 내역)</div>
+          <div class="section-title">VEHICLE PRICE LIST</div>
           <table>
             <thead>
               <tr>
@@ -696,40 +724,121 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
           </table>
           
           <div style="margin-top: 40px; text-align: right; font-weight: bold; font-size: 16px;">
-            Total Price: ${vehicles.reduce((sum: number, v: any) => sum + (v.price || 0), 0).toLocaleString()}
+            Total Price: $${vehicles.reduce((sum: number, v: any) => sum + (v.price || 0), 0).toLocaleString()}
           </div>
         </body>
       </html>
     `;
 
-    // 3. Puppeteer를 이용한 PDF 파일 생성
+    // 3. Packing List HTML 생성
+    const packingHtml = `
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+          <style>
+            body { font-family: 'Noto Sans KR', sans-serif; padding: 40px; color: #333; }
+            h1 { text-align: center; font-size: 24px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 12px; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .section-title { font-size: 16px; font-weight: bold; margin-top: 30px; border-bottom: 2px solid #333; padding-bottom: 5px; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+            .info-box { border: 1px solid #ccc; padding: 15px; border-radius: 5px; font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <h1>PACKING LIST (포장 명세서)</h1>
+          <div class="info-grid">
+            <div class="info-box">
+              <strong>Shipper (Exporter):</strong><br/>
+              ${shipment.shipper || '일반 화주'}<br/>
+              B/L No: ${blNumber}<br/>
+              POL: ${shipment.pol || ''}
+            </div>
+            <div class="info-box">
+              <strong>Consignee (Importer/Buyer):</strong><br/>
+              ${shipment.buyer || 'Unknown Buyer'}<br/>
+              Vessel: ${shipment.vessel_name || ''}<br/>
+              POD: ${shipment.pod || ''}
+            </div>
+          </div>
+          
+          <div class="section-title">VEHICLE PACKING DETAILS</div>
+          <table>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>VIN (차대번호)</th>
+                <th>Make/Model (제조사/차명)</th>
+                <th>Year (연식)</th>
+                <th>Weight (KGS)</th>
+                <th>Volume (CBM)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${vehicles.map((v: any, idx: number) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td>${v.vin}</td>
+                  <td>${v.make || 'Unknown'} / ${v.model || 'Unknown'}</td>
+                  <td>${v.year || ''}</td>
+                  <td>${Number(v.weight || 0).toLocaleString()} KGS</td>
+                  <td>${Number(v.cbm || 0).toFixed(2)} CBM</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <div style="margin-top: 40px; display: flex; justify-content: flex-end; gap: 40px; font-weight: bold; font-size: 16px;">
+            <div>Total Weight: ${vehicles.reduce((sum: number, v: any) => sum + Number(v.weight || 0), 0).toLocaleString()} KGS</div>
+            <div>Total Volume: ${vehicles.reduce((sum: number, v: any) => sum + Number(v.cbm || 0), 0).toFixed(2)} CBM</div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    // 4. Puppeteer를 이용한 두 개의 PDF 파일 생성
     const pdfDir = path.join(__dirname, '../../uploads/pdf');
     if (!fs.existsSync(pdfDir)) {
       fs.mkdirSync(pdfDir, { recursive: true });
     }
-    const pdfPath = path.join(pdfDir, `${blNumber}.pdf`);
+    const invoicePdfPath = path.join(pdfDir, `${blNumber}_invoice.pdf`);
+    const packingPdfPath = path.join(pdfDir, `${blNumber}_packing.pdf`);
 
     const browser = await puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
-    const page = await browser.newPage();
-    await page.setContent(htmlContent);
-    await page.pdf({ path: pdfPath, format: 'A4', printBackground: true });
+    
+    // Generate Invoice PDF
+    const pageInvoice = await browser.newPage();
+    await pageInvoice.setContent(invoiceHtml);
+    await pageInvoice.pdf({ path: invoicePdfPath, format: 'A4', printBackground: true });
+    
+    // Generate Packing PDF
+    const pagePacking = await browser.newPage();
+    await pagePacking.setContent(packingHtml);
+    await pagePacking.pdf({ path: packingPdfPath, format: 'A4', printBackground: true });
+
     await browser.close();
 
-    const pdfRelativeUrl = `/uploads/pdf/${blNumber}.pdf`;
-    const pdfAbsoluteUrl = `http://localhost:5000${pdfRelativeUrl}`;
+    const invoiceRelativeUrl = `/uploads/pdf/${blNumber}_invoice.pdf`;
+    const packingRelativeUrl = `/uploads/pdf/${blNumber}_packing.pdf`;
+    const invoiceAbsoluteUrl = `http://localhost:5000${invoiceRelativeUrl}`;
+    const packingAbsoluteUrl = `http://localhost:5000${packingRelativeUrl}`;
 
-    // 4. Kakao Talk 나에게 보내기 API를 사용하여 알림톡 발송
-    const messageText = `[선적 서류 및 PDF 통지]\nB/L: ${blNumber}\n화주명: ${shipment.shipper || '일반화주'}\n차량 대수: ${vehicles.length}대\n\n상업송장 및 패킹리스트 PDF 생성이 완료되어 카카오톡으로 전송되었습니다. 아래 버튼을 눌러 모바일 서류를 바로 확인해 주세요.`;
+    // 5. Kakao Talk 나에게 보내기 API를 사용하여 알림톡 발송
+    const messageText = `[선적 서류 및 PDF 통지]\nB/L: ${blNumber}\n화주명: ${shipment.shipper || '일반화주'}\n차량 대수: ${vehicles.length}대\n\n상업송장(Invoice) 및 패킹리스트(Packing List) PDF 생성이 완료되었습니다. 아래 버튼 또는 서류보관함에서 각각 확인해 주세요.`;
 
     await axios.post(
       'https://kapi.kakao.com/v2/api/talk/memo/default/send',
       `template_object=${JSON.stringify({
         object_type: 'text',
         text: messageText,
-        link: { web_url: pdfAbsoluteUrl, mobile_web_url: pdfAbsoluteUrl },
-        button_title: 'PDF 서류 보기'
+        link: { web_url: invoiceAbsoluteUrl, mobile_web_url: invoiceAbsoluteUrl },
+        button_title: 'PDF 상업송장 보기'
       })}`,
       {
         headers: {
@@ -739,15 +848,403 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
       }
     );
 
-    // 5. DB에 생성된 PDF 파일 경로 업데이트 (shipments 테이블)
+    // 6. DB에 생성된 PDF 파일 경로 업데이트 (shipments 테이블)
     await pool.query(
       'UPDATE shipments SET invoice_file_path = ?, packing_list_file_path = ? WHERE id = ?',
-      [pdfRelativeUrl, pdfRelativeUrl, shipmentId]
+      [invoiceRelativeUrl, packingRelativeUrl, shipmentId]
     );
 
-    res.json({ success: true, message: 'PDF 생성 및 카카오톡 전송 성공', data: { pdfUrl: pdfAbsoluteUrl } });
+    // 7. 실시간 소켓 알림 발송 (화주 룸 및 B/L 룸)
+    let shipperId = null;
+    if (shipment.booking_id) {
+      const [bookings]: any = await pool.query('SELECT user_id FROM bookings WHERE id = ?', [shipment.booking_id]);
+      if (bookings.length > 0) {
+        shipperId = bookings[0].user_id;
+      }
+    }
+
+    const io = req.app.get('io');
+    if (shipperId) {
+      io.to(`client_${shipperId}`).emit('pdf_generated_alert', {
+        blNumber,
+        shipperId,
+        vesselName: shipment.vessel_name,
+        message: `B/L [${blNumber}]의 상업송장 및 패킹리스트 PDF 서류가 발행되었습니다. 서류보관함에서 확인 및 승인해 주세요.`
+      });
+    }
+    io.to(blNumber).emit('pdf_generated_alert', {
+      blNumber,
+      message: `상업송장 및 패킹리스트 PDF 서류가 발행되었습니다.`
+    });
+
+    res.json({ success: true, message: '상업송장/패킹리스트 PDF 분할 생성 및 카카오톡 전송 성공', data: { invoiceUrl: invoiceAbsoluteUrl, packingUrl: packingAbsoluteUrl } });
   } catch (error: any) {
     console.error('PDF 생성 및 전송 오류:', error);
     res.status(500).json({ success: false, message: 'PDF 생성 또는 카카오톡 전송 중 서버 오류: ' + (error.response?.data?.message || error.message) });
+  }
+};
+
+export const approveDoc = async (req: Request, res: Response) => {
+  const { blNumber, docType } = req.body;
+  if (!blNumber || !['invoice', 'packing'].includes(docType)) {
+    return res.status(400).json({ success: false, message: '부적절한 요청 매개변수입니다.' });
+  }
+
+  try {
+    const columnName = docType === 'invoice' ? 'invoice_approved' : 'packing_approved';
+    await pool.query(`UPDATE shipments SET ${columnName} = 1 WHERE bl_number = ?`, [blNumber]);
+
+    // Check if both are now approved
+    const [rows]: any = await pool.query('SELECT invoice_approved, packing_approved, status FROM shipments WHERE bl_number = ?', [blNumber]);
+    if (rows.length > 0) {
+      const { invoice_approved, packing_approved, status } = rows[0];
+      if (invoice_approved === 1 && packing_approved === 1 && ['Pending Documents', 'Documents Uploaded'].includes(status)) {
+        // Both approved, change status to 'Documents Verified'
+        await pool.query('UPDATE shipments SET status = \'Documents Verified\' WHERE bl_number = ?', [blNumber]);
+
+        // Update all pending vehicles to 'Trucking'
+        const [shipmentRows]: any = await pool.query('SELECT id FROM shipments WHERE bl_number = ?', [blNumber]);
+        if (shipmentRows.length > 0) {
+          const shipmentId = shipmentRows[0].id;
+          await pool.query("UPDATE vehicles SET status = 'Trucking' WHERE shipment_id = ? AND status = 'Pending'", [shipmentId]);
+        }
+
+        // Notify admin via Socket.io
+        const io = req.app.get('io');
+        io.to('admin').emit('shipment_status_changed', { blNumber, status: 'Documents Verified' });
+        io.to(blNumber).emit('shipment_status_changed', { blNumber, status: 'Documents Verified' });
+      }
+    }
+
+    return res.json({ success: true, message: '서류 승인 완료' });
+  } catch (error: any) {
+    console.error('approveDoc error:', error);
+    return res.status(500).json({ success: false, message: '서류 승인 처리 중 에러 발생: ' + error.message });
+  }
+};
+
+export const deleteDoc = async (req: Request, res: Response) => {
+  const { blNumber, docType } = req.body;
+  if (!blNumber || !['invoice', 'packing'].includes(docType)) {
+    return res.status(400).json({ success: false, message: '부적절한 요청 매개변수입니다.' });
+  }
+
+  try {
+    const filePathColumn = docType === 'invoice' ? 'invoice_file_path' : 'packing_list_file_path';
+    const approvedColumn = docType === 'invoice' ? 'invoice_approved' : 'packing_approved';
+
+    // Clear file path and approval state
+    await pool.query(`UPDATE shipments SET ${filePathColumn} = NULL, ${approvedColumn} = 0 WHERE bl_number = ?`, [blNumber]);
+
+    // Revert status to 'Pending Documents' if it was in 'Documents Uploaded' or 'Documents Verified'
+    const [rows]: any = await pool.query('SELECT status FROM shipments WHERE bl_number = ?', [blNumber]);
+    if (rows.length > 0) {
+      const currentStatus = rows[0].status;
+      if (['Documents Uploaded', 'Documents Verified'].includes(currentStatus)) {
+        await pool.query('UPDATE shipments SET status = \'Pending Documents\' WHERE bl_number = ?', [blNumber]);
+
+        // Notify via Socket.io
+        const io = req.app.get('io');
+        io.to('admin').emit('shipment_status_changed', { blNumber, status: 'Pending Documents' });
+        io.to(blNumber).emit('shipment_status_changed', { blNumber, status: 'Pending Documents' });
+      }
+    }
+
+    return res.json({ success: true, message: '서류 삭제 완료' });
+  } catch (error: any) {
+    console.error('deleteDoc error:', error);
+    return res.status(500).json({ success: false, message: '서류 삭제 처리 중 에러 발생: ' + error.message });
+  }
+};
+
+export const updateVehicleStatus = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status } = req.body; // 'Pending' | 'Trucking' | 'Yard In' | 'Loaded'
+
+  if (!id || !status) {
+    return res.status(400).json({ success: false, message: '차량 ID와 상태 값이 필요합니다.' });
+  }
+
+  try {
+    // Get the vehicle and its shipment info
+    const [vehicles]: any = await pool.query(
+      'SELECT v.*, s.bl_number, s.vessel_name, s.booking_id, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?',
+      [id]
+    );
+    if (vehicles.length === 0) {
+      return res.status(404).json({ success: false, message: '차량을 찾을 수 없습니다.' });
+    }
+    const vehicle = vehicles[0];
+    const shipmentId = vehicle.shipment_id;
+    const blNumber = vehicle.bl_number;
+    const vehicleModel = vehicle.model || vehicle.vin || '차량';
+
+    // Update the vehicle's status
+    await pool.query('UPDATE vehicles SET status = ? WHERE id = ?', [status, id]);
+
+    // Find the user/shipper ID for alerts
+    let shipperId = null;
+    if (vehicle.booking_id) {
+      const [bookings]: any = await pool.query('SELECT user_id FROM bookings WHERE id = ?', [vehicle.booking_id]);
+      if (bookings.length > 0) {
+        shipperId = bookings[0].user_id;
+      }
+    }
+
+    const io = req.app.get('io');
+    const isNewYard = status === 'Yard In' || status === 'Loaded';
+
+    if (isNewYard) {
+      // Check if this was the last vehicle to be yard-ed
+      const [allShipmentVehicles]: any = await pool.query('SELECT id, status, model, vin FROM vehicles WHERE shipment_id = ?', [shipmentId]);
+
+      const totalCount = allShipmentVehicles.length;
+      const yardInOrLoadedCount = allShipmentVehicles.filter((v: any) => v.status === 'Yard In' || v.status === 'Loaded').length;
+
+      if (totalCount > 0 && yardInOrLoadedCount === totalCount) {
+        // THIS WAS THE LAST VEHICLE!
+        // 1. Update shipment status to 'Gate In' (CY반입)
+        await pool.query('UPDATE shipments SET status = \'Gate In\' WHERE id = ?', [shipmentId]);
+
+        // 2. Emit status changed events (admin & client/B/L)
+        const payload = { blNumber, status: 'Gate In', last_updated: new Date() };
+        io.to('admin').emit('shipment_status_changed', payload);
+        io.to(blNumber).emit('shipment_status_changed', payload);
+
+        // 3. Send popup alert to shipper
+        if (shipperId) {
+          io.to(`client_${shipperId}`).emit('pdf_generated_alert', {
+            blNumber,
+            shipperId,
+            message: `마지막 차량 [${vehicleModel}]을 포함한 모든 차량(${totalCount}대)이 야드에 반입(CY반입) 완료되었습니다.`
+          });
+        }
+
+        // 4. Send KakaoTalk notification
+        const userSession = (req as any).session?.user;
+        if (userSession && userSession.kakaoToken) {
+          const messageText = `[야드 반입 완료 통지]\nB/L: ${blNumber}\n선박명: ${vehicle.vessel_name || ''}\n\n마지막 차량 [${vehicleModel}]을 포함한 전체 차량 ${totalCount}대가 야드 반입(CY반입) 완료되었습니다.`;
+          const relativeUrl = `/`; // Link to dashboard
+          const absoluteUrl = `http://localhost:5000${relativeUrl}`;
+
+          try {
+            await axios.post(
+              'https://kapi.kakao.com/v2/api/talk/memo/default/send',
+              `template_object=${JSON.stringify({
+                object_type: 'text',
+                text: messageText,
+                link: { web_url: absoluteUrl, mobile_web_url: absoluteUrl },
+                button_title: '화물 트래킹 확인'
+              })}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${userSession.kakaoToken}`,
+                  'Content-Type': 'application/x-www-form-urlencoded'
+                }
+              }
+            );
+          } catch (err) {
+            console.error('야드 반입 카카오톡 전송 실패:', err);
+          }
+        }
+      } else {
+        // NOT the last vehicle. Just send alert to shipper menu (popup only)
+        if (shipperId) {
+          io.to(`client_${shipperId}`).emit('pdf_generated_alert', {
+            blNumber,
+            shipperId,
+            message: `차량 [${vehicleModel}]이 야드에 반입 완료되었습니다. (진행률: ${yardInOrLoadedCount}/${totalCount}대)`
+          });
+        }
+      }
+    } else {
+      // Reverted from Yard In to Trucking/Pending
+      const [allShipmentVehicles]: any = await pool.query('SELECT id, status, model, vin FROM vehicles WHERE shipment_id = ?', [shipmentId]);
+      const totalCount = allShipmentVehicles.length;
+      const yardInOrLoadedCount = allShipmentVehicles.filter((v: any) => v.status === 'Yard In' || v.status === 'Loaded').length;
+
+      // Get current shipment details
+      const [shipments]: any = await pool.query('SELECT status FROM shipments WHERE id = ?', [shipmentId]);
+      if (shipments.length > 0) {
+        const currentShipmentStatus = shipments[0].status;
+        if (currentShipmentStatus === 'Gate In') {
+          // Revert shipment status back to 'Trucking' (트럭 운송)
+          await pool.query('UPDATE shipments SET status = \'Trucking\' WHERE id = ?', [shipmentId]);
+
+          // Emit status change socket event
+          const payload = { blNumber, status: 'Trucking', last_updated: new Date() };
+          io.to('admin').emit('shipment_status_changed', payload);
+          io.to(blNumber).emit('shipment_status_changed', payload);
+
+          // Send popup alert to shipper
+          if (shipperId) {
+            io.to(`client_${shipperId}`).emit('pdf_generated_alert', {
+              blNumber,
+              shipperId,
+              message: `차량 [${vehicleModel}]의 야드반입이 취소되어 대시보드가 '트럭 운송' 상태로 복구되었습니다. (반입 진행률: ${yardInOrLoadedCount}/${totalCount}대)`
+            });
+          }
+        } else {
+          // Just notify the shipper that a vehicle status reverted, so progress rate updates
+          if (shipperId) {
+            io.to(`client_${shipperId}`).emit('pdf_generated_alert', {
+              blNumber,
+              shipperId,
+              message: `차량 [${vehicleModel}]의 반입 상태가 취소되었습니다. (반입 진행률: ${yardInOrLoadedCount}/${totalCount}대)`
+            });
+          }
+          // Emit a generic status change to trigger progress rate component re-fetch
+          const payload = { blNumber, status: currentShipmentStatus, last_updated: new Date() };
+          io.to(blNumber).emit('shipment_status_changed', payload);
+        }
+      }
+    }
+
+    return res.json({ success: true, message: '차량 상태 변경 완료' });
+  } catch (error: any) {
+    console.error('updateVehicleStatus error:', error);
+    return res.status(500).json({ success: false, message: '서버 에러가 발생했습니다: ' + error.message });
+  }
+};
+
+export const getVehicleSpecByVIN = async (req: Request, res: Response) => {
+  const { vin } = req.params;
+  const vinStr = typeof vin === 'string' ? vin : '';
+
+  if (!vinStr || vinStr.length !== 17) {
+    return res.status(400).json({ success: false, message: '올바른 17자리 차대번호를 입력해주세요.' });
+  }
+
+  const vinUpper = vinStr.toUpperCase();
+
+  try {
+    const SERVICE_KEY = process.env.DATA_GO_KR_SERVICE_KEY;
+    let carData = null;
+
+    if (SERVICE_KEY) {
+      try {
+        const apiUrl = `http://apis.data.go.kr/1611000/CarSpcifyInfoService/getCarSpecificationInfo`;
+        const response = await axios.get(apiUrl, {
+          params: {
+            serviceKey: SERVICE_KEY,
+            vin: vinUpper,
+            type: 'json'
+          },
+          timeout: 4000
+        });
+        carData = response.data?.response?.body?.items?.item;
+      } catch (apiErr: any) {
+        console.warn('공공데이터 API 조회 실패, Fallback 모드로 전환:', apiErr.message);
+      }
+    }
+
+    if (carData) {
+      const lengthM = parseFloat(carData.length || 0) / 1000;
+      const widthM = parseFloat(carData.width || 0) / 1000;
+      const heightM = parseFloat(carData.height || 0) / 1000;
+      const weightKg = parseFloat(carData.totWt || 0);
+      const calculatedCbm = Math.round((lengthM * widthM * heightM) * 1000) / 1000;
+
+      // Format firstRegDt YYYYMMDD -> YYYY-MM-DD
+      let rawDt = carData.firstRegDt || '';
+      let formattedDt = '2023-05-15';
+      if (rawDt) {
+        const cleaned = rawDt.replace(/\D/g, '');
+        if (cleaned.length === 8) {
+          formattedDt = `${cleaned.substring(0, 4)}-${cleaned.substring(4, 6)}-${cleaned.substring(6, 8)}`;
+        } else {
+          formattedDt = rawDt;
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          vin: vinUpper,
+          modelName: carData.carNm || '알 수 없는 모델',
+          make: carData.carPrdNm || 'Hyundai/Kia',
+          year: parseInt(carData.carYyyy || '2023', 10),
+          initialRegistrationDate: formattedDt,
+          dimensions: {
+            length: parseInt(carData.length || '0'),
+            width: parseInt(carData.width || '0'),
+            height: parseInt(carData.height || '0')
+          },
+          weight: weightKg,
+          cbm: calculatedCbm
+        }
+      });
+    }
+
+    // Fallback Mock Dictionary based on VIN prefixes
+    let modelName = '아반떼 (AVANTE)';
+    let make = 'HYUNDAI';
+    let length = 4710;
+    let width = 1825;
+    let height = 1420;
+    let weight = 1245;
+    let year = 2022;
+    let initialRegistrationDate = '2022-02-28';
+
+    if (vinUpper.includes('KMH')) {
+      modelName = '쏘나타 (SONATA)';
+      make = 'HYUNDAI';
+      length = 4900;
+      width = 1860;
+      height = 1445;
+      weight = 1475;
+      year = 2021;
+      initialRegistrationDate = '2021-04-12';
+    } else if (vinUpper.includes('KPT')) {
+      modelName = '포터 2 (PORTER II)';
+      make = 'HYUNDAI';
+      length = 5100;
+      width = 1740;
+      height = 1970;
+      weight = 1895;
+      year = 2022;
+      initialRegistrationDate = '2022-09-20';
+    } else if (vinUpper.includes('KNA') || vinUpper.includes('KNE')) {
+      modelName = '스포티지 (SPORTAGE)';
+      make = 'KIA';
+      length = 4660;
+      width = 1865;
+      height = 1660;
+      weight = 1545;
+      year = 2023;
+      initialRegistrationDate = '2022-11-05';
+    } else if (vinUpper.includes('KNM')) {
+      modelName = '봉고 3 (BONGO III)';
+      make = 'KIA';
+      length = 5125;
+      width = 1740;
+      height = 1995;
+      weight = 1930;
+      year = 2020;
+      initialRegistrationDate = '2020-07-15';
+    }
+
+    const lengthM = length / 1000;
+    const widthM = width / 1000;
+    const heightM = height / 1000;
+    const calculatedCbm = Math.round((lengthM * widthM * heightM) * 1000) / 1000;
+
+    return res.json({
+      success: true,
+      data: {
+        vin: vinUpper,
+        modelName,
+        make,
+        year,
+        initialRegistrationDate,
+        dimensions: { length, width, height },
+        weight,
+        cbm: calculatedCbm
+      }
+    });
+
+  } catch (error: any) {
+    console.error('getVehicleSpecByVIN error:', error);
+    return res.status(500).json({ success: false, message: '서버 내부 오류 또는 외부 API 연동 실패: ' + error.message });
   }
 };

@@ -489,11 +489,6 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
                const updates: string[] = [];
                const params: any[] = [];
                if (ocrResult.plateNumber) { updates.push('deregistration_no = ?'); params.push(ocrResult.plateNumber); }
-               if (ocrResult.vehicleType) { updates.push('vehicle_type = ?'); params.push(ocrResult.vehicleType); }
-               if (ocrResult.mileage) { updates.push('mileage = ?'); params.push(ocrResult.mileage); }
-               if (ocrResult.initialRegistrationDate) { updates.push('initial_registration_date = ?'); params.push(ocrResult.initialRegistrationDate); }
-               if (ocrResult.makeModel) { updates.push('make = ?'); params.push(ocrResult.makeModel); }
-               if (ocrResult.modelYear) { updates.push('year = ?'); params.push(ocrResult.modelYear); }
 
                if (updates.length > 0) {
                  params.push(updateId);
@@ -505,30 +500,19 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
             }
             (ocrResult as any).id = updateId;
           } else {
-               const specs = await decodeVin(ocrResult.vin);
                const [insertResult]: any = await pool.query(
-                 'INSERT INTO vehicles (shipment_id, vin, deregistration_no, plate_number, vehicle_type, mileage, initial_registration_date, make, model, year, status, condition_photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                 'INSERT INTO vehicles (shipment_id, vin, deregistration_no, plate_number, status, condition_photo_url) VALUES (?, ?, ?, ?, ?, ?)',
                  [
                    shipmentId, 
                    ocrResult.vin, 
                    ocrResult.plateNumber || null,
                    ocrResult.plateNumber || null,
-                   ocrResult.vehicleType || null,
-                   ocrResult.mileage || null,
-                   ocrResult.initialRegistrationDate || null,
-                   ocrResult.makeModel || (specs ? specs.make : null),
-                   (specs ? specs.model : null),
-                   ocrResult.modelYear || (specs ? specs.year : null),
                    'Yard In',
                    ocrResult.type === 'plate' ? JSON.stringify([targetRelativeUrl]) : null
                  ]
                );
                
-               // 프론트엔드로 보내주기 위해 ocrResult.extracted 확장
                (ocrResult as any).id = insertResult.insertId;
-               (ocrResult as any).make = ocrResult.makeModel || (specs ? specs.make : null);
-               (ocrResult as any).model = (specs ? specs.model : null);
-               (ocrResult as any).year = ocrResult.modelYear || (specs ? specs.year : null);
           }
         } else {
           processedResults.push({
@@ -722,12 +706,6 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
                const updates: string[] = [];
                const params: any[] = [];
                if (ocrResult.plateNumber) { updates.push('deregistration_no = ?'); params.push(ocrResult.plateNumber); }
-               if (ocrResult.vehicleType) { updates.push('vehicle_type = ?'); params.push(ocrResult.vehicleType); }
-               if (ocrResult.mileage) { updates.push('mileage = ?'); params.push(ocrResult.mileage); }
-               if (ocrResult.initialRegistrationDate) { updates.push('initial_registration_date = ?'); params.push(ocrResult.initialRegistrationDate); }
-               if (ocrResult.make) { updates.push('make = ?'); params.push(ocrResult.make); }
-               if (ocrResult.makeModel) { updates.push('model = ?'); params.push(ocrResult.makeModel); }
-               if (ocrResult.modelYear) { updates.push('year = ?'); params.push(ocrResult.modelYear); }
 
                if (updates.length > 0) {
                  params.push(updateId);
@@ -748,24 +726,16 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
             }
           } else {
              newVehiclesCount++;
-             const specs = await decodeVin(ocrResult.vin);
              await pool.query(
                `INSERT INTO vehicles (
-                  shipment_id, vin, deregistration_no, plate_number, vehicle_type, mileage, 
-                  initial_registration_date, make, model, year, status, 
+                  shipment_id, vin, deregistration_no, plate_number, status, 
                   condition_photo_url, deregistration_photo_url, vin_photo_url, drivability
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                [
                  shipmentId,
                  finalVin,
                  ocrResult.plateNumber || null,
                  ocrResult.plateNumber || null,
-                 ocrResult.vehicleType || null,
-                 ocrResult.mileage || null,
-                 ocrResult.initialRegistrationDate || null,
-                 normalizeBrandName(ocrResult.make || (specs ? specs.make : null)),
-                 ocrResult.makeModel || (specs ? specs.model : null),
-                 ocrResult.modelYear || (specs ? specs.year : null),
                  'Yard In',
                  ocrResult.type === 'plate' ? JSON.stringify([newRelativeUrl]) : null,
                  ocrResult.type === 'document' ? JSON.stringify([newRelativeUrl]) : null,

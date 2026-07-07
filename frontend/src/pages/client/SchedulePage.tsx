@@ -9,6 +9,7 @@ export default function SchedulePage() {
     cbm: "",
     weight: "",
   });
+  const [incoterms, setIncoterms] = React.useState("FOB/FCA (F조건)");
   const [schedules, setSchedules] = React.useState<any[]>([]);
   const [availablePods, setAvailablePods] = React.useState<string[]>([]);
   const [scheduleLoading, setScheduleLoading] = React.useState(false);
@@ -58,7 +59,7 @@ export default function SchedulePage() {
     try {
       const res = await axios.post(
         "http://localhost:5000/api/schedules/book",
-        { schedule },
+        { schedule, incoterms },
         { withCredentials: true }
       );
       if (res.data.success) {
@@ -83,7 +84,7 @@ export default function SchedulePage() {
 
         <form
           onSubmit={handleScheduleSearch}
-          className="grid grid-cols-1 md:grid-cols-5 gap-4 relative z-10"
+          className="grid grid-cols-1 md:grid-cols-6 gap-4 relative z-10"
         >
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-1.5">
@@ -196,13 +197,28 @@ export default function SchedulePage() {
             />
           </div>
           <div>
+            <label className="block text-xs font-bold text-slate-300 mb-1.5">
+              거래 조건 (Incoterms)
+            </label>
+            <select
+              className="w-full px-4 py-3 bg-slate-800 border border-white/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-white transition"
+              value={incoterms}
+              onChange={(e) => setIncoterms(e.target.value)}
+            >
+              <option value="EXW (E조건)">EXW (E조건)</option>
+              <option value="FOB/FCA (F조건)">FOB/FCA (F조건)</option>
+              <option value="CFR/CIF (C조건)">CFR/CIF (C조건)</option>
+              <option value="DAP/DDP (D조건)">DAP/DDP (D조건)</option>
+            </select>
+          </div>
+          <div>
             <label className="block text-xs mb-1.5 select-none opacity-0">검색</label>
             <button
               type="submit"
               disabled={scheduleLoading}
               className="w-full bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-500 transition shadow-sm disabled:opacity-50"
             >
-              {scheduleLoading ? "검색 중..." : "스케줄 추천받기"}
+              {scheduleLoading ? "검색 중..." : "스케줄 검색"}
             </button>
           </div>
         </form>
@@ -228,7 +244,6 @@ export default function SchedulePage() {
                     <th className="p-4 font-bold">ETD</th>
                     <th className="p-4 font-bold">ETA</th>
                     <th className="p-4 font-bold text-center text-slate-700">마감일정</th>
-                    <th className="p-4 font-bold text-center">SPACE (CBM/kg)</th>
                     <th className="p-4 font-bold text-center">동작</th>
                   </tr>
                 </thead>
@@ -330,9 +345,6 @@ export default function SchedulePage() {
                             idx < 2 ? "bottom-full border-b-slate-950" : "top-full border-t-slate-950"
                           }`}></div>
                         </div>
-                      </td>
-                      <td className="p-4 text-center text-slate-600 text-xs font-semibold">
-                        {Number(sch.available_cbm).toFixed(0)} CBM / {Number(sch.available_weight).toLocaleString()} kg
                       </td>
                       <td className="p-4 text-center">
                         <button

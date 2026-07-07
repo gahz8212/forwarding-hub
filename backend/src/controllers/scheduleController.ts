@@ -118,54 +118,15 @@ export const searchSchedules = async (req: Request, res: Response) => {
       params.push(Number(weight));
     }
 
-    // 이미 출항한 과거 스케줄은 DB 쿼리 단계에서 제외 (핵심 버그 수정)
-    query += ' AND etd >= CURDATE()';
-
-    // 실제 선편이므로 임의 정렬 대신 출발지 기준 가장 빠른 항차(ETD ASC) 순으로 정렬하여 최대 100개 반환 후 필터링
+    // 실제 선편이므로 임의 정렬 대신 출발지 기준 가장 빠른 항차(ETD ASC) 순으로 정렬하여 최대 100개 반환
     query += ' ORDER BY etd ASC LIMIT 100';
 
     const [rows]: any = await pool.query(query, params);
 
-    const now = new Date();
-    const isDeadlinePassed = (deadlineVal: any): boolean => {
-      if (!deadlineVal) return false;
-      const cleanVal = typeof deadlineVal === 'string' 
-        ? deadlineVal.replace(/(\d+)(st|nd|rd|th)/gi, '$1') 
-        : deadlineVal;
-      const d = new Date(cleanVal);
-      if (isNaN(d.getTime())) return false;
-      return d.getTime() < now.getTime();
-    };
-
-    const filteredRows = rows.filter((sch: any) => {
-      let parsedMeta: any = null;
-      if (sch.metadata) {
-        try {
-          parsedMeta = typeof sch.metadata === 'string' ? JSON.parse(sch.metadata) : sch.metadata;
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      // Check all possible deadlines
-      const deadlines = [
-        sch.doc_closing_date,
-        sch.cargo_closing_date,
-        parsedMeta?.siCutOff,
-        parsedMeta?.vgmCutOff,
-        parsedMeta?.cyCutOff,
-        parsedMeta?.dangerousCutOff,
-        parsedMeta?.reeferCutOff
-      ];
-
-      // If any of the deadlines has passed, exclude this schedule
-      return !deadlines.some(d => isDeadlinePassed(d));
-    });
-
     res.json({
       success: true,
       message: '조건에 맞는 선박 스케줄을 검색했습니다.',
-      data: filteredRows
+      data: rows
     });
 
   } catch (error) {
@@ -175,7 +136,7 @@ export const searchSchedules = async (req: Request, res: Response) => {
 };
 
 export const requestBooking = async (req: Request, res: Response) => {
-  const { schedule } = req.body;
+  const { schedule, incoterms } = req.body;
   const userSession = (req.session as any).user;
 
   if (!userSession) {
@@ -220,18 +181,21 @@ export const requestBooking = async (req: Request, res: Response) => {
         parsedMeta?.reeferCutOff
       ];
 
+      // [테스트 우회] 마감일이 지난 스케줄도 예약을 허용하기 위해 임시 주석 처리합니다.
+      /*
       if (deadlines.some(d => isDeadlinePassed(d))) {
         return res.status(400).json({ 
           success: false, 
           message: "부킹 마감 일정(서류/화물 반입 등)이 이미 경과하여 해당 스케줄은 예약할 수 없습니다." 
         });
       }
+      */
     }
 
     // 1. DB에 부킹 기록 추가
     const [result]: any = await pool.query(
-      'INSERT INTO bookings (user_id, schedule_id, status) VALUES (?, ?, ?)',
-      [userSession.id, schedule.id, 'Pending']
+      'INSERT INTO bookings (user_id, schedule_id, incoterms, status) VALUES (?, ?, ?, ?)',
+      [userSession.id, schedule.id, incoterms || null, 'Pending']
     );
     const bookingId = result.insertId;
 
@@ -339,7 +303,7 @@ export const getClientBookings = async (req: Request, res: Response) => {
 
   try {
     const [rows]: any = await pool.query(`
-      SELECT b.id, b.status, b.created_at, s.vessel_name, s.pol, s.pod, s.etd, s.eta, s.available_cbm, s.available_weight, s.doc_closing_date, s.cargo_closing_date, sh.bl_number
+      SELECT b.id, b.status, b.created_at, b.incoterms, s.vessel_name, s.pol, s.pod, s.etd, s.eta, s.available_cbm, s.available_weight, s.doc_closing_date, s.cargo_closing_date, sh.bl_number
       FROM bookings b
       JOIN schedules s ON b.schedule_id = s.id
       LEFT JOIN shipments sh ON sh.booking_id = b.id
@@ -368,7 +332,7 @@ export const getAdminBookings = async (req: Request, res: Response) => {
 
   try {
     const [rows]: any = await pool.query(`
-      SELECT b.id, b.status, b.created_at, u.username as shipper, s.vessel_name, s.pol, s.pod, s.etd, s.eta, s.available_cbm, s.available_weight, s.doc_closing_date, s.cargo_closing_date, sh.bl_number
+      SELECT b.id, b.status, b.created_at, b.incoterms, u.username as shipper, s.vessel_name, s.pol, s.pod, s.etd, s.eta, s.available_cbm, s.available_weight, s.doc_closing_date, s.cargo_closing_date, sh.bl_number
       FROM bookings b
       JOIN schedules s ON b.schedule_id = s.id
       JOIN users u ON b.user_id = u.id

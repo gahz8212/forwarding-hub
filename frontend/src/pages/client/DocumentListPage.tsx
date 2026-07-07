@@ -17,6 +17,8 @@ interface DocumentItem {
   fileName: string;
   filePath: string;
   uploadedAt: string;
+  approved?: number;
+  fileKey?: string;
 }
 
 interface GroupedDocuments {
@@ -29,6 +31,9 @@ export default function DocumentListPage() {
   const [openAccordions, setOpenAccordions] = useState<{ [blNumber: string]: boolean }>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloadedDocs, setDownloadedDocs] = useState<{ [docId: string]: boolean }>({});
+
+
 
   // 선적 데이터 불러온 후 문서 리스트로 추출 및 그룹화
   const fetchDocuments = async () => {
@@ -55,7 +60,9 @@ export default function DocumentListPage() {
               docType: "Commercial Invoice",
               fileName: "Commercial Invoice",
               filePath: s.invoice_file_path,
-              uploadedAt: formattedDate
+              uploadedAt: formattedDate,
+              approved: s.invoice_approved,
+              fileKey: s.invoice_file_key
             });
           }
 
@@ -67,7 +74,9 @@ export default function DocumentListPage() {
               docType: "Packing List",
               fileName: "Packing List",
               filePath: s.packing_list_file_path,
-              uploadedAt: formattedDate
+              uploadedAt: formattedDate,
+              approved: s.packing_approved,
+              fileKey: s.packing_list_file_key
             });
           }
         });
@@ -104,6 +113,41 @@ export default function DocumentListPage() {
   useEffect(() => {
     fetchDocuments();
   }, []);
+
+  const handleApproveDocument = async (blNumber: string, docType: 'invoice' | 'packing') => {
+    try {
+      const res = await axios.post("http://localhost:5000/api/tracking/approve-doc", {
+        blNumber,
+        docType
+      }, { withCredentials: true });
+      
+      if (res.data.success) {
+        alert(res.data.message);
+        fetchDocuments();
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || "서류 승인 처리 중 에러가 발생했습니다.");
+    }
+  };
+
+  const handleDeleteDocument = async (blNumber: string, docType: 'invoice' | 'packing') => {
+    if (!confirm(`정말로 해당 ${docType === 'invoice' ? '상업송장' : '패킹리스트'} 서류를 삭제하시겠습니까?`)) {
+      return;
+    }
+    try {
+      const res = await axios.post("http://localhost:5000/api/tracking/delete-doc", {
+        blNumber,
+        docType
+      }, { withCredentials: true });
+      
+      if (res.data.success) {
+        alert(res.data.message);
+        fetchDocuments();
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || "서류 삭제 처리 중 에러가 발생했습니다.");
+    }
+  };
 
   const toggleAccordion = (blNumber: string) => {
     setOpenAccordions(prev => ({
@@ -181,37 +225,73 @@ export default function DocumentListPage() {
                     <table className="w-full text-left border-collapse text-sm">
                       <thead className="bg-slate-50/30 dark:bg-slate-950/20 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
                         <tr>
-                          <th className="p-4 font-bold w-1/2">파일명 (Document Title)</th>
-                          <th className="p-4 font-bold w-1/4">업로드 일시</th>
-                          <th className="p-4 font-bold text-center w-1/4">다운로드</th>
+                          <th className="p-4 font-bold w-2/5">파일명 (Document Title)</th>
+                          <th className="p-4 font-bold w-1/5">업로드 일시</th>
+                          <th className="p-4 font-bold text-center w-2/5">작업</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {group.items.map((doc) => (
-                          <tr key={doc.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/20 transition font-semibold">
-                            <td className="p-4 text-slate-800 dark:text-slate-200">
-                              <span className="flex items-center gap-2">
-                                {doc.docType.includes("Invoice") ? (
-                                  <FileText size={16} className="text-blue-500 shrink-0" />
-                                ) : (
-                                  <FileSpreadsheet size={16} className="text-emerald-500 shrink-0" />
-                                )}
-                                <span className="font-bold text-slate-800 dark:text-slate-300">{doc.fileName}</span>
-                              </span>
-                            </td>
-                            <td className="p-4 text-slate-500 dark:text-slate-400 text-xs">{doc.uploadedAt}</td>
-                            <td className="p-4 text-center">
-                              <a
-                                href={`http://localhost:5000/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
-                                className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-slate-800 dark:text-blue-400 dark:hover:bg-slate-700 px-3.5 py-2 rounded-xl border border-blue-100 dark:border-slate-700 text-xs font-bold transition"
-                                title="파일 다운로드"
-                              >
-                                <FileDown size={14} />
-                                다운로드
-                              </a>
-                            </td>
-                          </tr>
-                        ))}
+                        {group.items.map((doc) => {
+                          const docTypeKey = doc.docType.includes("Invoice") ? 'invoice' : 'packing';
+                          const isDownloaded = !!downloadedDocs[doc.id];
+                          const isApproved = doc.approved === 1;
+
+                          return (
+                            <tr key={doc.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/20 transition font-semibold">
+                              <td className="p-4 text-slate-800 dark:text-slate-200">
+                                <span className="flex items-center gap-2">
+                                  {docTypeKey === 'invoice' ? (
+                                    <FileText size={16} className="text-blue-500 shrink-0" />
+                                  ) : (
+                                    <FileSpreadsheet size={16} className="text-emerald-500 shrink-0" />
+                                  )}
+                                  <span className="font-bold text-slate-800 dark:text-slate-300">{doc.fileName}</span>
+                                </span>
+                              </td>
+                              <td className="p-4 text-slate-500 dark:text-slate-400 text-xs">{doc.uploadedAt}</td>
+                              <td className="p-4 text-center">
+                                <div className="flex gap-2 justify-center items-center">
+                                  <a
+                                    href={`http://localhost:5000/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={() => setDownloadedDocs(prev => ({ ...prev, [doc.id]: true }))}
+                                    className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-slate-800 dark:text-blue-400 dark:hover:bg-slate-700 px-3.5 py-1.5 rounded-lg border border-blue-100 dark:border-slate-700 text-xs font-bold transition"
+                                    title="파일 다운로드"
+                                  >
+                                    <FileDown size={14} />
+                                    다운로드 및 확인
+                                  </a>
+                                  {isApproved ? (
+                                    <span className="text-green-600 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-3 py-1.5 rounded-lg text-xs font-bold">
+                                      승인 완료
+                                    </span>
+                                  ) : (
+                                    !doc.fileKey && (
+                                      <button
+                                        onClick={() => handleApproveDocument(doc.blNumber, docTypeKey)}
+                                        disabled={!isDownloaded}
+                                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition border flex items-center gap-1 ${
+                                          isDownloaded 
+                                            ? "bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-sm cursor-pointer"
+                                            : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700"
+                                        }`}
+                                      >
+                                        승인
+                                      </button>
+                                    )
+                                  )}
+                                  <button
+                                    onClick={() => handleDeleteDocument(doc.blNumber, docTypeKey)}
+                                    className="text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-800 text-xs font-bold flex items-center gap-1 border border-rose-200 dark:border-rose-800 bg-rose-50/50 dark:bg-slate-800 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

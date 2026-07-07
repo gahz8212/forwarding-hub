@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useTrackingStore } from "../../store/useTrackingStore";
+import { useNotificationStore } from "../../store/useNotificationStore";
 import axios from "axios";
 import { io } from "socket.io-client";
 import {
@@ -16,9 +17,7 @@ export default function Layout() {
   const { clearData } = useTrackingStore();
   const currentPath = location.pathname;
 
-  const [bookingAlerts, setBookingAlerts] = useState<any[]>([]);
-  const [chatAlerts, setChatAlerts] = useState<any[]>([]);
-  const [docUploadAlerts, setDocUploadAlerts] = useState<any[]>([]);
+  const { alerts, addAlert, removeAlert } = useNotificationStore();
 
   useEffect(() => {
     if (!user) return;
@@ -29,13 +28,14 @@ export default function Layout() {
       console.log(`Socket connected in layout for user: ${user.username} (${user.role})`);
       if (user.role === "admin") {
         socket.emit("join", { role: "admin" });
+      } else if (user.role === "client") {
+        socket.emit("join", { role: "client", clientId: user.id });
       }
     });
 
     // 신규 부킹 요청 및 서류 업로드 알람 리스너 (어드민 전용)
     if (user.role === "admin") {
       socket.on("new_booking_alert", (data) => {
-        const uniqueId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
         const requestTime = new Date().toLocaleString("ko-KR", {
           year: "numeric",
           month: "2-digit",
@@ -45,12 +45,15 @@ export default function Layout() {
           second: "2-digit",
           hour12: false
         });
-        setBookingAlerts((prev) => [...prev, { ...data, alertId: uniqueId, requestTime }]);
+        addAlert({
+          type: "booking",
+          title: "🚨 새로운 부킹요청",
+          meta: { ...data, requestTime }
+        });
       });
 
       socket.on("shipment_status_changed", (data) => {
         if (data.status === "Documents Uploaded") {
-          const uniqueId = `doc_${Date.now()}_${Math.random()}`;
           const requestTime = new Date().toLocaleString("ko-KR", {
             year: "numeric",
             month: "2-digit",
@@ -60,7 +63,11 @@ export default function Layout() {
             second: "2-digit",
             hour12: false
           });
-          setDocUploadAlerts((prev) => [...prev, { ...data, alertId: uniqueId, requestTime }]);
+          addAlert({
+            type: "document",
+            title: "📄 서류 업로드 완료",
+            meta: { ...data, requestTime }
+          });
         }
       });
     }
@@ -87,27 +94,44 @@ export default function Layout() {
       }
 
       if (shouldAlert) {
-        const uniqueId = `chat_${Date.now()}_${Math.random()}`;
         const timeStr = new Date().toLocaleTimeString("ko-KR", {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit"
         });
-        setChatAlerts((prev) => [
-          ...prev,
-          { ...data, alertId: uniqueId, requestTime: timeStr }
-        ]);
+        addAlert({
+          type: "chat",
+          title: "💬 새로운 업무 메시지",
+          message: data.message,
+          meta: { ...data, requestTime: timeStr }
+        });
       }
     });
+
+    // PDF 발행 실시간 알림 리스너 (화주 전용)
+    if (user.role === "client") {
+      socket.on("pdf_generated_alert", (data) => {
+        console.log("실시간 PDF 발행 알림 감지:", data);
+        const timeStr = new Date().toLocaleTimeString("ko-KR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+        addAlert({
+          type: "pdf",
+          title: "📄 서류 발행 완료",
+          message: data.message,
+          meta: { ...data, requestTime: timeStr }
+        });
+      });
+    }
 
     return () => {
       socket.disconnect();
     };
-  }, [user]);
+  }, [user, addAlert]);
 
-  const handleCloseAlert = (alertId: string) => {
-    setBookingAlerts((prev) => prev.filter((a) => a.alertId !== alertId));
-  };
+
 
   const clientMenus = [
     { name: "내 화물 대시보드", path: "/", icon: <LayoutDashboard size={20} /> },
@@ -247,122 +271,161 @@ export default function Layout() {
         </main>
       </div>
 
-      {/* Real-time Notification Stack for Admins (Bookings and Document Uploads) */}
-      {(bookingAlerts.length > 0 || docUploadAlerts.length > 0) && (
+      {/* Unified Real-time Toast Notifications Container */}
+      {alerts.length > 0 && (
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-4 max-h-[85vh] overflow-y-auto w-80 p-2 scrollbar-thin">
-          {/* Document Upload Alerts */}
-          {docUploadAlerts.map((alertItem) => (
-            <div
-              key={alertItem.alertId}
-              className="bg-white border-2 border-green-500 p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <h4 className="text-base font-black text-green-600">📄 서류 업로드 완료</h4>
-                <button 
-                  onClick={() => setDocUploadAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId))} 
-                  className="text-slate-400 hover:text-slate-600 transition"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <p className="text-slate-800 text-sm font-bold mt-2">B/L 번호: {alertItem.blNumber}</p>
-              <p className="text-slate-500 text-xs mt-1">업로드 시각: {alertItem.requestTime}</p>
+          {alerts.map((alert) => {
+            const isChat = alert.type === 'chat';
+            return (
+              <div
+                key={alert.id}
+                className={`p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300 border-2 ${
+                  isChat 
+                    ? "bg-slate-900 border-blue-500 text-white" 
+                    : alert.type === 'booking'
+                    ? "bg-white border-red-500 text-slate-800"
+                    : alert.type === 'document'
+                    ? "bg-white border-green-500 text-slate-800"
+                    : "bg-white border-blue-500 text-slate-800"
+                }`}
+              >
+                {/* Header */}
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className={`text-base font-black ${
+                    isChat 
+                      ? "text-blue-400" 
+                      : alert.type === 'booking'
+                      ? "text-red-600"
+                      : alert.type === 'document'
+                      ? "text-green-600"
+                      : "text-blue-600"
+                  }`}>
+                    {alert.title}
+                  </h4>
+                  <button 
+                    onClick={() => removeAlert(alert.id)} 
+                    className="text-slate-400 hover:text-slate-600 transition"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
 
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => {
-                    setDocUploadAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId)); // 알람창 끄기
-                    navigate("/admin/shipments"); // 전체화물/선적관리 화면으로 이동
-                  }}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
-                >
-                  확인하러 가기
-                </button>
-                <button
-                  onClick={() => {
-                    setDocUploadAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId));
-                  }}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg font-bold text-xs transition"
-                >
-                  닫기
-                </button>
-              </div>
-            </div>
-          ))}
+                {/* Content Body based on type */}
+                {alert.type === 'booking' && (
+                  <>
+                    <p className="text-slate-800 text-sm font-bold mt-2">화주: {alert.meta?.username} 님</p>
+                    <p className="text-slate-500 text-xs mt-1">요청일시: {alert.meta?.requestTime || alert.time}</p>
+                    <div className="mt-4">
+                      <button
+                        onClick={() => {
+                          removeAlert(alert.id);
+                          navigate("/admin/bookings");
+                        }}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg font-bold text-xs shadow-sm transition"
+                      >
+                        부킹 요청 확인하러 가기
+                      </button>
+                    </div>
+                  </>
+                )}
 
-          {/* Booking Alerts */}
-          {bookingAlerts.map((alertItem) => (
-            <div
-              key={alertItem.alertId}
-              className="bg-white border-2 border-red-500 p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <h4 className="text-base font-black text-red-600">🚨 새로운 부킹요청</h4>
-                <button 
-                  onClick={() => handleCloseAlert(alertItem.alertId)} 
-                  className="text-slate-400 hover:text-slate-600 transition"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <p className="text-slate-800 text-sm font-bold mt-2">화주: {alertItem.username} 님</p>
-              <p className="text-slate-500 text-xs mt-1">요청일시: {alertItem.requestTime}</p>
+                {alert.type === 'document' && (
+                  <>
+                    <p className="text-slate-800 text-sm font-bold mt-2">B/L 번호: {alert.meta?.blNumber}</p>
+                    <p className="text-slate-500 text-xs mt-1">업로드 시각: {alert.meta?.requestTime || alert.time}</p>
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={() => {
+                          removeAlert(alert.id);
+                          navigate("/admin/shipments");
+                        }}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
+                      >
+                        확인하러 가기
+                      </button>
+                      <button
+                        onClick={() => removeAlert(alert.id)}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg font-bold text-xs transition"
+                      >
+                        닫기
+                      </button>
+                    </div>
+                  </>
+                )}
 
-              <div className="mt-4">
-                <button
-                  onClick={() => {
-                    handleCloseAlert(alertItem.alertId); // 알람창 끄기
-                    navigate("/admin/bookings"); // 부킹 요청 승인 페이지로 강제 이동
-                  }}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg font-bold text-xs shadow-sm transition"
-                >
-                  부킹 요청 확인하러 가기
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+                {alert.type === 'chat' && (
+                  <>
+                    <p className="text-slate-350 text-sm mt-2 font-bold">보낸 사람: {alert.meta?.senderName}</p>
+                    <p className="text-slate-300 text-xs mt-1 bg-white/10 p-2.5 rounded-lg italic break-all">
+                      "{alert.message && alert.message.length > 40 ? alert.message.slice(0, 40) + "..." : alert.message}"
+                    </p>
+                    <p className="text-slate-500 text-[10px] mt-2">수신일시: {alert.meta?.requestTime || alert.time}</p>
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={() => {
+                          removeAlert(alert.id);
+                          const targetPath = user?.role === "admin" ? "/admin/bookings" : "/bookings";
+                          navigate(`${targetPath}?openChat=${alert.meta?.bookingId}`);
+                        }}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
+                      >
+                        확인하러 가기
+                      </button>
+                      <button
+                        onClick={() => removeAlert(alert.id)}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg font-bold text-xs transition"
+                      >
+                        닫기
+                      </button>
+                    </div>
+                  </>
+                )}
 
-      {/* 실시간 채팅 알림(신규 메시지) 팝업 스택 (화면 좌측 하단 배치) */}
-      {chatAlerts.length > 0 && (
-        <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-4 max-h-[85vh] overflow-y-auto w-80 p-2 scrollbar-thin">
-          {chatAlerts.map((alertItem) => (
-            <div
-              key={alertItem.alertId}
-              className="bg-slate-900 border-2 border-blue-500 p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300 text-white"
-            >
-              <h4 className="text-base font-black text-blue-400">💬 새로운 업무 메시지</h4>
-              <p className="text-slate-300 text-sm mt-2 font-bold">보낸 사람: {alertItem.senderName}</p>
-              <p className="text-slate-300 text-xs mt-1 bg-white/10 p-2.5 rounded-lg italic break-all">
-                "{alertItem.message.length > 40 ? alertItem.message.slice(0, 40) + "..." : alertItem.message}"
-              </p>
-              <p className="text-slate-500 text-[10px] mt-2">수신일시: {alertItem.requestTime}</p>
+                {alert.type === 'pdf' && (
+                  <>
+                    <p className="text-slate-800 text-sm font-bold mt-2">B/L 번호: {alert.meta?.blNumber}</p>
+                    <p className="text-slate-500 text-xs mt-1">발행 시간: {alert.meta?.requestTime || alert.time}</p>
+                    <p className="text-slate-600 text-xs mt-2 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100 italic">
+                      {alert.message}
+                    </p>
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={() => {
+                          removeAlert(alert.id);
+                          navigate("/client/documents");
+                        }}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
+                      >
+                        확인하러 가기
+                      </button>
+                      <button
+                        onClick={() => removeAlert(alert.id)}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg font-bold text-xs transition"
+                      >
+                        닫기
+                      </button>
+                    </div>
+                  </>
+                )}
 
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => {
-                    // 알람 목록에서 해당 항목 제거
-                    setChatAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId));
-                    // 어드민/화주 경로 분기 및 쿼리 파라미터 전달하여 대화창 오픈 트리거
-                    const targetPath = user?.role === "admin" ? "/admin/bookings" : "/bookings";
-                    navigate(`${targetPath}?openChat=${alertItem.bookingId}`);
-                  }}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
-                >
-                  확인하러 가기
-                </button>
-                <button
-                  onClick={() => {
-                    setChatAlerts((prev) => prev.filter((a) => a.alertId !== alertItem.alertId));
-                  }}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg font-bold text-xs transition"
-                >
-                  닫기
-                </button>
+                {alert.type === 'general' && (
+                  <>
+                    <p className="text-slate-700 text-xs mt-2 leading-relaxed">
+                      {alert.message}
+                    </p>
+                    <div className="mt-4">
+                      <button
+                        onClick={() => removeAlert(alert.id)}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
+                      >
+                        확인
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

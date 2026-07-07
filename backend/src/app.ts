@@ -65,11 +65,14 @@ app.get('/api/health', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`소켓 연결 성공: ${socket.id}`);
 
-  // 특정 룸 참가 (예: admin)
-  socket.on('join', (data: { role: string }) => {
+  // 특정 룸 참가 (예: admin, client)
+  socket.on('join', (data: { role: string; clientId?: number }) => {
     if (data.role === 'admin') {
       socket.join('admin');
       console.log(`소켓 ${socket.id}가 관리자(admin) 룸에 참가했습니다.`);
+    } else if (data.role === 'client' && data.clientId) {
+      socket.join(`client_${data.clientId}`);
+      console.log(`소켓 ${socket.id}가 화주(client) 룸 [client_${data.clientId}]에 참가했습니다.`);
     }
   });
 

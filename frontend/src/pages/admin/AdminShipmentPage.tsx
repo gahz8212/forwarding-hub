@@ -695,7 +695,7 @@ export default function AdminShipmentPage() {
   };
 
   return (
-    <div className="animate-fade-in-up space-y-6">
+    <div className="animate-fade-in-up space-y-6 max-w-[95%] mx-auto w-full min-h-[calc(100vh-12rem)] flex flex-col justify-center py-6 relative">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-bold text-slate-800">화물 및 선적 전체 관리 (어드민 전용)</h2>
@@ -857,7 +857,7 @@ export default function AdminShipmentPage() {
                       )}
 
                       {/* 4단계 및 이후 단계: 트럭 정보 표시 및 진행 단계 수동 제어(드롭다운) */}
-                      {["Trucking", "Gate In", "Loaded on Vessel", "In Transit", "Delivered"].includes(s.status) && (
+                      {["Trucking", "Gate In", "Loaded on Vessel", "Departed", "In Transit", "Delivered"].includes(s.status) && (
                         <div className="space-y-3">
                           {/* 트럭 정보 */}
                           <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs space-y-1 max-w-sm">
@@ -874,9 +874,10 @@ export default function AdminShipmentPage() {
                               onChange={(e) => handleStatusChange(s.bl_number, e.target.value)}
                               className="border rounded px-2.5 py-1 text-xs bg-white font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
                             >
-                              <option value="Trucking">Trucking (트럭 운송 중)</option>
+                              <option value="Trucking">Trucking (운송 중)</option>
                               <option value="Gate In">Gate In (CY 입고완료)</option>
                               <option value="Loaded on Vessel">Loaded on Vessel (선적 완료)</option>
+                              <option value="Departed">Departed (출항)</option>
                               <option value="In Transit">In Transit (해상 운송 중)</option>
                               <option value="Delivered">Delivered (배달 완료)</option>
                             </select>

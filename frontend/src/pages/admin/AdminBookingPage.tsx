@@ -200,6 +200,7 @@ export default function AdminBookingPage() {
                   <th className="p-4 font-bold">요청 화주</th>
                   <th className="p-4 font-bold">선박명</th>
                   <th className="p-4 font-bold">구간 (POL ➔ POD)</th>
+                  <th className="p-4 font-bold text-center">거래 조건</th>
                   <th className="p-4 font-bold text-center">선박 일정 (ETD ➔ ETA)</th>
                   <th className="p-4 font-bold text-center">작업</th>
                 </tr>
@@ -214,6 +215,11 @@ export default function AdminBookingPage() {
                     <td className="p-4 text-slate-800 font-semibold">{bk.vessel_name}</td>
                     <td className="p-4 text-slate-600 text-sm">
                       {bk.pol.split(",")[0]} ➔ {bk.pod.split(",")[0]}
+                    </td>
+                    <td className="p-4 text-center font-bold text-slate-700">
+                      <span className="px-2 py-1 bg-slate-100 rounded text-xs">
+                        {bk.incoterms || "-"}
+                      </span>
                     </td>
                     <td className="p-4 text-slate-600 text-sm text-center">
                       {bk.etd ? bk.etd.split("T")[0] : ""} ➔ {bk.eta ? bk.eta.split("T")[0] : ""}
@@ -275,6 +281,7 @@ export default function AdminBookingPage() {
                   <th className="p-4 font-bold">요청 화주</th>
                   <th className="p-4 font-bold">선박명</th>
                   <th className="p-4 font-bold">구간 (POL ➔ POD)</th>
+                  <th className="p-4 font-bold text-center">거래 조건</th>
                   <th className="p-4 font-bold">발행 B/L</th>
                   <th className="p-4 font-bold text-center">선적 일정 (ETD ➔ ETA)</th>
                   <th className="p-4 font-bold text-center">작업</th>
@@ -290,6 +297,11 @@ export default function AdminBookingPage() {
                     <td className="p-4 text-slate-800 font-semibold">{bk.vessel_name}</td>
                     <td className="p-4 text-slate-600">
                       {bk.pol.split(",")[0]} ➔ {bk.pod.split(",")[0]}
+                    </td>
+                    <td className="p-4 text-center font-bold text-slate-700">
+                      <span className="px-2 py-1 bg-slate-100 rounded text-xs">
+                        {bk.incoterms || "-"}
+                      </span>
                     </td>
                     <td className="p-4 text-blue-600 font-bold">
                       {bk.bl_number || "-"}
