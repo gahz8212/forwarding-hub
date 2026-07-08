@@ -515,9 +515,11 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
           continue;
         }
 
-        // 한글 파일명 깨짐을 방지하기 위해 완전한 난수로 파일명 생성
+        // 업로드 주체에 따라 파일명에 접두사 추가
+        const isForwarderUpload = req.body.isForwarder === 'true' || req.body.isForwarder === true;
+        const prefix = isForwarderUpload ? 'forwarder' : 'shipper';
         const randomString = Math.random().toString(36).substring(2, 10);
-        const tempFileName = `photo_${Date.now()}_${randomString}.jpg`;
+        const tempFileName = `${prefix}_photo_${Date.now()}_${randomString}.jpg`;
         const subFolder = photoType === 'docs' ? 'docs' : 'exterior';
         const tempRelativeUrl = `/uploads/temp/${safeBlNumber}/${subFolder}/${tempFileName}`;
         const tempPath = path.join(tempFolder, tempFileName);
@@ -704,6 +706,9 @@ export const getUnclassifiedPhotos = async (req: Request, res: Response) => {
       const uniqueUrls: string[] = [];
       
       for (const file of files) {
+        // 포워더 화면 뱃지/미분류함에서 포워더가 올린 파일은 제외 (필터링 로직 추가)
+        if (file.startsWith('forwarder_')) continue;
+
         try {
           const filePath = path.join(dirPath, file);
           const fileBuffer = fs.readFileSync(filePath);
@@ -727,6 +732,7 @@ export const getUnclassifiedPhotos = async (req: Request, res: Response) => {
       const files = fs.readdirSync(tempFolder).filter(file => file.match(/\.(jpg|jpeg|png)$/i));
       const seenHashes = new Set<string>();
       for (const file of files) {
+        if (file.startsWith('forwarder_')) continue;
         try {
           const filePath = path.join(tempFolder, file);
           const fileBuffer = fs.readFileSync(filePath);
