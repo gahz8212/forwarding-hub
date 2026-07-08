@@ -14,14 +14,14 @@ import {
 
 const router = Router();
 
-// Multer 임시 보관 설정
-const upload = multer({ dest: 'uploads/' });
+// Multer 설정: memoryStorage 사용으로 req.body 텍스트 필드(photoType 등)가 파일보다 먼저 파싱되도록 보장
+const upload = multer({ storage: multer.memoryStorage() });
 
 // 파일 업로드 및 분석 엔드포인트
 router.post('/upload', upload.single('file'), uploadFile);
 
-// 로로선 중고차 여러 장의 사진 동시 업로드 엔드포인트 (최대 20장 제한 예시)
-router.post('/upload-vehicle-photos', upload.array('photos', 20), uploadVehiclePhotos);
+// 로로선 중고차 여러 장의 사진 동시 업로드 엔드포인트 (최대 50장)
+router.post('/upload-vehicle-photos', upload.array('photos', 50), uploadVehiclePhotos);
 
 // 특정 BL의 미분류 사진 조회 엔드포인트
 router.get('/unclassified-photos/:blNumber', getUnclassifiedPhotos);

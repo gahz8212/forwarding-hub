@@ -8,7 +8,7 @@ import AdmZip from 'adm-zip';
 import sharp from 'sharp';
 import { parseExcelToGridData, parsePdfToGridData } from '../services/fileParser';
 import { analyzeVehiclePhoto } from '../services/ocrService';
-import { decodeVin } from '../services/vinService';
+import { decodeVin, VehicleSpecs } from '../services/vinService';
 import { saveVehiclePhotoAndDeduplicate } from '../utils/photoHelper';
 // import { getVehicleInfoFromPublicData } from '../services/publicDataService';
 
@@ -368,11 +368,18 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
     }
 
     const processedResults = [];
-    const imageQueue: { originalname: string; buffer: Buffer }[] = [];
+    const imageQueue: { originalname: string; buffer: Buffer; rawBuffer?: Buffer }[] = [];
+    const batchHashes = new Set<string>();
 
-    // 화주명 조회
-    const [shipment]: any = await pool.query('SELECT shipper FROM shipments WHERE id = ?', [shipmentId]);
-    const shipperName = shipment.length > 0 && shipment[0].shipper ? shipment[0].shipper : '일반화주';
+    // 선적 정보 및 화주명 조회 (shipmentId가 BL 번호인 경우도 대응)
+    const [shipments]: any = await pool.query(
+      'SELECT id, shipper FROM shipments WHERE id = ? OR bl_number = ?',
+      [shipmentId, blNumber || shipmentId]
+    );
+    const dbShipment = shipments[0];
+    const resolvedShipmentId = dbShipment ? dbShipment.id : shipmentId;
+    const rawShipperName = dbShipment && dbShipment.shipper ? dbShipment.shipper : '일반화주';
+    const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
 
     const dateObj = new Date();
     const year = dateObj.getFullYear().toString();
@@ -388,28 +395,62 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
       fs.mkdirSync(tempFolder, { recursive: true });
     }
 
-    // 1. 업로드된 파일들을 확인하여 ZIP 파일이면 압축 해제, 일반 이미지면 큐에 추가
+    // 1. 업로드된 파일들을 확인하여 ZIP 파일이면 압축 해제, 일반 이미지면 큐에 추가 (배치 내 중복 차단용 MD5 체크 병행)
     for (const file of files) {
       const ext = path.extname(file.originalname).toLowerCase();
       
       if (ext === '.zip' || file.mimetype === 'application/zip') {
-        const zip = new AdmZip(file.path);
+        const zip = new AdmZip(file.buffer);
         const zipEntries = zip.getEntries();
         
         for (const entry of zipEntries) {
           if (!entry.isDirectory && entry.entryName.match(/\.(jpg|jpeg|png)$/i)) {
             if (entry.entryName.includes('__MACOSX') || entry.name.startsWith('.')) continue;
-            imageQueue.push({
-              originalname: entry.name,
-              buffer: entry.getData()
-            });
+            try {
+              const rawBuffer = entry.getData();
+              const optimizedBuffer = await sharp(rawBuffer)
+                .resize({ width: 1920, withoutEnlargement: true })
+                .jpeg({ quality: 80 })
+                .toBuffer();
+
+              const fileHash = crypto.createHash('md5').update(optimizedBuffer).digest('hex');
+              if (batchHashes.has(fileHash)) {
+                console.log(`[BATCH DEDUPLICATE ZIP] Skip same file in ZIP batch: ${entry.name}`);
+                continue;
+              }
+              batchHashes.add(fileHash);
+              imageQueue.push({
+                originalname: entry.name,
+                buffer: optimizedBuffer,
+                rawBuffer: rawBuffer
+              });
+            } catch (err) {
+              console.error(`ZIP entry processing error: ${entry.name}`, err);
+            }
           }
         }
       } else if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
-        imageQueue.push({
-          originalname: file.originalname,
-          buffer: fs.readFileSync(file.path)
-        });
+        try {
+          const rawBuffer = file.buffer;
+          const optimizedBuffer = await sharp(rawBuffer)
+            .resize({ width: 1920, withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+
+          const fileHash = crypto.createHash('md5').update(optimizedBuffer).digest('hex');
+          if (batchHashes.has(fileHash)) {
+            console.log(`[BATCH DEDUPLICATE IMG] Skip same file in upload batch: ${file.originalname}`);
+            continue;
+          }
+          batchHashes.add(fileHash);
+          imageQueue.push({
+            originalname: file.originalname,
+            buffer: optimizedBuffer,
+            rawBuffer: rawBuffer
+          });
+        } catch (err) {
+          console.error(`Image upload processing error: ${file.originalname}`, err);
+        }
       }
     }
 
@@ -420,16 +461,58 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
     // 2. 추출된 이미지들을 순회하며 sharp 압축 및 OCR 분석 진행
     for (const image of imageQueue) {
       try {
-        const optimizedBuffer = await sharp(image.buffer)
-          .resize({ width: 1920, withoutEnlargement: true })
-          .jpeg({ quality: 80 })
-          .toBuffer();
+        const optimizedBuffer = image.buffer;
 
         let ocrResult: any = { rawText: '', plateNumber: null, vin: null, type: 'unknown' };
         
-        if (skipOcr !== 'true') {
-          // OCR 분석 시에는 압축/리사이징으로 인한 화질 저하(특히 얇은 한글 폰트 유실)를 막기 위해 원본 버퍼(image.buffer)를 그대로 사용합니다.
-          ocrResult = await analyzeVehiclePhoto(image.buffer);
+        if (skipOcr !== 'true' && image.rawBuffer) {
+          // OCR 분석 시에는 압축되지 않은 원본 버퍼(image.rawBuffer)를 그대로 사용합니다.
+          ocrResult = await analyzeVehiclePhoto(image.rawBuffer);
+        }
+
+        // 2차 검증: Sharp 압축이 완료된 최종 버퍼(optimizedBuffer) 기준으로 중복 체크
+        const uploadMd5 = crypto.createHash('md5').update(optimizedBuffer).digest('hex');
+        let isDuplicate = false;
+        
+        // uploads/temp 및 해당 화주의 영구 저장 폴더(uploads/화주명) 전체를 재귀적으로 돌며 동일 해시 파일이 존재하는지 검증
+        const tempRoot = path.join(__dirname, '../../uploads', 'temp');
+        const shipperRoot = path.join(__dirname, '../../uploads', shipperName);
+        
+        const checkHashRecursively = (dir: string): boolean => {
+          if (!fs.existsSync(dir)) return false;
+          const items = fs.readdirSync(dir);
+          for (const item of items) {
+            const fullPath = path.join(dir, item);
+            if (fs.statSync(fullPath).isDirectory()) {
+              if (checkHashRecursively(fullPath)) return true;
+            } else if (fs.statSync(fullPath).isFile()) {
+              try {
+                const existingBuffer = fs.readFileSync(fullPath);
+                const existingMd5 = crypto.createHash('md5').update(existingBuffer).digest('hex');
+                if (uploadMd5 === existingMd5) {
+                  console.log(`[DEDUPLICATE GLOBAL] Duplicate found at: ${fullPath}. Skipping.`);
+                  return true;
+                }
+              } catch (err) {
+                // Ignore file read issues for scanning
+              }
+            }
+          }
+          return false;
+        };
+
+        if (checkHashRecursively(tempRoot) || checkHashRecursively(shipperRoot)) {
+          isDuplicate = true;
+        }
+
+        if (isDuplicate) {
+          // 중복 파일은 기록만 남기고 저장/분석 루프에서 스킵
+          processedResults.push({
+            fileName: image.originalname,
+            status: 'duplicate',
+            reason: '이미 업로드된 동일 파일이 존재합니다.'
+          });
+          continue;
         }
 
         // 한글 파일명 깨짐을 방지하기 위해 완전한 난수로 파일명 생성
@@ -440,11 +523,6 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         const tempPath = path.join(tempFolder, tempFileName);
         
         fs.writeFileSync(tempPath, optimizedBuffer);
-        if (skipOcr === 'true') {
-          // 향후 OCR 시 화질 저하 문제를 방지하기 위해 원본 백업
-          const originalPath = path.join(tempFolder, `original_${tempFileName}`);
-          fs.writeFileSync(originalPath, image.buffer);
-        }
 
         ocrResult.serverUrl = `http://localhost:5000${tempRelativeUrl}`;
 
@@ -459,7 +537,7 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         if (ocrResult.vin || ocrResult.plateNumber) {
           const [existing]: any = await pool.query(
             'SELECT id, vin FROM vehicles WHERE shipment_id = ? AND (vin = ? OR deregistration_no = ?)',
-            [shipmentId, ocrResult.vin || 'NULL', ocrResult.plateNumber || 'NULL']
+            [resolvedShipmentId, ocrResult.vin || 'NULL', ocrResult.plateNumber || 'NULL']
           );
 
           let finalVin = ocrResult.vin;
@@ -473,16 +551,23 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
           if (!finalVin) finalVin = 'UNKNOWN_VIN';
           ocrResult.vin = finalVin;
 
-          // 정식 폴더로 이동 (uploads/화주명/YYYY/MM/VIN)
-          const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, finalVin);
-          if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
+          let targetRelativeUrl: string;
+
+          if (photoType === 'docs') {
+            // docs 타입은 temp/BL/docs/ 폴더에 그대로 유지 (사진함에서 확인 가능)
+            targetRelativeUrl = tempRelativeUrl;
+            ocrResult.serverUrl = `http://localhost:5000${tempRelativeUrl}`;
+          } else {
+            // 외관 사진 등은 정식 폴더로 이동 (uploads/화주명/YYYY/MM/VIN)
+            const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, finalVin);
+            if (!fs.existsSync(targetDir)) {
+              fs.mkdirSync(targetDir, { recursive: true });
+            }
+            const targetPath = path.join(targetDir, tempFileName);
+            targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${finalVin}/${tempFileName}`;
+            fs.renameSync(tempPath, targetPath);
+            ocrResult.serverUrl = `http://localhost:5000${targetRelativeUrl}`;
           }
-          const targetPath = path.join(targetDir, tempFileName);
-          const targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${finalVin}/${tempFileName}`;
-          
-          fs.renameSync(tempPath, targetPath);
-          ocrResult.serverUrl = `http://localhost:5000${targetRelativeUrl}`;
 
           if (existing.length > 0) {
             if (ocrResult.type === 'document') {
@@ -499,20 +584,50 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
                await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify([targetRelativeUrl]), updateId]);
             }
             (ocrResult as any).id = updateId;
+            
+            // 기존 차량에 제원이 없으면 VIN으로 채워넣기
+            const [existingSpecs]: any = await pool.query('SELECT make, model FROM vehicles WHERE id = ?', [updateId]);
+            if (finalVin && finalVin.length === 17 && (!existingSpecs[0]?.make || !existingSpecs[0]?.model)) {
+              try {
+                const specs = await decodeVin(finalVin);
+                if (specs) {
+                  await pool.query(
+                    'UPDATE vehicles SET make=?, model=?, year=? WHERE id=?',
+                    [specs.make, specs.model, specs.year, updateId]
+                  );
+                  (ocrResult as any).make = specs.make;
+                  (ocrResult as any).model = specs.model;
+                  (ocrResult as any).year = specs.year;
+                }
+              } catch (e) { console.error('[decodeVin] specs update error:', e); }
+            }
           } else {
-               const [insertResult]: any = await pool.query(
-                 'INSERT INTO vehicles (shipment_id, vin, deregistration_no, plate_number, status, condition_photo_url) VALUES (?, ?, ?, ?, ?, ?)',
-                 [
-                   shipmentId, 
-                   ocrResult.vin, 
-                   ocrResult.plateNumber || null,
-                   ocrResult.plateNumber || null,
-                   'Yard In',
-                   ocrResult.type === 'plate' ? JSON.stringify([targetRelativeUrl]) : null
-                 ]
-               );
-               
-               (ocrResult as any).id = insertResult.insertId;
+            // 신규 차량 INSERT + 제원 동시 저장
+            let specs: VehicleSpecs | null = null;
+            if (finalVin && finalVin.length === 17 && finalVin !== 'UNKNOWN_VIN') {
+              try { specs = await decodeVin(finalVin); } catch (e) { console.error('[decodeVin] insert error:', e); }
+            }
+            const [insertResult]: any = await pool.query(
+              'INSERT INTO vehicles (shipment_id, vin, deregistration_no, plate_number, status, condition_photo_url, drivability, make, model, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [
+                resolvedShipmentId,
+                ocrResult.vin,
+                ocrResult.plateNumber || null,
+                ocrResult.plateNumber || null,
+                'Pending',
+                ocrResult.type === 'plate' ? JSON.stringify([targetRelativeUrl]) : null,
+                null,
+                specs?.make || null,
+                specs?.model || null,
+                specs?.year || null
+              ]
+            );
+            (ocrResult as any).id = insertResult.insertId;
+            if (specs) {
+              (ocrResult as any).make = specs.make;
+              (ocrResult as any).model = specs.model;
+              (ocrResult as any).year = specs.year;
+            }
           }
         } else {
           processedResults.push({
@@ -539,19 +654,20 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
       }
     }
 
-    // 4. 업로드된 원본 임시 파일들 삭제 (ZIP 포함)
-    for (const file of files) {
-      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    }
+    // memoryStorage 사용 중이므로 디스크에 임시 파일이 없어 별도 삭제 불필요
 
-    // Socket.io 이벤트 발송 (화주가 파일을 올렸을 경우 포워더 알림)
+    // Socket.io 이벤트 발송 (화주가 새로운 파일을 정상적으로 올렸을 경우에만 포워더 알림 발송 - 중복/에러는 무시)
     const io = req.app.get('io');
-    if (io) {
+    const isForwarder = req.body.isForwarder === 'true' || req.body.isForwarder === true;
+    const savedCount = processedResults.filter((r: any) => r.status !== 'duplicate' && r.status !== 'error').length;
+
+    if (io && !isForwarder && savedCount > 0) {
       io.to('admin').emit('new_shipper_docs_alert', {
-        shipmentId,
+        shipmentId: resolvedShipmentId,
         blNumber: blNumber,
-        count: imageQueue.length,
-        photoType: photoType || 'exterior'
+        count: savedCount,
+        photoType: photoType || 'exterior',
+        shipperName: shipperName
       });
     }
 
@@ -581,17 +697,48 @@ export const getUnclassifiedPhotos = async (req: Request, res: Response) => {
 
     const getUrlsFromDir = (dirPath: string, relativeSub: string) => {
       if (!fs.existsSync(dirPath)) return [];
-      return fs.readdirSync(dirPath)
-        .filter(file => file.match(/\.(jpg|jpeg|png)$/i) && !file.startsWith('original_') && !file.startsWith('analyzed_'))
-        .map(file => `http://localhost:5000/uploads/temp/${safeBlNumber}/${relativeSub}/${file}`);
+      const files = fs.readdirSync(dirPath).filter(file => file.match(/\.(jpg|jpeg|png)$/i));
+      
+      // 파일 크기와 해시가 완전히 동일한 경우 경로 목록에서 자체 중복 제거
+      const seenHashes = new Set<string>();
+      const uniqueUrls: string[] = [];
+      
+      for (const file of files) {
+        try {
+          const filePath = path.join(dirPath, file);
+          const fileBuffer = fs.readFileSync(filePath);
+          const fileHash = crypto.createHash('md5').update(fileBuffer).digest('hex');
+          
+          if (!seenHashes.has(fileHash)) {
+            seenHashes.add(fileHash);
+            uniqueUrls.push(`http://localhost:5000/uploads/temp/${safeBlNumber}/${relativeSub}/${file}`);
+          }
+        } catch (e) {
+          // Fallback to push if reading hash fails
+          uniqueUrls.push(`http://localhost:5000/uploads/temp/${safeBlNumber}/${relativeSub}/${file}`);
+        }
+      }
+      return uniqueUrls;
     };
 
-    // 하위 호환성: 하위 폴더는 없으나 루트 temp 폴더에 바로 파일들이 있는 경우 읽어오기
+    // 하위 호환성: 루트 temp 폴더에 바로 파일들이 있는 경우 읽어오기
     let rootFiles: string[] = [];
     if (fs.existsSync(tempFolder)) {
-      rootFiles = fs.readdirSync(tempFolder)
-        .filter(file => file.match(/\.(jpg|jpeg|png)$/i) && !file.startsWith('original_') && !file.startsWith('analyzed_'))
-        .map(file => `http://localhost:5000/uploads/temp/${safeBlNumber}/${file}`);
+      const files = fs.readdirSync(tempFolder).filter(file => file.match(/\.(jpg|jpeg|png)$/i));
+      const seenHashes = new Set<string>();
+      for (const file of files) {
+        try {
+          const filePath = path.join(tempFolder, file);
+          const fileBuffer = fs.readFileSync(filePath);
+          const fileHash = crypto.createHash('md5').update(fileBuffer).digest('hex');
+          if (!seenHashes.has(fileHash)) {
+            seenHashes.add(fileHash);
+            rootFiles.push(`http://localhost:5000/uploads/temp/${safeBlNumber}/${file}`);
+          }
+        } catch (e) {
+          rootFiles.push(`http://localhost:5000/uploads/temp/${safeBlNumber}/${file}`);
+        }
+      }
     }
 
     let exteriorFiles = getUrlsFromDir(exteriorFolder, 'exterior');
@@ -625,7 +772,8 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
     
     // 화주명 조회
     const [shipment]: any = await pool.query('SELECT shipper FROM shipments WHERE id = ?', [shipmentId]);
-    const shipperName = shipment.length > 0 && shipment[0].shipper ? shipment[0].shipper : '일반화주';
+    const rawShipperName = shipment.length > 0 && shipment[0].shipper ? shipment[0].shipper : '일반화주';
+    const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
     
     const dateObj = new Date();
     const year = dateObj.getFullYear().toString();
@@ -657,101 +805,134 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
 
         const ocrResult: any = await analyzeVehiclePhoto(buffer);
 
-        if (ocrResult.vin || ocrResult.plateNumber) {
+        // OCR 식별 여부와 상관없이 일단 차대번호가 없다면 UNKNOWN_VIN으로 규정하고 차량 등록을 보장
+        const hasIdInfo = ocrResult.vin || ocrResult.plateNumber;
+        let finalVin = ocrResult.vin;
+        let updateId = null;
+
+        if (hasIdInfo) {
           const [existing]: any = await pool.query(
             'SELECT id, vin FROM vehicles WHERE shipment_id = ? AND (vin = ? OR deregistration_no = ?)',
             [shipmentId, ocrResult.vin || 'NULL', ocrResult.plateNumber || 'NULL']
           );
-
-          let finalVin = ocrResult.vin;
-          let updateId = null;
-
           if (existing.length > 0) {
             updateId = existing[0].id;
             finalVin = existing[0].vin || ocrResult.vin;
           }
-
-          if (!finalVin) finalVin = 'UNKNOWN_VIN';
-          ocrResult.vin = finalVin;
-
-          const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, finalVin);
-          if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-          }
-          
-          const tempFileName = path.basename(absolutePath);
-          const newRelativeUrl = saveVehiclePhotoAndDeduplicate(
-            buffer,
-            targetDir,
-            finalVin,
-            shipperName,
-            year,
-            month
-          );
-          
-          // 전체 저장 전까지 뱃지에서 유지하기 위해, 원본은 'analyzed_' 접두어를 붙여 남겨둡니다.
-          const analyzedTempPath = path.join(path.dirname(absolutePath), `analyzed_${tempFileName}`);
-          fs.renameSync(absolutePath, analyzedTempPath);
-
-          ocrResult.serverUrl = `http://localhost:5000${newRelativeUrl}`;
-
-          if (existing.length > 0) {
-            const [currVeh]: any = await pool.query('SELECT condition_photo_url, deregistration_photo_url, vin_photo_url FROM vehicles WHERE id = ?', [updateId]);
-            const parsePhotos = (fieldVal: string | null) => {
-              if (!fieldVal) return [];
-              try { return JSON.parse(fieldVal); } catch (e) { return [fieldVal]; }
-            };
-            
-            if (ocrResult.type === 'document') {
-               const updates: string[] = [];
-               const params: any[] = [];
-               if (ocrResult.plateNumber) { updates.push('deregistration_no = ?'); params.push(ocrResult.plateNumber); }
-
-               if (updates.length > 0) {
-                 params.push(updateId);
-                 await pool.query(`UPDATE vehicles SET ${updates.join(', ')} WHERE id = ?`, params);
-               }
-               
-               const docs = parsePhotos(currVeh[0]?.deregistration_photo_url);
-               if (!docs.includes(newRelativeUrl)) docs.push(newRelativeUrl);
-               await pool.query('UPDATE vehicles SET deregistration_photo_url = ? WHERE id = ?', [JSON.stringify(docs), updateId]);
-            } else if (ocrResult.type === 'vin') {
-               const vins = parsePhotos(currVeh[0]?.vin_photo_url);
-               if (!vins.includes(newRelativeUrl)) vins.push(newRelativeUrl);
-               await pool.query('UPDATE vehicles SET vin_photo_url = ? WHERE id = ?', [JSON.stringify(vins), updateId]);
-            } else {
-               const plates = parsePhotos(currVeh[0]?.condition_photo_url);
-               if (!plates.includes(newRelativeUrl)) plates.push(newRelativeUrl);
-               await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify(plates), updateId]);
-            }
-          } else {
-             newVehiclesCount++;
-             await pool.query(
-               `INSERT INTO vehicles (
-                  shipment_id, vin, deregistration_no, plate_number, status, 
-                  condition_photo_url, deregistration_photo_url, vin_photo_url, drivability
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-               [
-                 shipmentId,
-                 finalVin,
-                 ocrResult.plateNumber || null,
-                 ocrResult.plateNumber || null,
-                 'Yard In',
-                 ocrResult.type === 'plate' ? JSON.stringify([newRelativeUrl]) : null,
-                 ocrResult.type === 'document' ? JSON.stringify([newRelativeUrl]) : null,
-                 ocrResult.type === 'vin' ? JSON.stringify([newRelativeUrl]) : null,
-                 null
-               ]
-             );
-          }
-          
-          processedResults.push({ fileName: tempFileName, status: 'success', extracted: ocrResult });
-        } else {
-          processedResults.push({ fileName: path.basename(absolutePath), status: 'failed', reason: 'OCR 식별 실패' });
         }
+
+        if (!finalVin) finalVin = 'UNKNOWN_VIN';
+        ocrResult.vin = finalVin;
+
+        const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, finalVin);
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
+        
+        const tempFileName = path.basename(absolutePath);
+        const newRelativeUrl = saveVehiclePhotoAndDeduplicate(
+          buffer,
+          targetDir,
+          finalVin,
+          shipperName,
+          year,
+          month
+        );
+        
+        // 전체 저장 전까지 뱃지에서 유지하기 위해, 원본은 'analyzed_' 접두어를 붙여 남겨둡니다.
+        const analyzedTempPath = path.join(path.dirname(absolutePath), `analyzed_${tempFileName}`);
+        fs.renameSync(absolutePath, analyzedTempPath);
+
+        ocrResult.serverUrl = `http://localhost:5000${newRelativeUrl}`;
+
+        let decodedSpecs: any = null;
+        if (finalVin && finalVin.length === 17 && finalVin !== 'UNKNOWN_VIN') {
+          try {
+            decodedSpecs = await decodeVin(finalVin);
+          } catch (decodeErr) {
+            console.error('[decodeVin Err] Failed to decode specs in pending docs analyzer:', decodeErr);
+          }
+        }
+
+        if (updateId) {
+          const [currVeh]: any = await pool.query('SELECT condition_photo_url FROM vehicles WHERE id = ?', [updateId]);
+          const parsePhotos = (fieldVal: string | null) => {
+            if (!fieldVal) return [];
+            try { return JSON.parse(fieldVal); } catch (e) { return [fieldVal]; }
+          };
+          
+          const updates: string[] = [];
+          const params: any[] = [];
+          
+          if (ocrResult.plateNumber) {
+            updates.push('deregistration_no = ?');
+            params.push(ocrResult.plateNumber);
+          }
+          if (decodedSpecs) {
+            updates.push('make = ?, model = ?, year = ?, length = ?, width = ?, height = ?, weight = ?, cbm = ?, initial_registration_date = ?');
+            params.push(
+              decodedSpecs.make || null,
+              decodedSpecs.modelName || null,
+              decodedSpecs.year || null,
+              decodedSpecs.dimensions?.length || null,
+              decodedSpecs.dimensions?.width || null,
+              decodedSpecs.dimensions?.height || null,
+              decodedSpecs.weight || null,
+              decodedSpecs.cbm || null,
+              decodedSpecs.initialRegistrationDate || null
+            );
+          }
+
+          if (updates.length > 0) {
+            params.push(updateId);
+            await pool.query(`UPDATE vehicles SET ${updates.join(', ')} WHERE id = ?`, params);
+          }
+          
+          const photos = parsePhotos(currVeh[0]?.condition_photo_url);
+          if (!photos.includes(newRelativeUrl)) photos.push(newRelativeUrl);
+          await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify(photos), updateId]);
+        } else {
+           newVehiclesCount++;
+           await pool.query(
+             `INSERT INTO vehicles (
+                shipment_id, vin, deregistration_no, plate_number, status, 
+                condition_photo_url, drivability,
+                make, model, year, length, width, height, weight, cbm, initial_registration_date
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             [
+               shipmentId,
+               finalVin,
+               ocrResult.plateNumber || null,
+               ocrResult.plateNumber || null,
+               'Pending',
+               JSON.stringify([newRelativeUrl]),
+               null,
+               decodedSpecs?.make || null,
+               decodedSpecs?.modelName || null,
+               decodedSpecs?.year || null,
+               decodedSpecs?.dimensions?.length || null,
+               decodedSpecs?.dimensions?.width || null,
+               decodedSpecs?.dimensions?.height || null,
+               decodedSpecs?.weight || null,
+               decodedSpecs?.cbm || null,
+               decodedSpecs?.initialRegistrationDate || null
+             ]
+           );
+        }
+        
+        processedResults.push({ fileName: tempFileName, status: 'success', extracted: ocrResult });
       } catch (err) {
         console.error('Error processing pending photo:', url, err);
       }
+    }
+    
+    // 분석 완료 후, 프론트엔드 실시간 갱신을 위해 Socket.io 갱신 이벤트 전송
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin').emit('refresh_vehicle_list', {
+        shipmentId,
+        blNumber
+      });
     }
     
     return res.json({ success: true, data: { newVehiclesCount, processedResults } });

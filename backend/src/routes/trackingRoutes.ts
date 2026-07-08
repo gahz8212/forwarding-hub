@@ -16,7 +16,8 @@ import {
   approveDoc,
   deleteDoc,
   updateVehicleStatus,
-  getVehicleSpecByVIN
+  getVehicleSpecByVIN,
+  updateVehicleSpecs
 } from '../controllers/trackingController';
 import multer from 'multer';
 import path from 'path';
@@ -116,5 +117,8 @@ router.post('/vehicles/:id/status', updateVehicleStatus);
 
 // GET /api/tracking/vehicles/vin/:vin (차대번호 기반 제원 조회)
 router.get('/vehicles/vin/:vin', getVehicleSpecByVIN);
+
+// PUT /api/tracking/vehicles/:id (개별 차량 제원 저장)
+router.put('/vehicles/:id', updateVehicleSpecs);
 
 export default router;

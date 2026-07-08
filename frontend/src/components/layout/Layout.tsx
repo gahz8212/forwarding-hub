@@ -17,7 +17,7 @@ export default function Layout() {
   const { clearData } = useTrackingStore();
   const currentPath = location.pathname;
 
-  const { alerts, addAlert, removeAlert } = useNotificationStore();
+  const { alerts, addAlert, removeAlert, missedAlerts, setMissedAlerts, showWindowsAlertDrawer, setShowWindowsAlertDrawer, setActiveDashboardShipment } = useNotificationStore();
 
   useEffect(() => {
     if (!user) return;
@@ -258,10 +258,95 @@ export default function Layout() {
           <h2 className="text-lg font-black text-slate-800">{getPageTitle()}</h2>
           <div className="flex items-center gap-4">
             {/* Notifications */}
-            <button className="text-slate-500 hover:text-slate-800 relative p-1.5 rounded-full hover:bg-slate-100 transition">
-              <Bell size={20} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
+            <div className="relative">
+              <style>{`
+                @keyframes layout-bell-wiggle {
+                  0%, 100% { transform: rotate(0deg); }
+                  10%, 30%, 50%, 70%, 90% { transform: rotate(-10deg); }
+                  20%, 40%, 60%, 80% { transform: rotate(10deg); }
+                }
+                .animate-layout-bell-wiggle {
+                  animation: layout-bell-wiggle 1.5s ease-in-out infinite;
+                }
+              `}</style>
+              <button
+                onClick={() => {
+                  if (user?.role === "admin") {
+                    setShowWindowsAlertDrawer(!showWindowsAlertDrawer);
+                  }
+                }}
+                className="text-slate-500 hover:text-slate-800 relative p-2 rounded-full hover:bg-slate-100 transition"
+              >
+                <Bell size={24} className={user?.role === "admin" && missedAlerts.length > 0 ? "animate-layout-bell-wiggle text-blue-600 font-bold" : ""} />
+                {user?.role === "admin" && missedAlerts.length > 0 ? (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white font-mono text-[9px] font-black h-5 w-5 flex items-center justify-center rounded-full border border-white animate-pulse">
+                    {missedAlerts.length}
+                  </span>
+                ) : (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
+                )}
+              </button>
+
+              {/* Windows 11 style Notification Center Drawer - aligned horizontally with bell icon */}
+              {user?.role === "admin" && showWindowsAlertDrawer && (
+                <div className="absolute right-12 top-0 z-[120] w-[360px] max-h-[480px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-150">
+                  {/* List Content */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
+                    {missedAlerts.length > 0 ? (
+                      missedAlerts.map((alert) => (
+                        <div 
+                          key={alert.id}
+                          className="p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:shadow-md transition-shadow flex flex-col justify-between gap-3 text-left"
+                        >
+                          <div>
+                            <div className="flex justify-between items-start">
+                              <span className="text-[10px] font-bold text-slate-400">{alert.timestamp}</span>
+                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${alert.photoType === 'docs' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
+                                {alert.photoType === 'docs' ? '서류' : '외관사진'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-750 dark:text-slate-250 font-bold mt-1.5 leading-relaxed">
+                              {alert.photoType === 'docs' 
+                                ? <><span className="text-blue-600 dark:text-blue-400">@{alert.shipperName || '화주'}</span>로부터 말소증/차대각인사진이 도착</>
+                                : <><span className="text-blue-600 dark:text-blue-400">@{alert.shipperName || '화주'}</span>로부터 차량 외관 사진 도착</>
+                              }
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">B/L: {alert.blNumber}</p>
+                          </div>
+                          
+                          <div className="flex gap-2 w-full mt-1">
+                            <button
+                              onClick={() => {
+                                setActiveDashboardShipment({ id: alert.shipmentId, blNumber: alert.blNumber });
+                                setMissedAlerts(prev => prev.filter(a => a.id !== alert.id));
+                                setShowWindowsAlertDrawer(false);
+                                navigate("/admin/shipments");
+                              }}
+                              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-1.5 rounded-lg transition-colors text-center"
+                            >
+                              확인하러가기
+                            </button>
+                            <button
+                              onClick={() => {
+                                setMissedAlerts(prev => prev.filter(a => a.id !== alert.id));
+                              }}
+                              className="px-3 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-655 text-slate-750 dark:text-slate-200 text-[11px] font-bold py-1.5 rounded-lg transition-colors"
+                            >
+                              확인
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-slate-400 dark:text-slate-600 py-12">
+                        <BellRing size={28} className="mb-2 opacity-30 animate-bounce" />
+                        <span className="text-xs font-bold">새로운 알림이 없습니다.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

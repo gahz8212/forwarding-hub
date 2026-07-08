@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 import {
@@ -23,6 +23,7 @@ import {
   BellRing
 } from "lucide-react";
 import VehicleDashboardModal from "../../components/VehicleDashboardModal";
+import { useNotificationStore } from "../../store/useNotificationStore";
 
 interface ExtractionKey {
   id: string;
@@ -80,11 +81,20 @@ export default function AdminShipmentPage() {
   const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
 
-  // 로로선 차량 대시보드 상태
-  const [activeDashboardShipment, setActiveDashboardShipment] = useState<{ id: number; blNumber: string } | null>(null);
+  // 로로선 차량 대시보드 상태 및 화주 대기 서류 알림 토스트 상태 관리 (Zustand 전역 스토어 연동)
+  const { 
+    missedAlerts, 
+    setMissedAlerts, 
+    showWindowsAlertDrawer, 
+    setShowWindowsAlertDrawer,
+    activeDashboardShipment,
+    setActiveDashboardShipment
+  } = useNotificationStore();
 
-  // 화주 대기 서류 알림 토스트 상태
-  const [docAlert, setDocAlert] = useState<{ blNumber: string; count: number; shipmentId: number; photoType?: string } | null>(null);
+  const [docAlert, setDocAlert] = useState<{ id: string; blNumber: string; count: number; shipmentId: number; photoType?: string; shipperName?: string; timestamp?: string } | null>(null);
+  const [alertTimers, setAlertTimers] = useState<Record<string, any>>({});
+
+
 
   const fetchShipments = () => {
     setLoading(true);
@@ -118,11 +128,33 @@ export default function AdminShipmentPage() {
       fetchShipments();
     });
 
+    // 화주 대기 서류 알림 토스트 상태 및 미확인 알림창 히스토리 상태 관리
     socket.on("new_shipper_docs_alert", (data) => {
       console.log("화주 서류 업로드 수신:", data);
-      setDocAlert(data);
-      // 15초 후 자동 닫힘
-      setTimeout(() => setDocAlert(null), 15000);
+      const alertId = `shipper_alert_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const newAlert = { ...data, id: alertId, timestamp: new Date().toLocaleTimeString() };
+      
+      // 알림 노출
+      setDocAlert(newAlert);
+      
+      // 15초 후 자동 닫히며 미확인 리스트에 저장
+      const timer = setTimeout(() => {
+        setDocAlert(current => {
+          if (current && current.id === alertId) {
+            // 아직 닫히거나 확인하러가지 않았다면 미확인 알림창 목록에 추가
+            setMissedAlerts(prev => {
+              // 중복 방지
+              if (prev.some(a => a.id === alertId)) return prev;
+              return [...prev, { ...current, saved: true }];
+            });
+            return null;
+          }
+          return current;
+        });
+      }, 15000);
+      
+      // 타이머 등록
+      setAlertTimers(prev => ({ ...prev, [alertId]: timer }));
     });
 
     return () => {
@@ -1356,15 +1388,25 @@ export default function AdminShipmentPage() {
                     {docAlert.photoType === 'docs' ? '새로운 서류/차대 사진 도착' : '새로운 차량 외관 사진 도착'}
                   </h4>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    B/L: <span className="font-bold">{docAlert.blNumber}</span><br/>
                     {docAlert.photoType === 'docs' 
-                      ? <>화주가 <span className="font-bold text-emerald-600">{docAlert.count}</span>장의 차대/말소증 서류를 올렸습니다.</>
-                      : <>화주가 <span className="font-bold text-blue-600">{docAlert.count}</span>장의 차량 외관 사진을 올렸습니다.</>
+                      ? <><span className="font-bold text-slate-700 dark:text-slate-350">{docAlert.shipperName || '화주'}</span>로부터 말소증/차대각인사진이 도착</>
+                      : <><span className="font-bold text-slate-700 dark:text-slate-350">{docAlert.shipperName || '화주'}</span>로부터 차량 외관 사진 도착</>
                     }
+                    <span className="block text-[10px] text-slate-400 mt-0.5">B/L: {docAlert.blNumber}</span>
                   </p>
                 </div>
               </div>
-              <button onClick={() => setDocAlert(null)} className="text-slate-400 hover:text-slate-600">
+              <button 
+                onClick={() => {
+                  // 알림창 닫기를 눌렀을 때도 히스토리에 저장
+                  setMissedAlerts(prev => {
+                    if (prev.some(a => a.id === docAlert.id)) return prev;
+                    return [...prev, { ...docAlert, saved: true }];
+                  });
+                  setDocAlert(null);
+                }} 
+                className="text-slate-400 hover:text-slate-600"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -1375,7 +1417,7 @@ export default function AdminShipmentPage() {
               }}
               className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
             >
-              차량 관리 대시보드 열기
+              확인하러가기
             </button>
           </div>
         </>

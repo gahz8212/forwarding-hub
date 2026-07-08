@@ -76,7 +76,7 @@ const initDB = async () => {
         height INT NULL COMMENT '전고(mm)',
         weight DECIMAL(8, 2) COMMENT '차량 중량',
         cbm DECIMAL(8, 2) COMMENT '부피(CBM)',
-        drivability ENUM('Running', 'Towing', 'Forklift') DEFAULT 'Running' COMMENT '구동/선적 상태',
+        drivability ENUM('Running', 'Towing', 'Forklift') DEFAULT NULL COMMENT '구동/선적 상태',
         status VARCHAR(50) DEFAULT 'Pending' COMMENT '야드 반입, 선적 등 현재 상태',
         condition_photo_url TEXT NULL COMMENT '상태/데미지 리포트 사진 경로 (JSON 배열)',
         deregistration_no VARCHAR(100) NULL COMMENT '수출말소등록번호',

@@ -65,6 +65,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
   const [globalBuyer, setGlobalBuyer] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fastFileInputRef = useRef<HTMLInputElement>(null);
+  const [showUnclassifiedDrawer, setShowUnclassifiedDrawer] = useState(false);
 
   const [viewerState, setViewerState] = useState<ViewerState>({
     isOpen: false,
@@ -87,26 +88,52 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     viewerStartPos.current = { x: viewerPos.current.x, y: viewerPos.current.y };
   };
 
+  // Floating Unclassified Drawer Drag logic
+  const unclassifiedRef = useRef<HTMLDivElement>(null);
+  const unclassifiedPos = useRef({ x: 0, y: 0 });
+  const [isDraggingUnclassified, setIsDraggingUnclassified] = useState(false);
+  const unclassifiedDragStart = useRef({ x: 0, y: 0 });
+  const unclassifiedStartPos = useRef({ x: 0, y: 0 });
+
+  const handleUnclassifiedMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    setIsDraggingUnclassified(true);
+    unclassifiedDragStart.current = { x: e.clientX, y: e.clientY };
+    unclassifiedStartPos.current = { x: unclassifiedPos.current.x, y: unclassifiedPos.current.y };
+  };
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDraggingViewer) return;
-      const dx = e.clientX - viewerDragStart.current.x;
-      const dy = e.clientY - viewerDragStart.current.y;
+      if (!isDraggingViewer && !isDraggingUnclassified) return;
 
-      const newX = viewerStartPos.current.x + dx;
-      const newY = viewerStartPos.current.y + dy;
+      if (isDraggingViewer) {
+        const dx = e.clientX - viewerDragStart.current.x;
+        const dy = e.clientY - viewerDragStart.current.y;
+        const newX = viewerStartPos.current.x + dx;
+        const newY = viewerStartPos.current.y + dy;
+        viewerPos.current = { x: newX, y: newY };
+        if (viewerRef.current) {
+          viewerRef.current.style.transform = `translate(${newX}px, ${newY}px)`;
+        }
+      }
 
-      viewerPos.current = { x: newX, y: newY };
-      if (viewerRef.current) {
-        viewerRef.current.style.transform = `translate(${newX}px, ${newY}px)`;
+      if (isDraggingUnclassified) {
+        const dx = e.clientX - unclassifiedDragStart.current.x;
+        const dy = e.clientY - unclassifiedDragStart.current.y;
+        const newX = unclassifiedStartPos.current.x + dx;
+        const newY = unclassifiedStartPos.current.y + dy;
+        unclassifiedPos.current = { x: newX, y: newY };
+        if (unclassifiedRef.current) {
+          unclassifiedRef.current.style.transform = `translate(${newX}px, ${newY}px)`;
+        }
       }
     };
 
     const handleMouseUp = () => {
       setIsDraggingViewer(false);
+      setIsDraggingUnclassified(false);
     };
 
-    if (isDraggingViewer) {
+    if (isDraggingViewer || isDraggingUnclassified) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     }
@@ -115,9 +142,9 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDraggingViewer]);
+  }, [isDraggingViewer, isDraggingUnclassified]);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, skipOcr: boolean = false) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, skipOcr: boolean = false, photoType: 'docs' | 'exterior' = 'exterior') => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
@@ -125,6 +152,8 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     const formData = new FormData();
     formData.append("shipmentId", shipmentId.toString());
     formData.append("blNumber", blNumber);
+    formData.append("isForwarder", "true");
+    formData.append("photoType", photoType);
     if (skipOcr) {
       formData.append("skipOcr", "true");
     }
@@ -145,11 +174,18 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
 
         const newVehiclesMap = new Map<string, Vehicle>();
         const newUnclassified: string[] = [];
+        const newPendingDocs: string[] = [];
+        let hasDuplicate = false;
 
         // 프론트엔드 File 객체 목록 (인덱스 매칭용)
         const fileArray = Array.from(files);
 
         ocrResults.forEach((res: any, index: number) => {
+          if (res.status === 'duplicate') {
+            hasDuplicate = true;
+            // 중복 파일은 프론트엔드 목록에 절대 추가하지 않음
+            return;
+          }
           // 백엔드에서 한글 파일명이 깨질 수 있으므로, 파일명 매칭 대신 업로드 순서(index)로 매칭합니다.
           const file = fileArray[index];
           const localUrl = file ? URL.createObjectURL(file) : "";
@@ -202,9 +238,13 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
 
             newVehiclesMap.set(vin, existingVeh);
           } else {
-            // 차대번호를 못 찾은 사진(외관 사진 등)은 미분류함으로
+            // 차대번호를 못 찾았거나 중복/오류인 사진
             if (serverUrl) {
-              newUnclassified.push(serverUrl);
+              if (photoType === 'docs') {
+                newPendingDocs.push(serverUrl);
+              } else {
+                newUnclassified.push(serverUrl);
+              }
             }
           }
         });
@@ -238,11 +278,32 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
         });
 
         setUnclassifiedPhotos(prev => [...prev, ...newUnclassified]);
+        setPendingPhotos(prev => [...prev, ...newPendingDocs]);
 
-        if (skipOcr) {
-          alert(`⚡ 고속 업로드 완료!\n미분류(외관) 사진 ${newUnclassified.length}장이 추가되었습니다.`);
-        } else {
-          alert(`🎉 OCR 분석 완료!\n인식된 차량 대수: ${newVehiclesMap.size}대\n미분류(외관) 사진: ${newUnclassified.length}장`);
+        if (newUnclassified.length > 0) {
+          setShowUnclassifiedDrawer(true);
+        }
+        if (newPendingDocs.length > 0) {
+          setShowPendingModal(true);
+        }
+
+        // DB에서 최신 제원 포함된 차량 목록 즉시 갱신
+        await fetchVehicles();
+
+        if (hasDuplicate) {
+          alert("선택한 이미지가 이미 저장되어 있습니다.");
+        }
+
+        // 중복 파일 이외에 신규 처리된 사진이 있는 경우에만 처리 결과 알림 출력
+        if (newVehiclesMap.size > 0 || newUnclassified.length > 0 || newPendingDocs.length > 0) {
+          if (skipOcr) {
+            alert(`⚡ 고속 업로드 완료!\n미분류(외관) 사진 ${newUnclassified.length}장이 추가되었습니다.`);
+          } else {
+            let alertMsg = `🎉 OCR 분석 완료!\n인식된 차량 대수: ${newVehiclesMap.size}대`;
+            if (newUnclassified.length > 0) alertMsg += `\n미분류(외관) 사진: ${newUnclassified.length}장`;
+            if (newPendingDocs.length > 0) alertMsg += `\n미분류(대기) 서류: ${newPendingDocs.length}장`;
+            alert(alertMsg);
+          }
         }
       } else {
         alert("업로드 실패: " + data.message);
@@ -318,6 +379,23 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
           weight: data.weight,
           cbm: data.cbm
         } : v));
+
+        // DB에도 즉시 저장 (새로고침 없이 데이터 유지)
+        await fetch(`http://localhost:5000/api/tracking/vehicles/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            make: data.make,
+            model: data.modelName,
+            year: data.year,
+            initial_registration_date: data.initialRegistrationDate,
+            length: data.dimensions?.length,
+            width: data.dimensions?.width,
+            height: data.dimensions?.height,
+            weight: data.weight,
+            cbm: data.cbm
+          })
+        });
       }
     } catch (err) {
       console.error('자동 차대번호 조회 실패:', vin, err);
@@ -528,10 +606,12 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
   const openViewer = (vehicleId: number, photos: string[]) => {
     if (photos.length === 0) return;
 
-    viewerPos.current = { x: 0, y: 0 }; // Reset ref position
+    viewerPos.current = { x: 0, y: 0 };
     if (viewerRef.current) {
-      viewerRef.current.style.transform = 'translate(0px, 0px)'; // Reset DOM element style directly
+      viewerRef.current.style.transform = 'translate(0px, 0px)';
     }
+    // 미분류 사진함이 열려있으면 닫기 (같은 위치에서 열리므로)
+    setShowUnclassifiedDrawer(false);
     setViewerState({
       isOpen: true,
       vehicleId,
@@ -605,12 +685,19 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       const data = await res.json();
       if (data.success) {
         const list = data.data || [];
+        // 1. 데이터베이스에서 불러온 차량 목록을 즉시 화면에 세팅하여 리스트 추가 확인 보장
         setVehicles(list);
-        for (const v of list) {
+        
+        // 2. 비동기로 누락된 제원 조회 (렌더링을 블로킹하지 않음)
+        list.forEach(async (v: Vehicle) => {
           if (v.vin && v.vin.length === 17 && (!v.model || !v.length)) {
-            autoVinLookup(v.id, v.vin);
+            try {
+              await autoVinLookup(v.id, v.vin);
+            } catch (err) {
+              console.error(`비동기 제원 조회 에러 (VIN: ${v.vin}):`, err);
+            }
           }
-        }
+        });
       }
     } catch (err) {
       console.error("차량 목록 조회 실패:", err);
@@ -646,6 +733,13 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     socket.on("new_shipper_docs_alert", (data) => {
       // If the currently open dashboard matches the shipment that received photos
       if (data.blNumber === blNumber || data.shipmentId === shipmentId) {
+        fetchUnclassifiedPhotos();
+      }
+    });
+
+    socket.on("refresh_vehicle_list", (data) => {
+      if (data.blNumber === blNumber || data.shipmentId === shipmentId) {
+        fetchVehicles();
         fetchUnclassifiedPhotos();
       }
     });
@@ -791,7 +885,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                     accept="image/*,.zip"
                     className="hidden"
                     ref={fastFileInputRef}
-                    onChange={(e) => handleFileUpload(e, true)}
+                    onChange={(e) => handleFileUpload(e, true, 'exterior')}
                   />
                   <button
                     onClick={() => fastFileInputRef.current?.click()}
@@ -808,7 +902,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                     accept="image/*,.zip"
                     className="hidden"
                     ref={fileInputRef}
-                    onChange={(e) => handleFileUpload(e, false)}
+                    onChange={(e) => handleFileUpload(e, false, 'docs')}
                   />
                   <button
                     onClick={() => fileInputRef.current?.click()}
@@ -819,6 +913,19 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                     {uploading ? "분석 중..." : "차량 등록"}
                   </button>
                 </div>
+                
+                {/* Floating Unclassified Drawer Toggle Button */}
+                <button
+                  onClick={() => setShowUnclassifiedDrawer(!showUnclassifiedDrawer)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded text-sm font-bold shadow-sm border transition-colors ${
+                    showUnclassifiedDrawer 
+                      ? 'bg-amber-100 text-amber-800 border-amber-300' 
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <Camera size={16} className={showUnclassifiedDrawer ? "text-amber-600" : "text-slate-400"} />
+                  미분류 사진함 {unclassifiedPhotos.length > 0 && `(${unclassifiedPhotos.length})`}
+                </button>
               </div>
             </div>
           </div>
@@ -856,12 +963,6 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                             >
                               말소증
                             </button>
-                            {/* <button
-                              onClick={() => setGlobalPhotoTab('vin')}
-                              className={`px-2 py-0.5 rounded transition-colors ${globalPhotoTab === 'vin' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                            >
-                              차대
-                            </button> */}
                           </div>
                         </div>
                       </th>
@@ -885,22 +986,16 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                 type="text"
                                 maxLength={17}
                                 value={v.vin || ""}
-                                onChange={(e) => handleInputChange(v.id, "vin", e.target.value)}
+                                onChange={(e) => {
+                                  const nextVal = e.target.value;
+                                  handleInputChange(v.id, "vin", nextVal);
+                                  if (nextVal && nextVal.length === 17) {
+                                    autoVinLookup(v.id, nextVal);
+                                  }
+                                }}
                                 placeholder="차대번호 입력"
                                 className="font-mono font-black text-[16px] text-slate-900 dark:text-white flex-1 min-w-0 px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
                               />
-                              <button
-                                onClick={() => handleVinLookup(v.id, v.vin || "")}
-                                disabled={vinLoadingId === v.id}
-                                className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-colors flex items-center justify-center shrink-0 disabled:bg-slate-300"
-                                title="차대번호 제원 조회"
-                              >
-                                {vinLoadingId === v.id ? (
-                                  <Loader2 size={16} className="animate-spin" />
-                                ) : (
-                                  <Search size={16} />
-                                )}
-                              </button>
                             </div>
                             <div className="mt-1.5 flex items-center gap-1.5">
                               <select
@@ -1170,75 +1265,84 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
             )}
           </div>
 
-          {/* Unclassified Photos Sidebar */}
-          <div className="w-80 bg-slate-50 dark:bg-slate-900 shrink-0 flex flex-col p-4 overflow-y-auto">
-            <h3 className="font-bold text-slate-800 dark:text-slate-200 text-base mb-1.5 flex items-center gap-2">
-              <Camera size={18} className="text-amber-500" />
-              미분류 사진함
-            </h3>
-            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              OCR로 차대번호를 매칭하지 못한 외관 사진들입니다. 표의 데미지 사진 영역으로 마우스로 끌어서 배정해 주세요.
-            </p>
-
-            <div className="grid grid-cols-2 gap-3">
-              {unclassifiedPhotos.length > 0 ? (
-                unclassifiedPhotos.map((url, idx) => (
-                  <div
-                    key={idx}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, url)}
-                    onClick={() => {
-                      setSelectedPhotos(prev =>
-                        prev.includes(url) ? prev.filter(p => p !== url) : [...prev, url]
-                      );
-                    }}
-                    className={`relative group p-1 rounded-lg shadow-sm border cursor-pointer active:cursor-grabbing transition-all ${selectedPhotos.includes(url)
-                      ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500 scale-95'
-                      : 'bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md'
-                      }`}
-                  >
-                    {selectedPhotos.includes(url) && (
-                      <div className="absolute -top-2 -right-2 bg-indigo-600 text-white rounded-full p-0.5 z-10 shadow-md">
-                        <CheckCircle size={16} />
-                      </div>
-                    )}
-                    <div className="aspect-square rounded overflow-hidden bg-slate-100 relative">
-                      <img src={url} alt="Unclassified" className="w-full h-full object-cover" />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openViewer(0, [url]);
-                        }}
-                        className="absolute bottom-1 right-1 bg-black/60 hover:bg-black/85 text-white p-1 rounded transition-colors z-20"
-                        title="크게 보기"
-                      >
-                        <Search size={12} />
-                      </button>
-                    </div>
-                    {!selectedPhotos.includes(url) && (
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg pointer-events-none">
-                        <GripHorizontal className="text-white drop-shadow-md" size={24} />
-                      </div>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-2 py-10 text-center flex flex-col items-center justify-center text-slate-400 bg-white rounded-lg border border-dashed border-slate-200">
-                  <CheckCircle size={24} className="mb-2 text-emerald-400 opacity-50" />
-                  <span className="text-xs font-bold">모두 분류됨</span>
+          {/* Floating Unclassified Photos drawer/modal */}
+          {showUnclassifiedDrawer && (
+            <div 
+              ref={unclassifiedRef}
+              style={{ transform: `translate(${unclassifiedPos.current.x}px, ${unclassifiedPos.current.y}px)` }}
+              className="absolute right-6 top-24 z-[80] w-[472px] h-[578px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 select-none"
+            >
+              {/* Header */}
+              <div 
+                onMouseDown={handleUnclassifiedMouseDown}
+                className="bg-slate-100 dark:bg-slate-800 px-4 py-3 flex justify-between items-center border-b border-slate-200 dark:border-slate-700 cursor-grab active:cursor-grabbing select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <Camera size={16} className="text-amber-500" />
+                  <span className="font-bold text-sm text-slate-800 dark:text-white">미분류 사진함 (외관 사진 상세)</span>
                 </div>
-              )}
+                <button onClick={() => setShowUnclassifiedDrawer(false)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Scrollable grid showing all pictures as tiles (overflow-y-auto shows scrollbar ONLY when content overflows) */}
+              <div className="flex-1 overflow-y-auto p-4 bg-slate-950">
+                <p className="text-[11px] text-slate-400 w-full text-center mb-3 leading-relaxed bg-black/40 py-1.5 rounded">
+                  * OCR로 차대번호를 매칭하지 못한 외관 사진들입니다. 마우스로 끌어서 테이블의 데미지 사진 영역에 배정해 주세요.
+                </p>
+
+                {unclassifiedPhotos.length > 0 ? (
+                  <div className="columns-2 gap-3 space-y-3 pb-4">
+                    {unclassifiedPhotos.map((url, idx) => (
+                      <div
+                        key={idx}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, url)}
+                        onClick={() => {
+                          setSelectedPhotos(prev =>
+                            prev.includes(url) ? prev.filter(p => p !== url) : [...prev, url]
+                          );
+                        }}
+                        className={`break-inside-avoid relative group rounded-lg shadow border cursor-pointer active:cursor-grabbing transition-all ${selectedPhotos.includes(url)
+                          ? 'bg-indigo-900/40 border-indigo-500 ring-2 ring-indigo-500 scale-95'
+                          : 'bg-slate-900 border-slate-750 hover:border-indigo-400'
+                          }`}
+                      >
+                        {selectedPhotos.includes(url) && (
+                          <div className="absolute -top-2 -right-2 bg-indigo-600 text-white rounded-full p-0.5 z-10 shadow-md">
+                            <CheckCircle size={16} />
+                          </div>
+                        )}
+                        <div className="rounded overflow-hidden bg-slate-900 relative">
+                          <img src={url} alt="Unclassified" className="w-full h-auto object-contain block" />
+                        </div>
+                        {!selectedPhotos.includes(url) && (
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg pointer-events-none">
+                            <GripHorizontal className="text-white drop-shadow-md" size={24} />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-20 text-center flex flex-col items-center justify-center text-slate-400 w-full bg-slate-900/50 rounded-lg border border-dashed border-slate-800">
+                    <CheckCircle size={36} className="mb-2 text-emerald-400 opacity-50" />
+                    <span className="text-sm font-bold">모든 사진의 분류가 완료되었습니다!</span>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Floating Photo Viewer (Does not block layout) */}
+      {/* Floating Photo Viewer (Tile grid displaying all photos in the folder) */}
       {viewerState.isOpen && (
         <div
           ref={viewerRef}
           style={{ transform: `translate(${viewerPos.current.x}px, ${viewerPos.current.y}px)` }}
-          className="absolute right-80 bottom-4 z-[70] w-[675px] h-[825px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 select-none"
+          className="absolute right-6 top-24 z-[70] w-[472px] h-[578px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 select-none"
         >
           {/* Header (Drag Handle) */}
           <div
@@ -1248,12 +1352,12 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
             <div className="flex items-center gap-2">
               <Camera size={16} className="text-blue-500" />
               <span className="font-bold text-sm text-slate-800 dark:text-white">
-                {globalPhotoTab === 'document' ? '말소증 사진 상세' : globalPhotoTab === 'vin' ? '차대번호 사진 상세' : '데미지 사진 상세'}
+                {globalPhotoTab === 'document' ? '말소증 사진 목록' : globalPhotoTab === 'vin' ? '차대번호 사진 목록' : '데미지 사진 목록'}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <div className="text-xs font-mono bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full">
-                {viewerState.currentIndex + 1} / {viewerState.photos.length}
+                총 {viewerState.photos.length}장
               </div>
               <button onClick={closeViewer} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500">
                 <X size={16} />
@@ -1261,52 +1365,92 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
             </div>
           </div>
 
-          {/* Image Area */}
-          <div className="flex-1 overflow-auto bg-slate-950 flex items-center justify-center relative p-2">
-            <img
-              src={viewerState.photos[viewerState.currentIndex]}
-              alt="상세 사진"
-              className="max-w-full max-h-full object-contain"
-            />
-            {/* Left/Right controls inside floating panel */}
-            {viewerState.photos.length > 1 && (
-              <>
-                <button
-                  onClick={() => navigateViewer(-1)}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/60 text-white p-2 rounded-full hover:bg-black/85 transition-colors"
-                >
-                  <ChevronLeft size={18} />
-                </button>
-                <button
-                  onClick={() => navigateViewer(1)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/60 text-white p-2 rounded-full hover:bg-black/85 transition-colors"
-                >
-                  <ChevronRight size={18} />
-                </button>
-              </>
-            )}
+          {/* Grid Area showing all photos as tiles */}
+          <div className="flex-1 overflow-y-auto bg-slate-950 p-4">
+            <div className="columns-2 gap-3 space-y-3 pb-4">
+              {viewerState.photos.map((url, idx) => (
+                <div key={idx} className="break-inside-avoid relative group rounded-lg shadow-lg border border-slate-800 bg-slate-900 overflow-hidden">
+                  <div className="w-full bg-slate-900 relative rounded overflow-hidden">
+                    <img
+                      src={url}
+                      alt={`상세 사진 ${idx + 1}`}
+                      className="w-full h-auto object-contain block"
+                    />
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="absolute bottom-2 left-2 bg-black/60 hover:bg-black/85 text-white text-[10px] px-2 py-1 rounded transition-colors z-20 font-bold"
+                    >
+                      원본 보기
+                    </a>
+                    
+                    {/* Trash Button for this specific image */}
+                    <button
+                      onClick={() => {
+                        // Custom logic to remove photo at this index
+                        setViewerState(prev => {
+                          const updatedPhotos = prev.photos.filter((_, pIdx) => pIdx !== idx);
+                          
+                          // Update vehicle photo list state in vehicles
+                          setVehicles(vList => vList.map(v => {
+                            if (v.id === prev.vehicleId) {
+                              const photoField = globalPhotoTab === 'document'
+                                ? 'deregistration_photo_urls'
+                                : globalPhotoTab === 'vin'
+                                  ? 'vin_photo_urls'
+                                  : 'condition_photo_urls';
+                              return { ...v, [photoField]: updatedPhotos };
+                            }
+                            return v;
+                          }));
 
-            {/* Float-specific Photo Delete Button */}
-            <button
-              onClick={removeCurrentPhoto}
-              title="이 사진을 차량에서 배정 취소하고 미분류함으로 돌려보냅니다."
-              className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105"
-            >
-              <Trash2 size={16} />
-            </button>
+                          // 삭제된 사진을 미분류 사진함으로 이동
+                          setUnclassifiedPhotos(prev => [url, ...prev]);
+                          setShowUnclassifiedDrawer(true);
+
+                          // Also hit API to update backend
+                          const photoFieldForApi = globalPhotoTab === 'document'
+                            ? 'deregistration'
+                            : globalPhotoTab === 'vin'
+                              ? 'vin'
+                              : 'condition';
+                          
+                          fetch(`http://localhost:5000/api/files/remove-vehicle-photo`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              vehicleId: prev.vehicleId,
+                              photoUrl: url,
+                              photoType: photoFieldForApi
+                            })
+                          }).then(res => res.json())
+                            .then(data => {
+                              if (data.success) {
+                                // fetchVehicles will refresh it, but we already updated local state
+                              }
+                            }).catch(err => console.error("사진 제거 API 호출 오류:", err));
+
+                          if (updatedPhotos.length === 0) {
+                            return { ...prev, isOpen: false, photos: [] };
+                          }
+                          return { ...prev, photos: updatedPhotos, currentIndex: 0 };
+                        });
+                      }}
+                      title="이 사진을 차량에서 배정 취소하고 미분류함으로 돌려보냅니다."
+                      className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 z-20"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Footer controls */}
           <div className="px-4 py-2.5 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 flex justify-between bg-slate-50 dark:bg-slate-800">
             <span>* 테이블의 입력창과 정보를 바로 비교할 수 있습니다.</span>
-            <a
-              href={viewerState.photos[viewerState.currentIndex]}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue-600 font-bold hover:underline"
-            >
-              원본 보기
-            </a>
           </div>
         </div>
       )}

@@ -473,7 +473,15 @@ export default function DashboardPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert(`차량 외관 사진 전송 완료! 총 ${data.data.length}장의 사진이 처리되었습니다.`);
+        const hasDuplicate = data.data.some((res: any) => res.status === 'duplicate');
+        if (hasDuplicate) {
+          alert("선택한 이미지가 이미 저장되어 있습니다.");
+        }
+        
+        const successCount = data.data.filter((res: any) => res.status !== 'duplicate').length;
+        if (successCount > 0) {
+          alert(`차량 외관 사진 전송 완료! 총 ${successCount}장의 사진이 처리되었습니다.`);
+        }
         setExteriorFiles(null);
       } else {
         alert("사진 업로드 실패: " + data.message);
@@ -509,7 +517,15 @@ export default function DashboardPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert(`차대번호/말소증 서류 전송 완료! 총 ${data.data.length}장의 사진이 AI 분석 처리되었습니다.`);
+        const hasDuplicate = data.data.some((res: any) => res.status === 'duplicate');
+        if (hasDuplicate) {
+          alert("선택한 이미지가 이미 저장되어 있습니다.");
+        }
+
+        const successCount = data.data.filter((res: any) => res.status !== 'duplicate').length;
+        if (successCount > 0) {
+          alert(`차대번호/말소증 서류 전송 완료! 총 ${successCount}장의 사진이 AI 분석 처리되었습니다.`);
+        }
         setDocFiles(null);
       } else {
         alert("서류 업로드 실패: " + data.message);

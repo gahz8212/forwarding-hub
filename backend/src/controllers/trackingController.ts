@@ -381,7 +381,7 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
         model: v.model || "Unknown",
         year: v.year || new Date().getFullYear(),
         drivability: v.drivability || "", // 빈 값(null)으로 전달하여 대기 중 분석 시에도 구동여부 미선택 상태 유지
-        status: v.status || "Yard In",
+        status: v.status || "Pending",
         condition_photo_urls: urls.map(url => url.startsWith('http') ? url : `http://localhost:5000${url}`),
         deregistration_photo_urls: (() => {
           let dUrls = [];
@@ -428,12 +428,12 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'photoUrls는 배열이어야 합니다.' });
     }
 
-    const { type } = req.body; // 'document' | 'vin' | 'plate' (default)
-    const targetColumn = type === 'document' ? 'deregistration_photo_url' : type === 'vin' ? 'vin_photo_url' : 'condition_photo_url';
+    // vehicles 테이블에는 condition_photo_url 하나만 존재 (모든 사진 통합 저장)
+    const targetColumn = 'condition_photo_url';
 
     // 차량 정보(vin, blNumber 등 확인용) 가져오기
     const [vehicles]: any = await pool.query(
-      `SELECT v.vin, v.condition_photo_url, v.deregistration_photo_url, v.vin_photo_url, s.bl_number, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?`,
+      `SELECT v.vin, v.condition_photo_url, s.bl_number, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?`,
       [id]
     );
 
@@ -443,7 +443,8 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
 
     const vehicle = vehicles[0];
     const vin = vehicle.vin || 'UNKNOWN_VIN';
-    const shipperName = vehicle.shipper || '일반화주';
+    const rawShipperName = vehicle.shipper || '일반화주';
+    const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
     
     const dateObj = new Date();
     const year = dateObj.getFullYear().toString();
@@ -565,27 +566,96 @@ export const saveAllVehicles = async (req: Request, res: Response) => {
       }
     }
 
-    // 2. 임시 폴더 내의 분석된 사진 및 원본 백업 파일 삭제 (미분류 외관 사진은 유지)
+    // 2. 화주명 및 날짜 정보 조회
+    const [shipments]: any = await pool.query('SELECT shipper FROM shipments WHERE id = ?', [shipmentId]);
+    const rawShipperName = shipments.length > 0 && shipments[0].shipper ? shipments[0].shipper : '일반화주';
+    const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
+    const dateObj = new Date();
+    const year = dateObj.getFullYear().toString();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+
     const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const tempFolder = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
-    
-    const cleanDir = (dir: string) => {
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        for (const file of files) {
-          const filePath = path.join(dir, file);
-          if (fs.statSync(filePath).isFile()) {
-            if (file.startsWith('analyzed_') || file.startsWith('original_')) {
-              fs.unlinkSync(filePath);
-            }
-          }
-        }
+
+    // 3. 최종 저장 목적지: uploads/화주명/연/월/BL/
+    const blTargetDir = path.join(__dirname, '../../uploads', shipperName, year, month, safeBlNumber);
+    if (!fs.existsSync(blTargetDir)) {
+      fs.mkdirSync(blTargetDir, { recursive: true });
+    }
+
+    // URL 변경 맵 (old relative url -> new relative url)
+    const urlRemap = new Map<string, string>();
+
+    // 파일을 BL 폴더의 하위 폴더(docs 또는 exterior)로 이동하는 헬퍼
+    const moveFileToBL = (srcPath: string, originalRelUrl: string, sub: 'docs' | 'exterior') => {
+      if (!fs.existsSync(srcPath)) return;
+      const fileName = path.basename(srcPath);
+      const subTargetDir = path.join(blTargetDir, sub);
+      if (!fs.existsSync(subTargetDir)) {
+        fs.mkdirSync(subTargetDir, { recursive: true });
       }
+
+      const destPath = path.join(subTargetDir, fileName);
+      // 중복 파일명 방지
+      if (!fs.existsSync(destPath)) {
+        fs.renameSync(srcPath, destPath);
+      } else {
+        fs.unlinkSync(srcPath); // 이미 동일 파일 있으면 삭제
+      }
+      const newRelUrl = `/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${sub}/${fileName}`;
+      urlRemap.set(originalRelUrl, newRelUrl);
     };
 
-    cleanDir(tempFolder);
-    cleanDir(path.join(tempFolder, 'docs'));
-    cleanDir(path.join(tempFolder, 'exterior'));
+    // 4. temp/BL/docs/ 및 temp/BL/exterior/ 파일을 BL/docs/ 및 BL/exterior/ 폴더로 그대로 이동
+    const tempRoot = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
+    for (const sub of ['docs', 'exterior'] as const) {
+      const subDir = path.join(tempRoot, sub);
+      if (fs.existsSync(subDir)) {
+        for (const file of fs.readdirSync(subDir)) {
+          const filePath = path.join(subDir, file);
+          if (fs.statSync(filePath).isFile() && file.match(/\.(jpg|jpeg|png)$/i)) {
+            const oldRelUrl = `/uploads/temp/${safeBlNumber}/${sub}/${file}`;
+            moveFileToBL(filePath, oldRelUrl, sub);
+          }
+        }
+        // 빈 하위 폴더 제거
+        try { fs.rmdirSync(subDir); } catch (e) {}
+      }
+    }
+    // temp/BL 루트 폴더 제거
+    try { fs.rmdirSync(tempRoot); } catch (e) {}
+
+    // 5. uploads/화주명/연/월/VIN/ 폴더의 파일도 BL/exterior/ 폴더로 이동 (차량 관련 사진이므로 exterior)
+    const [allVehicles]: any = await pool.query(
+      'SELECT id, vin, condition_photo_url FROM vehicles WHERE shipment_id = ?',
+      [shipmentId]
+    );
+
+    for (const veh of allVehicles) {
+      const vin = veh.vin;
+      if (!vin) continue;
+      const vinDir = path.join(__dirname, '../../uploads', shipperName, year, month, vin);
+      if (fs.existsSync(vinDir)) {
+        for (const file of fs.readdirSync(vinDir)) {
+          const filePath = path.join(vinDir, file);
+          if (fs.statSync(filePath).isFile() && file.match(/\.(jpg|jpeg|png)$/i)) {
+            const oldRelUrl = `/uploads/${shipperName}/${year}/${month}/${vin}/${file}`;
+            moveFileToBL(filePath, oldRelUrl, 'exterior');
+          }
+        }
+        // 빈 VIN 폴더 제거
+        try { fs.rmdirSync(vinDir); } catch (e) {}
+      }
+
+      // 6. DB의 condition_photo_url URL 경로 업데이트
+      if (veh.condition_photo_url) {
+        let urls: string[] = [];
+        try { urls = JSON.parse(veh.condition_photo_url); } catch (e) { urls = [veh.condition_photo_url]; }
+        const updatedUrls = urls.map((u: string) => urlRemap.get(u) || u);
+        if (JSON.stringify(urls) !== JSON.stringify(updatedUrls)) {
+          await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify(updatedUrls), veh.id]);
+        }
+      }
+    }
 
     return res.json({ success: true, message: '모든 데이터가 저장되었습니다.' });
   } catch (error) {
@@ -1246,5 +1316,37 @@ export const getVehicleSpecByVIN = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('getVehicleSpecByVIN error:', error);
     return res.status(500).json({ success: false, message: '서버 내부 오류 또는 외부 API 연동 실패: ' + error.message });
+  }
+};
+
+export const updateVehicleSpecs = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { make, model, year, initial_registration_date, length, width, height, weight, cbm } = req.body;
+
+  try {
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (make !== undefined) { updates.push('make = ?'); params.push(make); }
+    if (model !== undefined) { updates.push('model = ?'); params.push(model); }
+    if (year !== undefined) { updates.push('year = ?'); params.push(year); }
+    if (initial_registration_date !== undefined) { updates.push('initial_registration_date = ?'); params.push(initial_registration_date); }
+    if (length !== undefined) { updates.push('length = ?'); params.push(length); }
+    if (width !== undefined) { updates.push('width = ?'); params.push(width); }
+    if (height !== undefined) { updates.push('height = ?'); params.push(height); }
+    if (weight !== undefined) { updates.push('weight = ?'); params.push(weight); }
+    if (cbm !== undefined) { updates.push('cbm = ?'); params.push(cbm); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, message: '업데이트할 필드가 없습니다.' });
+    }
+
+    params.push(id);
+    await pool.query(`UPDATE vehicles SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    return res.json({ success: true, message: '제원 저장 완료' });
+  } catch (error) {
+    console.error('updateVehicleSpecs error:', error);
+    return res.status(500).json({ success: false, message: '제원 저장 중 서버 에러' });
   }
 };
