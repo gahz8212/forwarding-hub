@@ -12,6 +12,7 @@ import authRoutes from './routes/authRoutes';
 import trackingRoutes from './routes/trackingRoutes';
 import scheduleRoutes from './routes/scheduleRoutes';
 import fileRoutes from './routes/fileRoutes';
+import billingRoutes from './routes/billingRoutes';
 import { initScheduler } from './services/scheduler';
 
 // 백그라운드 크론 스케줄러 가동
@@ -56,6 +57,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/schedules', scheduleRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/billing', billingRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });

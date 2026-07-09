@@ -7,7 +7,7 @@ export const login = async (req: Request, res: Response) => {
 
   try {
     const [rows]: any = await pool.query(
-      'SELECT id, username, role FROM users WHERE username = ? AND password = ?',
+      'SELECT id, username, role, client_id FROM users WHERE username = ? AND password = ?',
       [username, password]
     );
 
@@ -110,11 +110,11 @@ export const kakaoCallback = async (req: Request, res: Response) => {
                      userResponse.data.kakao_account?.profile?.nickname || 
                      `kakao_user_${userResponse.data.id}`;
 
-    let [rows]: any = await pool.query('SELECT id, username, role FROM users WHERE username = ?', [nickname]);
+    let [rows]: any = await pool.query('SELECT id, username, role, client_id FROM users WHERE username = ?', [nickname]);
     
     if (rows.length === 0) {
       await pool.query('INSERT INTO users (username, password, role, mobile) VALUES (?, ?, ?, ?)', [nickname, 'kakao_oauth', 'admin', '']);
-      [rows] = await pool.query('SELECT id, username, role FROM users WHERE username = ?', [nickname]);
+      [rows] = await pool.query('SELECT id, username, role, client_id FROM users WHERE username = ?', [nickname]);
     }
 
     const user = rows[0];

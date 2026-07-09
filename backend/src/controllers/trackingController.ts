@@ -27,7 +27,12 @@ function parseDateForDb(dateStr: any): string | null {
 
 export const getAllShipments = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM shipments ORDER BY etd DESC');
+    const [rows] = await pool.query(`
+      SELECT s.*, i.invoice_no as debit_note_invoice_no, i.payment_status as debit_note_payment_status 
+      FROM shipments s
+      LEFT JOIN invoices i ON s.bl_number = i.bl_number
+      ORDER BY s.etd DESC
+    `);
     res.json({
       success: true,
       message: '전체 선적 및 선박 정보를 불러왔습니다.',
@@ -257,6 +262,7 @@ export const assignTruck = async (req: Request, res: Response) => {
 
 export const updateShipmentStatus = async (req: Request, res: Response) => {
   const { blNumber, status } = req.body;
+  const userSession = (req.session as any).user;
 
   if (!blNumber || !status) {
     return res.status(400).json({ success: false, message: 'B/L 번호와 변경할 상태가 누락되었습니다.' });
@@ -277,6 +283,62 @@ export const updateShipmentStatus = async (req: Request, res: Response) => {
     };
     io.to(blNumber).emit('shipment_status_changed', payload);
     io.to('admin').emit('shipment_status_changed', payload);
+
+    // 출항(Departed) 상태로 변경 시 카카오톡 정산 안내 알림 발송 및 서류 보관함 노출
+    if (status === 'Departed' || status === '출항') {
+      try {
+        const [invoices]: any = await pool.query('SELECT invoice_no, final_amount_krw FROM invoices WHERE bl_number = ?', [blNumber]);
+        if (invoices.length > 0) {
+          const invoice = invoices[0];
+          console.log(`B/L [${blNumber}] is Departed. Found invoice: ${invoice.invoice_no}. Sending KakaoTalk notification...`);
+          
+          if (userSession?.kakaoToken) {
+            const messageText = `[정산서(데빗노트) 발급 알림]\nB/L 번호: ${blNumber}\n선적 상태가 '출항(Departed)'으로 변경되어 정산서가 발행되었습니다.\n\n정산 번호: ${invoice.invoice_no}\n최종 청구 금액: ₩${Number(invoice.final_amount_krw).toLocaleString()}\n\n상세 내역은 화주 메뉴의 [서류보관함] 또는 [정산 & 인보이스] 메뉴에서 확인해 주시기 바랍니다.`;
+            
+            await axios.post(
+              'https://kapi.kakao.com/v2/api/talk/memo/default/send',
+              `template_object=${JSON.stringify({
+                object_type: 'text',
+                text: messageText,
+                link: { web_url: 'http://localhost:3000/client/invoices', mobile_web_url: 'http://localhost:3000/client/invoices' },
+                button_title: '청구서 보기'
+              })}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${userSession.kakaoToken}`,
+                  'Content-Type': 'application/x-www-form-urlencoded'
+                }
+              }
+            );
+          } else {
+            console.warn('Kakao token not found in user session, skipped sending KakaoTalk notification.');
+          }
+
+          // 화주 실시간 알림창(토스트)용 소켓 이벤트 발행
+          const [shipmentRows]: any = await pool.query('SELECT booking_id, vessel_name FROM shipments WHERE bl_number = ?', [blNumber]);
+          if (shipmentRows.length > 0) {
+            const shipment = shipmentRows[0];
+            let shipperId = null;
+            if (shipment.booking_id) {
+              const [bookings]: any = await pool.query('SELECT user_id FROM bookings WHERE id = ?', [shipment.booking_id]);
+              if (bookings.length > 0) {
+                shipperId = bookings[0].user_id;
+              }
+            }
+            if (shipperId) {
+              io.to(`client_${shipperId}`).emit('pdf_generated_alert', {
+                blNumber,
+                shipperId,
+                vesselName: shipment.vessel_name,
+                message: `B/L [${blNumber}]의 정산서(데빗노트)가 발행되었습니다. 서류보관함에서 확인해 주세요.`
+              });
+            }
+          }
+        }
+      } catch (kakaoErr: any) {
+        console.error('KakaoTalk notification sending error:', kakaoErr.message);
+      }
+    }
 
     res.json({ success: true, message: `선적 상태가 '${status}'(으)로 업데이트되었습니다.` });
   } catch (error) {
@@ -362,6 +424,67 @@ export const reRequestDocs = async (req: Request, res: Response) => {
 export const getVehiclesByShipment = async (req: Request, res: Response) => {
   try {
     const { shipmentId } = req.params;
+
+    // Retrieve shipment details to locate docs folder
+    const [shipments]: any = await pool.query('SELECT bl_number, shipper FROM shipments WHERE id = ?', [shipmentId]);
+    
+    let allDocsFiles: string[] = [];
+    if (shipments.length > 0) {
+      const { bl_number, shipper } = shipments[0];
+      const safeBlNumber = bl_number ? bl_number.replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown_bl';
+      const shipperName = shipper ? shipper.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주' : '일반화주';
+
+      // Scan temporary docs directory: uploads/temp/[bl_number]/docs
+      const tempDocsDir = path.join(__dirname, '../../uploads', 'temp', safeBlNumber, 'docs');
+      if (fs.existsSync(tempDocsDir)) {
+        try {
+          const files = fs.readdirSync(tempDocsDir);
+          files.forEach(file => {
+            if (file.match(/\.(jpg|jpeg|png)$/i)) {
+              allDocsFiles.push(`/uploads/temp/${safeBlNumber}/docs/${file}`);
+            }
+          });
+        } catch (e) {
+          console.error('Error scanning temp docs dir:', e);
+        }
+      }
+
+      // Scan permanent docs directory: uploads/[shipperName]/[YYYY]/[MM]/[bl_number]/docs
+      // Search recursively under uploads/[shipperName] for [bl_number]/docs
+      const shipperDir = path.join(__dirname, '../../uploads', shipperName);
+      if (fs.existsSync(shipperDir)) {
+        try {
+          const findDocsFolder = (dir: string): string | null => {
+            const files = fs.readdirSync(dir);
+            for (const file of files) {
+              const filePath = path.join(dir, file);
+              if (fs.statSync(filePath).isDirectory()) {
+                if (file === safeBlNumber) {
+                  const docsPath = path.join(filePath, 'docs');
+                  if (fs.existsSync(docsPath)) return docsPath;
+                }
+                const found = findDocsFolder(filePath);
+                if (found) return found;
+              }
+            }
+            return null;
+          };
+          const docsFolderPath = findDocsFolder(shipperDir);
+          if (docsFolderPath) {
+            const files = fs.readdirSync(docsFolderPath);
+            files.forEach(file => {
+              if (file.match(/\.(jpg|jpeg|png)$/i)) {
+                const rel = path.relative(path.join(__dirname, '../../'), docsFolderPath);
+                allDocsFiles.push(`/${rel}/${file}`.replace(/\\/g, '/'));
+              }
+            });
+          }
+        } catch (e) {
+          console.error('Error scanning permanent docs dir:', e);
+        }
+      }
+    }
+
     const [vehicles]: any = await pool.query('SELECT * FROM vehicles WHERE shipment_id = ? ORDER BY id ASC', [shipmentId]);
     
     // 포맷팅 (condition_photo_urls 가 프론트엔드에서는 배열로 쓰이므로 처리)
@@ -374,6 +497,46 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
           urls = [v.condition_photo_url];
         }
       }
+
+      let dUrls: string[] = [];
+      if (v.deregistration_photo_url) {
+        try {
+          dUrls = JSON.parse(v.deregistration_photo_url);
+        } catch (e) {
+          dUrls = [v.deregistration_photo_url];
+        }
+      }
+
+      // Fallback: If dUrls is empty in DB, try to find files in the docs folder matching this vehicle
+      if (dUrls.length === 0 && allDocsFiles.length > 0) {
+        const matchedFiles = allDocsFiles.filter(fileUrl => {
+          const lowerFile = fileUrl.toLowerCase();
+          const lowerVin = (v.vin || '').toLowerCase();
+          const lowerPlate = (v.plate_number || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
+          const cleanDeregNo = (v.deregistration_no || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
+          
+          return (lowerVin && lowerVin.length >= 6 && lowerFile.includes(lowerVin)) || 
+                 (lowerPlate && lowerPlate.length >= 4 && lowerFile.includes(lowerPlate)) || 
+                 (cleanDeregNo && cleanDeregNo.length >= 4 && lowerFile.includes(cleanDeregNo));
+        });
+
+        if (matchedFiles.length > 0) {
+          dUrls = matchedFiles;
+        } else if (vehicles.length === 1) {
+          // If there is only one vehicle registered in this shipment, map all docs files to it
+          dUrls = allDocsFiles;
+        }
+      }
+
+      let vUrls: string[] = [];
+      if (v.vin_photo_url) {
+        try {
+          vUrls = JSON.parse(v.vin_photo_url);
+        } catch (e) {
+          vUrls = [v.vin_photo_url];
+        }
+      }
+
       return {
         id: v.id,
         vin: v.vin,
@@ -383,20 +546,8 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
         drivability: v.drivability || "", // 빈 값(null)으로 전달하여 대기 중 분석 시에도 구동여부 미선택 상태 유지
         status: v.status || "Pending",
         condition_photo_urls: urls.map(url => url.startsWith('http') ? url : `http://localhost:5000${url}`),
-        deregistration_photo_urls: (() => {
-          let dUrls = [];
-          if (v.deregistration_photo_url) {
-            try { dUrls = JSON.parse(v.deregistration_photo_url); } catch (e) { dUrls = [v.deregistration_photo_url]; }
-          }
-          return dUrls.map((url: string) => url.startsWith('http') ? url : `http://localhost:5000${url}`);
-        })(),
-        vin_photo_urls: (() => {
-          let vUrls = [];
-          if (v.vin_photo_url) {
-            try { vUrls = JSON.parse(v.vin_photo_url); } catch (e) { vUrls = [v.vin_photo_url]; }
-          }
-          return vUrls.map((url: string) => url.startsWith('http') ? url : `http://localhost:5000${url}`);
-        })(),
+        deregistration_photo_urls: dUrls.map((url: string) => url.startsWith('http') ? url : `http://localhost:5000${url}`),
+        vin_photo_urls: vUrls.map((url: string) => url.startsWith('http') ? url : `http://localhost:5000${url}`),
         customs_cleared: !!v.customs_cleared,
         buyer: "",
         price: v.price || 0,
@@ -422,18 +573,22 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
 export const assignPhotosToVehicle = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { photoUrls } = req.body; // 배열 ["http://localhost:5000/uploads/2026-07/SHIP_1/unclassified/photo_123.jpg", ...]
+    const { photoUrls, type } = req.body; // 배열 ["http://localhost:5000/uploads/...", ...], type: 'document' | 'vin' | 'plate'
 
     if (!Array.isArray(photoUrls)) {
       return res.status(400).json({ success: false, message: 'photoUrls는 배열이어야 합니다.' });
     }
 
-    // vehicles 테이블에는 condition_photo_url 하나만 존재 (모든 사진 통합 저장)
-    const targetColumn = 'condition_photo_url';
+    // Determine target column dynamically
+    const targetColumn = type === 'document' 
+      ? 'deregistration_photo_url' 
+      : type === 'vin' 
+        ? 'vin_photo_url' 
+        : 'condition_photo_url';
 
     // 차량 정보(vin, blNumber 등 확인용) 가져오기
     const [vehicles]: any = await pool.query(
-      `SELECT v.vin, v.condition_photo_url, s.bl_number, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?`,
+      `SELECT v.vin, v.condition_photo_url, v.deregistration_photo_url, v.vin_photo_url, s.bl_number, s.shipper FROM vehicles v JOIN shipments s ON v.shipment_id = s.id WHERE v.id = ?`,
       [id]
     );
 
@@ -1265,15 +1420,24 @@ export const getVehicleSpecByVIN = async (req: Request, res: Response) => {
       weight = 1475;
       year = 2021;
       initialRegistrationDate = '2021-04-12';
-    } else if (vinUpper.includes('KPT')) {
-      modelName = '포터 2 (PORTER II)';
+    } else if (vinUpper.includes('KPT') || vinUpper.includes('KMF')) {
+      modelName = '포터 (PORTER)';
       make = 'HYUNDAI';
       length = 5100;
       width = 1740;
       height = 1970;
       weight = 1895;
-      year = 2022;
-      initialRegistrationDate = '2022-09-20';
+      year = 2000;
+      initialRegistrationDate = '2000-11-10';
+    } else if (vinUpper.includes('KNAD') || vinUpper.includes('KNAG')) {
+      modelName = '카니발 (CARNIVAL)';
+      make = 'KIA';
+      length = 5155;
+      width = 1995;
+      height = 1775;
+      weight = 2050;
+      year = 2021;
+      initialRegistrationDate = '2021-08-10';
     } else if (vinUpper.includes('KNA') || vinUpper.includes('KNE')) {
       modelName = '스포티지 (SPORTAGE)';
       make = 'KIA';

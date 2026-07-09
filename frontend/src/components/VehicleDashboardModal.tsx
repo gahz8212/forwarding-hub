@@ -994,7 +994,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                   }
                                 }}
                                 placeholder="차대번호 입력"
-                                className="font-mono font-black text-[16px] text-slate-900 dark:text-white flex-1 min-w-0 px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                className={`font-mono font-black text-[16px] flex-1 min-w-0 px-2 py-1.5 border rounded outline-none transition-colors ${
+                                  (v.vin?.includes('?') || !v.vin || v.vin.length < 17)
+                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 focus:border-red-600'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500'
+                                }`}
                               />
                             </div>
                             <div className="mt-1.5 flex items-center gap-1.5">
@@ -1022,7 +1026,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                   value={v.model || ""}
                                   onChange={(e) => handleInputChange(v.id, "model", e.target.value)}
                                   placeholder="차명 (모델명)"
-                                  className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors font-bold text-slate-700 dark:text-slate-200 text-sm"
+                                  className={`w-full px-2.5 py-1.5 border rounded outline-none transition-colors font-bold text-sm ${
+                                    (v.model?.includes('?') || !v.model)
+                                      ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 focus:border-red-600'
+                                      : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:border-blue-500'
+                                  }`}
                                 />
                               </div>
 
@@ -1032,7 +1040,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                 <select
                                   value={v.year || ""}
                                   onChange={(e) => handleInputChange(v.id, "year", e.target.value ? parseInt(e.target.value, 10) : null)}
-                                  className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors text-slate-700 dark:text-slate-200 text-sm"
+                                  className={`w-full px-2.5 py-1.5 border rounded outline-none transition-colors text-sm ${
+                                    (!v.year)
+                                      ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 focus:border-red-600'
+                                      : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:border-blue-500'
+                                  }`}
                                 >
                                   <option value="">선택</option>
                                   {Array.from({ length: 45 }, (_, i) => new Date().getFullYear() + 1 - i).map(year => (
@@ -1051,7 +1063,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                     placeholder="단가 (USD)"
                                     value={v.price || ""}
                                     onChange={(e) => handleInputChange(v.id, "price", e.target.value ? parseFloat(e.target.value) : "")}
-                                    className="w-full pl-5 pr-1.5 py-1.5 border border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-900/10 rounded outline-none focus:border-emerald-500 transition-colors font-bold text-emerald-600 dark:text-emerald-400 text-sm"
+                                    className={`w-full pl-5 pr-1.5 py-1.5 border rounded outline-none transition-colors font-bold text-sm ${
+                                      (!v.price)
+                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 focus:border-red-600'
+                                        : 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 focus:border-emerald-500'
+                                    }`}
                                   />
                                 </div>
                               </div>
@@ -1103,10 +1119,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                       type="text"
                                       value={v.plate_number || ""}
                                       onChange={(e) => handleInputChange(v.id, "plate_number", e.target.value)}
-                                      className={`flex-1 min-w-0 px-2.5 py-1.5 text-sm border rounded outline-none transition-colors ${v.plate_number?.includes('?')
-                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 focus:border-red-600 focus:ring-1 focus:ring-red-500'
-                                        : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-blue-500'
-                                        }`}
+                                      className={`flex-1 min-w-0 px-2.5 py-1.5 text-sm border rounded outline-none transition-colors ${
+                                        (v.plate_number?.includes('?') || !v.plate_number)
+                                          ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-750 dark:text-red-300 focus:border-red-600'
+                                          : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-850 dark:text-slate-200 focus:border-blue-500'
+                                      }`}
                                     />
                                   </div>
                                   <div className="flex items-center text-sm">
@@ -1115,7 +1132,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                       type="text"
                                       value={v.make || ""}
                                       onChange={(e) => handleInputChange(v.id, "make", e.target.value)}
-                                      className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                      className={`flex-1 min-w-0 px-2.5 py-1.5 text-sm border rounded outline-none transition-colors ${
+                                        (v.make?.includes('?') || !v.make)
+                                          ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-750 dark:text-red-300 focus:border-red-600'
+                                          : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-850 dark:text-slate-200 focus:border-blue-500'
+                                      }`}
                                     />
                                   </div>
                                   <div className="flex items-center text-sm">
@@ -1124,7 +1145,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                       type="text"
                                       value={formatDateToSlash(v.initial_registration_date)}
                                       onChange={(e) => handleInputChange(v.id, "initial_registration_date", e.target.value)}
-                                      className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                      className={`flex-1 min-w-0 px-2.5 py-1.5 text-sm border rounded outline-none transition-colors ${
+                                        (v.initial_registration_date?.includes('?') || !v.initial_registration_date)
+                                          ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-750 dark:text-red-300 focus:border-red-600'
+                                          : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-850 dark:text-slate-200 focus:border-blue-500'
+                                      }`}
                                     />
                                   </div>
                                   <div className="flex items-center text-sm">
@@ -1133,7 +1158,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                       type="text"
                                       value={v.vehicle_type || ""}
                                       onChange={(e) => handleInputChange(v.id, "vehicle_type", e.target.value)}
-                                      className="flex-1 min-w-0 px-2.5 py-1.5 text-sm border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                      className={`flex-1 min-w-0 px-2.5 py-1.5 text-sm border rounded outline-none transition-colors ${
+                                        (v.vehicle_type?.includes('?') || !v.vehicle_type)
+                                          ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-750 dark:text-red-300 focus:border-red-600'
+                                          : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-850 dark:text-slate-200 focus:border-blue-500'
+                                      }`}
                                     />
                                   </div>
                                 </div>
@@ -1147,7 +1176,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                       value={v.length || ""}
                                       onChange={(e) => handleInputChange(v.id, "length", e.target.value ? parseInt(e.target.value, 10) : "")}
                                       placeholder="전장"
-                                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold outline-none focus:border-blue-500"
+                                      className={`w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-800 font-bold outline-none focus:border-blue-500 transition-colors ${
+                                        (!v.length)
+                                          ? 'border-red-500 text-red-750 dark:text-red-300 bg-red-50 dark:bg-red-900/20'
+                                          : 'border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white'
+                                      }`}
                                     />
                                   </div>
                                   <div className="flex flex-col gap-1">
@@ -1157,7 +1190,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                       value={v.width || ""}
                                       onChange={(e) => handleInputChange(v.id, "width", e.target.value ? parseInt(e.target.value, 10) : "")}
                                       placeholder="전폭"
-                                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold outline-none focus:border-blue-500"
+                                      className={`w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-800 font-bold outline-none focus:border-blue-500 transition-colors ${
+                                        (!v.width)
+                                          ? 'border-red-500 text-red-750 dark:text-red-300 bg-red-50 dark:bg-red-900/20'
+                                          : 'border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white'
+                                      }`}
                                     />
                                   </div>
                                   <div className="flex flex-col gap-1">
@@ -1167,7 +1204,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                       value={v.height || ""}
                                       onChange={(e) => handleInputChange(v.id, "height", e.target.value ? parseInt(e.target.value, 10) : "")}
                                       placeholder="전고"
-                                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold outline-none focus:border-blue-500"
+                                      className={`w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-800 font-bold outline-none focus:border-blue-500 transition-colors ${
+                                        (!v.height)
+                                          ? 'border-red-500 text-red-750 dark:text-red-300 bg-red-50 dark:bg-red-900/20'
+                                          : 'border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white'
+                                      }`}
                                     />
                                   </div>
                                   <div className="flex flex-col gap-1">
@@ -1177,7 +1218,11 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                                       value={v.weight || ""}
                                       onChange={(e) => handleInputChange(v.id, "weight", e.target.value ? parseFloat(e.target.value) : "")}
                                       placeholder="중량"
-                                      className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold outline-none focus:border-blue-500"
+                                      className={`w-full px-2 py-1 text-xs border rounded bg-white dark:bg-slate-800 font-bold outline-none focus:border-blue-500 transition-colors ${
+                                        (!v.weight)
+                                          ? 'border-red-500 text-red-750 dark:text-red-300 bg-red-50 dark:bg-red-900/20'
+                                          : 'border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white'
+                                      }`}
                                     />
                                   </div>
                                 </div>
@@ -1376,14 +1421,12 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                       alt={`상세 사진 ${idx + 1}`}
                       className="w-full h-auto object-contain block"
                     />
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="absolute bottom-2 left-2 bg-black/60 hover:bg-black/85 text-white text-[10px] px-2 py-1 rounded transition-colors z-20 font-bold"
+                    <button
+                      onClick={() => window.open(url, '_blank', 'width=1000,height=800,noopener,noreferrer,resizable=yes')}
+                      className="absolute bottom-2 left-2 bg-black/60 hover:bg-black/85 text-white text-[10px] px-2 py-1 rounded transition-colors z-20 font-bold pointer-events-auto"
                     >
                       원본 보기
-                    </a>
+                    </button>
                     
                     {/* Trash Button for this specific image */}
                     <button

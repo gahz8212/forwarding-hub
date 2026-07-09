@@ -571,6 +571,14 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
             ocrResult.serverUrl = `http://localhost:5000${targetRelativeUrl}`;
           }
 
+          const isDoc = ocrResult.type === 'document' || photoType === 'docs';
+          const isVin = ocrResult.type === 'vin' || photoType === 'vin';
+          const targetColumn = isDoc 
+            ? 'deregistration_photo_url' 
+            : isVin 
+              ? 'vin_photo_url' 
+              : 'condition_photo_url';
+
           if (existing.length > 0) {
             if (ocrResult.type === 'document') {
                const updates: string[] = [];
@@ -582,9 +590,16 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
                  await pool.query(`UPDATE vehicles SET ${updates.join(', ')} WHERE id = ?`, params);
                }
             }
-            if (ocrResult.type === 'plate') {
-               await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify([targetRelativeUrl]), updateId]);
+            
+            // Append photo URL to the corresponding column
+            const [currVeh]: any = await pool.query(`SELECT ${targetColumn} FROM vehicles WHERE id = ?`, [updateId]);
+            let photos: string[] = [];
+            if (currVeh[0]?.[targetColumn]) {
+              try { photos = JSON.parse(currVeh[0][targetColumn]); } catch (e) { photos = [currVeh[0][targetColumn]]; }
             }
+            if (!photos.includes(targetRelativeUrl)) photos.push(targetRelativeUrl);
+            await pool.query(`UPDATE vehicles SET ${targetColumn} = ? WHERE id = ?`, [JSON.stringify(photos), updateId]);
+
             (ocrResult as any).id = updateId;
             
             // 기존 차량에 제원이 없으면 VIN으로 채워넣기
@@ -610,14 +625,20 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
               try { specs = await decodeVin(finalVin); } catch (e) { console.error('[decodeVin] insert error:', e); }
             }
             const [insertResult]: any = await pool.query(
-              'INSERT INTO vehicles (shipment_id, vin, deregistration_no, plate_number, status, condition_photo_url, drivability, make, model, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              `INSERT INTO vehicles (
+                shipment_id, vin, deregistration_no, plate_number, status, 
+                condition_photo_url, deregistration_photo_url, vin_photo_url, 
+                drivability, make, model, year
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 resolvedShipmentId,
                 ocrResult.vin,
                 ocrResult.plateNumber || null,
                 ocrResult.plateNumber || null,
                 'Pending',
-                ocrResult.type === 'plate' ? JSON.stringify([targetRelativeUrl]) : null,
+                (!isDoc && !isVin) ? JSON.stringify([targetRelativeUrl]) : null,
+                isDoc ? JSON.stringify([targetRelativeUrl]) : null,
+                isVin ? JSON.stringify([targetRelativeUrl]) : null,
                 null,
                 specs?.make || null,
                 specs?.model || null,
@@ -860,8 +881,16 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
           }
         }
 
+        const isDoc = relativePath.includes('/docs/') || ocrResult.type === 'document';
+        const isVin = relativePath.includes('/vin/') || ocrResult.type === 'vin';
+        const targetColumn = isDoc 
+          ? 'deregistration_photo_url' 
+          : isVin 
+            ? 'vin_photo_url' 
+            : 'condition_photo_url';
+
         if (updateId) {
-          const [currVeh]: any = await pool.query('SELECT condition_photo_url FROM vehicles WHERE id = ?', [updateId]);
+          const [currVeh]: any = await pool.query(`SELECT ${targetColumn} FROM vehicles WHERE id = ?`, [updateId]);
           const parsePhotos = (fieldVal: string | null) => {
             if (!fieldVal) return [];
             try { return JSON.parse(fieldVal); } catch (e) { return [fieldVal]; }
@@ -894,24 +923,26 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
             await pool.query(`UPDATE vehicles SET ${updates.join(', ')} WHERE id = ?`, params);
           }
           
-          const photos = parsePhotos(currVeh[0]?.condition_photo_url);
+          const photos = parsePhotos(currVeh[0]?.[targetColumn]);
           if (!photos.includes(newRelativeUrl)) photos.push(newRelativeUrl);
-          await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify(photos), updateId]);
+          await pool.query(`UPDATE vehicles SET ${targetColumn} = ? WHERE id = ?`, [JSON.stringify(photos), updateId]);
         } else {
            newVehiclesCount++;
            await pool.query(
              `INSERT INTO vehicles (
                 shipment_id, vin, deregistration_no, plate_number, status, 
-                condition_photo_url, drivability,
+                condition_photo_url, deregistration_photo_url, vin_photo_url, drivability,
                 make, model, year, length, width, height, weight, cbm, initial_registration_date
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
              [
                shipmentId,
                finalVin,
                ocrResult.plateNumber || null,
                ocrResult.plateNumber || null,
                'Pending',
-               JSON.stringify([newRelativeUrl]),
+               (!isDoc && !isVin) ? JSON.stringify([newRelativeUrl]) : null,
+               isDoc ? JSON.stringify([newRelativeUrl]) : null,
+               isVin ? JSON.stringify([newRelativeUrl]) : null,
                null,
                decodedSpecs?.make || null,
                decodedSpecs?.modelName || null,

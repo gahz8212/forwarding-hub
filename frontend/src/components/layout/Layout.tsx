@@ -145,6 +145,7 @@ export default function Layout() {
     { name: "부킹 요청 승인", path: "/admin/bookings", icon: <FileText size={20} /> },
     { name: "전체 화물/선적 관리", path: "/admin/shipments", icon: <Ship size={20} /> },
     { name: "선박 스케줄 관리", path: "/admin/schedules", icon: <Calendar size={20} /> },
+    { name: "정산 & 단가 관리", path: "/admin/billing", icon: <CreditCard size={20} /> },
   ];
 
   const handleLogout = async () => {

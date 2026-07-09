@@ -20,7 +20,8 @@ import {
   FileSpreadsheet,
   X,
   Car,
-  BellRing
+  BellRing,
+  CreditCard
 } from "lucide-react";
 import VehicleDashboardModal from "../../components/VehicleDashboardModal";
 import { useNotificationStore } from "../../store/useNotificationStore";
@@ -94,7 +95,128 @@ export default function AdminShipmentPage() {
   const [docAlert, setDocAlert] = useState<{ id: string; blNumber: string; count: number; shipmentId: number; photoType?: string; shipperName?: string; timestamp?: string } | null>(null);
   const [alertTimers, setAlertTimers] = useState<Record<string, any>>({});
 
+  // Debit Note Generator Modal State
+  const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [billingShipment, setBillingShipment] = useState<any | null>(null);
+  const [billingClients, setBillingClients] = useState<any[]>([]);
+  const [selectedBillingClientId, setSelectedBillingClientId] = useState("");
+  const [exchangeRateInput, setExchangeRateInput] = useState("1350");
+  const [invoiceNoInput, setInvoiceNoInput] = useState("");
+  const [dueDateInput, setDueDateInput] = useState("");
+  const [calculationResult, setCalculationResult] = useState<any | null>(null);
+  const [calculating, setCalculating] = useState(false);
+  const [savingInvoice, setSavingInvoice] = useState(false);
+  const [billingError, setBillingError] = useState("");
 
+  const handleOpenDebitNoteGenerator = async (shipment: any) => {
+    setBillingShipment(shipment);
+    setInvoiceNoInput(`INV-${shipment.bl_number}`);
+    
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    setDueDateInput(nextWeek.toISOString().split('T')[0]);
+    
+    setCalculationResult(null);
+    setBillingError("");
+    setIsBillingModalOpen(true);
+    
+    try {
+      const [clientsRes, rateRes] = await Promise.all([
+        axios.get("http://localhost:5000/api/billing/clients", { withCredentials: true }),
+        axios.get("http://localhost:5000/api/billing/exchange-rate", { withCredentials: true }).catch(err => {
+          console.warn("Failed to fetch real-time exchange rate:", err);
+          return { data: { success: false } };
+        })
+      ]);
+
+      if (clientsRes.data.success) {
+        setBillingClients(clientsRes.data.clients);
+        // Match shipper name to client name
+        const matched = clientsRes.data.clients.find((c: any) => 
+          c.client_name.includes(shipment.shipper) || shipment.shipper.includes(c.client_name)
+        );
+        if (matched) {
+          setSelectedBillingClientId(matched.client_id);
+        } else if (clientsRes.data.clients.length > 0) {
+          setSelectedBillingClientId(clientsRes.data.clients[0].client_id);
+        }
+      }
+
+      if (rateRes.data.success && rateRes.data.rate) {
+        setExchangeRateInput(String(rateRes.data.rate));
+      } else {
+        setExchangeRateInput("1350");
+      }
+    } catch (err) {
+      console.error("Open Debit Note modal error:", err);
+      setBillingError("기본 설정을 불러오는 중 오류가 발생했습니다.");
+    }
+  };
+
+  const handleCalculateInvoice = async () => {
+    if (!billingShipment || !selectedBillingClientId || !exchangeRateInput) {
+      setBillingError("화주와 적용 환율을 입력해주세요.");
+      return;
+    }
+    setCalculating(true);
+    setBillingError("");
+    try {
+      const res = await axios.post("http://localhost:5000/api/billing/invoices/calculate", {
+        shipmentId: billingShipment.id,
+        clientId: selectedBillingClientId,
+        exchangeRate: parseFloat(exchangeRateInput)
+      }, { withCredentials: true });
+      if (res.data.success) {
+        setCalculationResult(res.data.data);
+      } else {
+        setBillingError(res.data.message || "계산 실패");
+      }
+    } catch (err: any) {
+      console.error("Calculate invoice error:", err);
+      setBillingError(err.response?.data?.message || "정산 계산 중 에러가 발생했습니다. 차량이 먼저 등록되어 있는지 확인해주세요.");
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  const handleSaveInvoice = async () => {
+    if (!calculationResult || !invoiceNoInput || !dueDateInput) {
+      setBillingError("인보이스 번호와 납기일을 입력해주세요.");
+      return;
+    }
+    setSavingInvoice(true);
+    setBillingError("");
+    try {
+      const payload = {
+        invoice_no: invoiceNoInput,
+        client_id: selectedBillingClientId,
+        bl_number: billingShipment.bl_number,
+        vessel_name: billingShipment.vessel_name,
+        pol: billingShipment.pol,
+        pod: billingShipment.pod,
+        exchange_rate: parseFloat(calculationResult.master.exchange_rate),
+        total_ocean_usd: parseFloat(calculationResult.master.total_ocean_usd),
+        total_local_krw: parseFloat(calculationResult.master.total_local_krw),
+        final_amount_krw: parseFloat(calculationResult.master.final_amount_krw),
+        bl_fee_krw: parseFloat(calculationResult.master.bl_fee_krw),
+        customs_fee_krw: parseFloat(calculationResult.master.customs_fee_krw),
+        due_date: dueDateInput,
+        items: calculationResult.items
+      };
+
+      const res = await axios.post("http://localhost:5000/api/billing/invoices", payload, { withCredentials: true });
+      if (res.data.success) {
+        alert("정산서(데빗노트)가 정상적으로 발행 및 저장되었습니다!");
+        setIsBillingModalOpen(false);
+        fetchShipments();
+      }
+    } catch (err: any) {
+      console.error("Save invoice error:", err);
+      setBillingError(err.response?.data?.message || "인보이스 저장에 실패했습니다.");
+    } finally {
+      setSavingInvoice(false);
+    }
+  };
 
   const fetchShipments = () => {
     setLoading(true);
@@ -784,13 +906,19 @@ export default function AdminShipmentPage() {
                       </span>
                     </td>
                     <td className="p-4 align-top">
-                      {/* 공통 기능: 차량 현황판 (포워더 대행을 위해 상태 무관 노출) */}
-                      <div className="mb-3">
+                      {/* 공통 기능: 차량 현황판 및 정산서 발행 */}
+                      <div className="mb-3 flex flex-wrap gap-2">
                         <button
                           onClick={() => setActiveDashboardShipment({ id: s.id, blNumber: s.bl_number })}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
                         >
                           <Car size={14} /> 차량 현황판 (사진/수기입력)
+                        </button>
+                        <button
+                          onClick={() => handleOpenDebitNoteGenerator(s)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
+                        >
+                          <CreditCard size={14} /> 정산서 발행 (Debit Note)
                         </button>
                       </div>
 
@@ -1421,6 +1549,230 @@ export default function AdminShipmentPage() {
             </button>
           </div>
         </>
+      )}
+      {/* 정산서 발행 및 데빗노트 생성 모달 */}
+      {isBillingModalOpen && billingShipment && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden border border-slate-100 my-8">
+            <div className="px-6 py-4 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-lg">데빗노트 정산서 발행</h3>
+                <p className="text-xs text-slate-300 mt-0.5">B/L 번호: {billingShipment.bl_number} | 선박: {billingShipment.vessel_name}</p>
+              </div>
+              <button 
+                onClick={() => setIsBillingModalOpen(false)}
+                className="text-white/60 hover:text-white transition font-bold"
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+              {/* Parameters input grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">인보이스 번호</label>
+                  <input
+                    type="text"
+                    value={invoiceNoInput}
+                    onChange={(e) => setInvoiceNoInput(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">정산 대상 화주 선택</label>
+                  <select
+                    value={selectedBillingClientId}
+                    onChange={(e) => setSelectedBillingClientId(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white"
+                  >
+                    {billingClients.map((c) => (
+                      <option key={c.client_id} value={c.client_id}>
+                        {c.client_name} ({c.client_id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs font-bold text-slate-500">적용 환율 (USD ➔ KRW)</label>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          setBillingError("");
+                          const res = await axios.get("http://localhost:5000/api/billing/exchange-rate", { withCredentials: true });
+                          if (res.data.success) {
+                            setExchangeRateInput(String(res.data.rate));
+                          }
+                        } catch (err: any) {
+                          setBillingError("실시간 환율을 가져오지 못했습니다.");
+                        }
+                      }}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold transition flex items-center gap-0.5"
+                    >
+                      <RefreshCw size={10} /> 실시간 갱신
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={exchangeRateInput}
+                      onChange={(e) => setExchangeRateInput(e.target.value)}
+                      className="w-full pl-3 pr-10 py-2 border rounded-xl focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs font-bold">₩</div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">납기일 (Due Date)</label>
+                  <input
+                    type="date"
+                    value={dueDateInput}
+                    onChange={(e) => setDueDateInput(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white"
+                  />
+                </div>
+
+                <div className="md:col-span-2 flex items-end">
+                  <button
+                    onClick={handleCalculateInvoice}
+                    disabled={calculating}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-xl text-sm transition active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+                  >
+                    {calculating ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        계산 중...
+                      </>
+                    ) : (
+                      <>정산 금액 계산하기 (CBM / 마진 적용)</>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Error box */}
+              {billingError && (
+                <div className="p-4 bg-red-50 text-red-800 rounded-xl border border-red-200 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle size={16} />
+                  <span>{billingError}</span>
+                </div>
+              )}
+
+              {/* Calculation results */}
+              {calculationResult && (
+                <div className="space-y-6">
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-slate-50/50 p-4 border border-slate-100 rounded-2xl">
+                      <p className="text-xs font-bold text-slate-400">총 해상 운임 (USD)</p>
+                      <p className="text-xl font-black text-slate-800 mt-1">
+                        ${Number(calculationResult.master.total_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="bg-slate-50/50 p-4 border border-slate-100 rounded-2xl">
+                      <p className="text-xs font-bold text-slate-400">로컬 비용 합계 (KRW)</p>
+                      <p className="text-xl font-black text-slate-800 mt-1">
+                        ₩{Number(calculationResult.master.total_local_krw).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="bg-indigo-50 p-4 border border-indigo-100 rounded-2xl">
+                      <p className="text-xs font-bold text-indigo-500">최종 청구 금액 (KRW 절사)</p>
+                      <p className="text-2xl font-black text-indigo-700 mt-1">
+                        ₩{Number(calculationResult.master.final_amount_krw).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Vehicles breakdown table */}
+                  <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="bg-slate-50 px-4 py-3 border-b">
+                      <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">차량별 청구 상세 정보 ({calculationResult.items.length}대)</h4>
+                    </div>
+                    <div className="overflow-x-auto max-h-[30vh]">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
+                          <tr>
+                            <th className="p-3 pl-4">차대번호 (VIN)</th>
+                            <th className="p-3">차종 / 모델</th>
+                            <th className="p-3 text-right">해상운임 (USD)</th>
+                            <th className="p-3 text-right">고박료 (KRW)</th>
+                            <th className="p-3 text-right">THC (KRW)</th>
+                            <th className="p-3 text-right">부두사용료 (KRW)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {calculationResult.items.map((item: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-slate-50/50 transition font-medium">
+                              <td className="p-3 pl-4 font-bold text-slate-800">{item.vin}</td>
+                              <td className="p-3 text-slate-600">
+                                <span className="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded mr-1 font-bold text-[10px]">{item.cargo_type}</span>
+                                {item.model_name}
+                              </td>
+                              <td className="p-3 text-right font-bold text-slate-700">
+                                ${Number(item.applied_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="p-3 text-right font-bold text-slate-700">
+                                ₩{Number(item.applied_lashing_krw).toLocaleString()}
+                              </td>
+                              <td className="p-3 text-right font-bold text-slate-700">
+                                ₩{Number(item.applied_thc_krw).toLocaleString()}
+                              </td>
+                              <td className="p-3 text-right font-bold text-slate-700">
+                                ₩{Number(item.applied_wharfage_krw || 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Document metadata (B/L Fee & Customs fee) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-3 border rounded-xl bg-slate-50 border-slate-100 text-xs font-bold text-slate-600 flex justify-between">
+                      <span>Pass-through 서류비 (B/L Fee):</span>
+                      <span>₩{Number(calculationResult.master.bl_fee_krw).toLocaleString()}</span>
+                    </div>
+                    <div className="p-3 border rounded-xl bg-slate-50 border-slate-100 text-xs font-bold text-slate-600 flex justify-between">
+                      <span>Pass-through 관세사 수수료 (Customs):</span>
+                      <span>₩{Number(calculationResult.master.customs_fee_krw).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t flex justify-end gap-3">
+              <button
+                onClick={() => setIsBillingModalOpen(false)}
+                className="px-4 py-2 border rounded-xl hover:bg-slate-100 font-bold text-xs text-slate-600 transition"
+              >
+                취소
+              </button>
+              {calculationResult && (
+                <button
+                  onClick={handleSaveInvoice}
+                  disabled={savingInvoice}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition shadow-md shadow-indigo-600/10 flex items-center gap-1.5"
+                >
+                  {savingInvoice ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      발행 중...
+                    </>
+                  ) : (
+                    <>최종 청구서(데빗노트) 저장 및 발행</>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

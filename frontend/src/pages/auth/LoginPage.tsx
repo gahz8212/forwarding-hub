@@ -5,8 +5,8 @@ import { Anchor } from "lucide-react";
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = React.useState(true);
-  const [username, setUsername] = React.useState("김화주");
-  const [password, setPassword] = React.useState("admin123");
+  const [username, setUsername] = React.useState("shipper");
+  const [password, setPassword] = React.useState("shipper123");
   const [mobile, setMobile] = React.useState("");
   const { setUser } = useAuthStore();
   const [error, setError] = React.useState("");
