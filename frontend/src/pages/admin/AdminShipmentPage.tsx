@@ -850,9 +850,9 @@ export default function AdminShipmentPage() {
 
   return (
     <div className="animate-fade-in-up space-y-6 max-w-[95%] mx-auto w-full min-h-[calc(100vh-12rem)] flex flex-col justify-center py-6 relative">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">화물 및 선적 전체 관리 (어드민 전용)</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-800">화물 및 선적 전체 관리 (어드민 전용)</h2>
           <p className="text-slate-500 text-sm mt-1">포워더 입장에서 진행 상태를 업데이트하고 제출된 관세 서류를 검증합니다.</p>
         </div>
       </div>
@@ -870,8 +870,8 @@ export default function AdminShipmentPage() {
           ) : shipments.length === 0 ? (
             <div className="p-12 text-center text-slate-400">등록된 선적 정보가 없습니다.</div>
           ) : (
-            <table className="w-full text-left border-collapse text-sm">
-              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-xs border-b">
+            <table className="w-full text-left border-collapse text-sm block md:table">
+              <thead className="hidden md:table-header-group bg-slate-50 text-slate-500 uppercase tracking-wider text-xs border-b">
                 <tr>
                   <th className="p-4 font-bold">B/L 번호</th>
                   <th className="p-4 font-bold">화주명</th>
@@ -883,19 +883,36 @@ export default function AdminShipmentPage() {
                   <th className="p-4 font-bold">운송 업무 제어</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-semibold">
+              <tbody className="divide-y divide-slate-100 font-semibold block md:table-row-group p-3 md:p-0 space-y-3 md:space-y-0">
                 {shipments.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50 transition">
-                    <td className="p-4 text-slate-800 font-bold">{s.bl_number}</td>
-                    <td className="p-4 text-slate-600">{s.shipper}</td>
-                    <td className="p-4 text-slate-600">{s.vessel_name}</td>
-                    <td className="p-4 text-slate-500">{s.pol}</td>
-                    <td className="p-4 text-slate-500">{s.pod}</td>
-                    <td className="p-4 text-slate-500 text-xs">
+                  <tr key={s.id} className="hover:bg-slate-50 transition block md:table-row rounded-xl border border-slate-100 md:border-0 md:rounded-none bg-white shadow-sm md:shadow-none mb-3 md:mb-0 overflow-hidden">
+                    <td className="p-3 md:p-4 text-slate-800 font-bold block md:table-cell border-b md:border-b-0 border-slate-50">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">B/L 번호</span>
+                      {s.bl_number}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">화주명</span>
+                      {s.shipper}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박명</span>
+                      {s.vessel_name}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POL</span>
+                      {s.pol}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POD</span>
+                      {s.pod}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-500 text-xs block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">ETD / ETA</span>
                       <div>D: {s.etd ? s.etd.split("T")[0] : "-"}</div>
                       <div className="text-slate-400">A: {s.eta ? s.eta.split("T")[0] : "-"}</div>
                     </td>
-                    <td className="p-4">
+                    <td className="p-3 md:p-4 block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">상태</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.status === "Pending Documents"
                           ? "bg-red-50 text-red-600 border border-red-100"
                           : s.status === "Documents Uploaded"
@@ -905,7 +922,7 @@ export default function AdminShipmentPage() {
                         {s.status}
                       </span>
                     </td>
-                    <td className="p-4 align-top">
+                    <td className="p-3 md:p-4 align-top block md:table-cell bg-slate-50 md:bg-transparent border-t border-slate-100 md:border-0">
                       {/* 공통 기능: 차량 현황판 및 정산서 발행 */}
                       <div className="mb-3 flex flex-wrap gap-2">
                         <button

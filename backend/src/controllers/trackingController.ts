@@ -617,38 +617,36 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
 
     const newSavedUrls: string[] = [];
 
-    // 파일 물리적 이동
+    // 파일 정규 폴더 내에서 그대로 유지하되, linked_ 접두사를 붙여 미분류 사진함에서 숨김
     for (const fullUrl of photoUrls) {
       if (!fullUrl) continue;
-      
-      try {
-        // "http://localhost:5000/uploads/..." -> "/uploads/..."
-        const relativeUrl = fullUrl.replace(/^https?:\/\/[^\/]+/, '');
-        const sourcePath = path.join(__dirname, '../../', relativeUrl);
-        
-        if (fs.existsSync(sourcePath)) {
-          // 목표 폴더: uploads/화주명/YYYY/MM/VIN/
-          const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, vin);
-          const fileBuffer = fs.readFileSync(sourcePath);
-          const newRelativeUrl = saveVehiclePhotoAndDeduplicate(
-            fileBuffer,
-            targetDir,
-            vin,
-            shipperName,
-            year,
-            month
-          );
-          
-          // 원래 임시 파일은 삭제
-          fs.unlinkSync(sourcePath);
-          newSavedUrls.push(newRelativeUrl);
-        } else {
-          // 이미 이동되었거나 못찾은 경우 그대로 추가
-          newSavedUrls.push(relativeUrl);
+      const relativeUrl = fullUrl.replace(/^https?:\/\/[^\/]+/, '');
+
+      if (relativeUrl.startsWith('/uploads/')) {
+        const absolutePath = path.join(__dirname, '../../', relativeUrl);
+        if (fs.existsSync(absolutePath)) {
+          const dir = path.dirname(absolutePath);
+          const fileName = path.basename(absolutePath);
+          // 이미 linked_ 접두사가 없는 경우에만 추가
+          if (!fileName.startsWith('linked_')) {
+            const newFileName = `linked_${fileName}`;
+            const newAbsolutePath = path.join(dir, newFileName);
+            try {
+              fs.renameSync(absolutePath, newAbsolutePath);
+              const newRelativeUrl = relativeUrl.replace(`/${fileName}`, `/${newFileName}`);
+              newSavedUrls.push(newRelativeUrl);
+              continue;
+            } catch (renameErr) {
+              console.error('[assignPhotos] rename to linked_ failed:', renameErr);
+            }
+          } else {
+            // 이미 linked_ 접두사가 있는 경우 그대로 사용
+            newSavedUrls.push(relativeUrl);
+            continue;
+          }
         }
-      } catch (err) {
-        console.error('파일 이동 에러:', err);
       }
+      newSavedUrls.push(relativeUrl);
     }
 
     // 중복 제거 후 병합
@@ -675,14 +673,40 @@ export const resetDashboardData = async (req: Request, res: Response) => {
     // 1. DB에서 차량 정보 전체 삭제
     await pool.query('DELETE FROM vehicles WHERE shipment_id = ?', [shipmentId]);
 
-    // 2. 미분류 사진함 (temp 폴더 내 BL번호 폴더) 비우기
+    // 2. 배정 완료된 사진들의 linked_ 접두사를 복원하여 미분류 상태로 되돌림
     if (blNumber) {
-      const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const tempFolder = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
-      
-      if (fs.existsSync(tempFolder)) {
-        fs.rmSync(tempFolder, { recursive: true, force: true });
-        fs.mkdirSync(tempFolder, { recursive: true });
+      const [shipments]: any = await pool.query(
+        'SELECT shipper, etd FROM shipments WHERE bl_number = ?',
+        [blNumber]
+      );
+      if (shipments.length > 0) {
+        const dbShipment = shipments[0];
+        const rawShipperName = dbShipment.shipper || '일반화주';
+        const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
+        const uploadDate = dbShipment.etd ? new Date(dbShipment.etd) : new Date();
+        const year = uploadDate.getFullYear().toString();
+        const month = String(uploadDate.getMonth() + 1).padStart(2, '0');
+        const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+        const realFolder = path.join(__dirname, '../../uploads', shipperName, year, month, safeBlNumber);
+        for (const sub of ['docs', 'exterior'] as const) {
+          const subDir = path.join(realFolder, sub);
+          if (fs.existsSync(subDir)) {
+            for (const file of fs.readdirSync(subDir)) {
+              // linked_로 시작하는 파일인 경우 복원
+              if (file.startsWith('linked_')) {
+                const originalFileName = file.replace(/^linked_/, '');
+                const oldPath = path.join(subDir, file);
+                const newPath = path.join(subDir, originalFileName);
+                try {
+                  fs.renameSync(oldPath, newPath);
+                } catch (e) {
+                  console.error(`[resetDashboardData] rename failed for ${file}:`, e);
+                }
+              }
+            }
+          }
+        }
       }
     }
 
@@ -696,13 +720,13 @@ export const resetDashboardData = async (req: Request, res: Response) => {
 export const saveAllVehicles = async (req: Request, res: Response) => {
   try {
     const { shipmentId } = req.params;
-    const { blNumber, vehicles } = req.body;
+    const { vehicles } = req.body;
 
-    if (!shipmentId || !blNumber) {
-      return res.status(400).json({ success: false, message: '선적 ID와 BL 번호가 필요합니다.' });
+    if (!shipmentId) {
+      return res.status(400).json({ success: false, message: '선적 ID가 필요합니다.' });
     }
 
-    // 1. 차량 정보 업데이트 (vehicles 배열 순회)
+    // 차량 정보 업데이트 (파일 이동 로직 없이 DB 제원만 업데이트)
     if (vehicles && Array.isArray(vehicles)) {
       for (const v of vehicles) {
         await pool.query(
@@ -718,97 +742,6 @@ export const saveAllVehicles = async (req: Request, res: Response) => {
             v.id, shipmentId
           ]
         );
-      }
-    }
-
-    // 2. 화주명 및 날짜 정보 조회
-    const [shipments]: any = await pool.query('SELECT shipper FROM shipments WHERE id = ?', [shipmentId]);
-    const rawShipperName = shipments.length > 0 && shipments[0].shipper ? shipments[0].shipper : '일반화주';
-    const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
-    const dateObj = new Date();
-    const year = dateObj.getFullYear().toString();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-
-    const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
-
-    // 3. 최종 저장 목적지: uploads/화주명/연/월/BL/
-    const blTargetDir = path.join(__dirname, '../../uploads', shipperName, year, month, safeBlNumber);
-    if (!fs.existsSync(blTargetDir)) {
-      fs.mkdirSync(blTargetDir, { recursive: true });
-    }
-
-    // URL 변경 맵 (old relative url -> new relative url)
-    const urlRemap = new Map<string, string>();
-
-    // 파일을 BL 폴더의 하위 폴더(docs 또는 exterior)로 이동하는 헬퍼
-    const moveFileToBL = (srcPath: string, originalRelUrl: string, sub: 'docs' | 'exterior') => {
-      if (!fs.existsSync(srcPath)) return;
-      const fileName = path.basename(srcPath);
-      const subTargetDir = path.join(blTargetDir, sub);
-      if (!fs.existsSync(subTargetDir)) {
-        fs.mkdirSync(subTargetDir, { recursive: true });
-      }
-
-      const destPath = path.join(subTargetDir, fileName);
-      // 중복 파일명 방지
-      if (!fs.existsSync(destPath)) {
-        fs.renameSync(srcPath, destPath);
-      } else {
-        fs.unlinkSync(srcPath); // 이미 동일 파일 있으면 삭제
-      }
-      const newRelUrl = `/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${sub}/${fileName}`;
-      urlRemap.set(originalRelUrl, newRelUrl);
-    };
-
-    // 4. temp/BL/docs/ 및 temp/BL/exterior/ 파일을 BL/docs/ 및 BL/exterior/ 폴더로 그대로 이동
-    const tempRoot = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
-    for (const sub of ['docs', 'exterior'] as const) {
-      const subDir = path.join(tempRoot, sub);
-      if (fs.existsSync(subDir)) {
-        for (const file of fs.readdirSync(subDir)) {
-          const filePath = path.join(subDir, file);
-          if (fs.statSync(filePath).isFile() && file.match(/\.(jpg|jpeg|png)$/i)) {
-            const oldRelUrl = `/uploads/temp/${safeBlNumber}/${sub}/${file}`;
-            moveFileToBL(filePath, oldRelUrl, sub);
-          }
-        }
-        // 빈 하위 폴더 제거
-        try { fs.rmdirSync(subDir); } catch (e) {}
-      }
-    }
-    // temp/BL 루트 폴더 제거
-    try { fs.rmdirSync(tempRoot); } catch (e) {}
-
-    // 5. uploads/화주명/연/월/VIN/ 폴더의 파일도 BL/exterior/ 폴더로 이동 (차량 관련 사진이므로 exterior)
-    const [allVehicles]: any = await pool.query(
-      'SELECT id, vin, condition_photo_url FROM vehicles WHERE shipment_id = ?',
-      [shipmentId]
-    );
-
-    for (const veh of allVehicles) {
-      const vin = veh.vin;
-      if (!vin) continue;
-      const vinDir = path.join(__dirname, '../../uploads', shipperName, year, month, vin);
-      if (fs.existsSync(vinDir)) {
-        for (const file of fs.readdirSync(vinDir)) {
-          const filePath = path.join(vinDir, file);
-          if (fs.statSync(filePath).isFile() && file.match(/\.(jpg|jpeg|png)$/i)) {
-            const oldRelUrl = `/uploads/${shipperName}/${year}/${month}/${vin}/${file}`;
-            moveFileToBL(filePath, oldRelUrl, 'exterior');
-          }
-        }
-        // 빈 VIN 폴더 제거
-        try { fs.rmdirSync(vinDir); } catch (e) {}
-      }
-
-      // 6. DB의 condition_photo_url URL 경로 업데이트
-      if (veh.condition_photo_url) {
-        let urls: string[] = [];
-        try { urls = JSON.parse(veh.condition_photo_url); } catch (e) { urls = [veh.condition_photo_url]; }
-        const updatedUrls = urls.map((u: string) => urlRemap.get(u) || u);
-        if (JSON.stringify(urls) !== JSON.stringify(updatedUrls)) {
-          await pool.query('UPDATE vehicles SET condition_photo_url = ? WHERE id = ?', [JSON.stringify(updatedUrls), veh.id]);
-        }
       }
     }
 
@@ -856,6 +789,35 @@ export const removePhotoFromVehicle = async (req: Request, res: Response) => {
     const updatedUrls = existingUrls.filter((url: string) => url !== relativeUrl);
 
     await pool.query(`UPDATE vehicles SET ${targetColumn} = ? WHERE id = ?`, [JSON.stringify(updatedUrls), id]);
+
+    // 정규 폴더 내 파일인 경우 linked_ 및 analyzed_ 접두사를 모두 제거하여 미분류 사진함에 다시 노출
+    if (relativeUrl.startsWith('/uploads/')) {
+      const absolutePath = path.join(__dirname, '../../', relativeUrl);
+      if (fs.existsSync(absolutePath)) {
+        const dir = path.dirname(absolutePath);
+        const fileName = path.basename(absolutePath);
+        
+        let cleanFileName = fileName;
+        if (cleanFileName.startsWith('linked_')) {
+          cleanFileName = cleanFileName.replace(/^linked_/, '');
+        }
+        if (cleanFileName.startsWith('analyzed_')) {
+          cleanFileName = cleanFileName.replace(/^analyzed_/, '');
+        }
+        
+        if (cleanFileName !== fileName) {
+          const originalAbsolutePath = path.join(dir, cleanFileName);
+          try {
+            fs.renameSync(absolutePath, originalAbsolutePath);
+            // 프론트엔드에 원래 URL로 복원 전달
+            const restoredUrl = relativeUrl.replace(`/${fileName}`, `/${cleanFileName}`);
+            return res.json({ success: true, message: '제거 완료', data: updatedUrls, restoredUrl });
+          } catch (renameErr) {
+            console.error('[removePhoto] rename from linked/analyzed failed:', renameErr);
+          }
+        }
+      }
+    }
 
     return res.json({ success: true, message: '제거 완료', data: updatedUrls });
   } catch (error) {

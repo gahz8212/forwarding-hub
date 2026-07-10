@@ -9,7 +9,7 @@ import sharp from 'sharp';
 import { parseExcelToGridData, parsePdfToGridData } from '../services/fileParser';
 import { analyzeVehiclePhoto } from '../services/ocrService';
 import { decodeVin, VehicleSpecs } from '../services/vinService';
-import { saveVehiclePhotoAndDeduplicate } from '../utils/photoHelper';
+// import { saveVehiclePhotoAndDeduplicate } from '../utils/photoHelper'; // 전체저장 시 사용 (미사용 제거)
 // import { getVehicleInfoFromPublicData } from '../services/publicDataService';
 
 function normalizeBrandName(brand: string | null): string | null {
@@ -373,7 +373,7 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
 
     // 선적 정보 및 화주명 조회 (shipmentId가 BL 번호인 경우도 대응)
     const [shipments]: any = await pool.query(
-      'SELECT id, shipper FROM shipments WHERE id = ? OR bl_number = ?',
+      'SELECT id, shipper, etd FROM shipments WHERE id = ? OR bl_number = ?',
       [shipmentId, blNumber || shipmentId]
     );
     const dbShipment = shipments[0];
@@ -381,18 +381,18 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
     const rawShipperName = dbShipment && dbShipment.shipper ? dbShipment.shipper : '일반화주';
     const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
 
-    const dateObj = new Date();
-    const year = dateObj.getFullYear().toString();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const uploadDate = dbShipment && dbShipment.etd ? new Date(dbShipment.etd) : new Date();
+    const year = uploadDate.getFullYear().toString();
+    const month = String(uploadDate.getMonth() + 1).padStart(2, '0');
 
     const safeBlNumber = blNumber ? String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown_bl';
     
     // photoType에 따라 docs 또는 exterior 하위 폴더에 저장
     const subFolder = photoType === 'docs' ? 'docs' : 'exterior';
-    // 임시 폴더 경로 생성
-    const tempFolder = path.join(__dirname, '../../uploads', 'temp', safeBlNumber, subFolder);
-    if (!fs.existsSync(tempFolder)) {
-      fs.mkdirSync(tempFolder, { recursive: true });
+    // 정규 폴더 경로 생성 (uploads/화주명/연/월/BL/하위폴더)
+    const realFolder = path.join(__dirname, '../../uploads', shipperName, year, month, safeBlNumber, subFolder);
+    if (!fs.existsSync(realFolder)) {
+      fs.mkdirSync(realFolder, { recursive: true });
     }
 
     // 1. 업로드된 파일들을 확인하여 ZIP 파일이면 압축 해제, 일반 이미지면 큐에 추가 (배치 내 중복 차단용 MD5 체크 병행)
@@ -519,14 +519,14 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         const isForwarderUpload = req.body.isForwarder === 'true' || req.body.isForwarder === true;
         const prefix = isForwarderUpload ? 'forwarder' : 'shipper';
         const randomString = Math.random().toString(36).substring(2, 10);
-        const tempFileName = `${prefix}_photo_${Date.now()}_${randomString}.jpg`;
+        const fileName = `${prefix}_photo_${Date.now()}_${randomString}.jpg`;
         const subFolder = photoType === 'docs' ? 'docs' : 'exterior';
-        const tempRelativeUrl = `/uploads/temp/${safeBlNumber}/${subFolder}/${tempFileName}`;
-        const tempPath = path.join(tempFolder, tempFileName);
+        const targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${subFolder}/${fileName}`;
+        const targetPath = path.join(realFolder, fileName);
         
-        fs.writeFileSync(tempPath, optimizedBuffer);
+        fs.writeFileSync(targetPath, optimizedBuffer);
 
-        ocrResult.serverUrl = `http://localhost:5000${tempRelativeUrl}`;
+        ocrResult.serverUrl = `http://localhost:5000${targetRelativeUrl}`;
 
         // 3. 사진 타입이 확인된 경우 DB에 매핑 및 파일 물리적 이동
         
@@ -535,6 +535,24 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         //   const publicInfo = await getVehicleInfoFromPublicData(ocrResult.plateNumber);
         //   if (publicInfo && publicInfo.vin) { ... }
         // }
+
+        // 타 선적에 이미 등록된 차대번호인지 글로벌 중복 검증 (DB 조회)
+        if (ocrResult.vin && ocrResult.vin !== 'UNKNOWN_VIN') {
+          const [globalExisting]: any = await pool.query(
+            'SELECT id, shipment_id FROM vehicles WHERE vin = ? AND shipment_id != ?',
+            [ocrResult.vin, resolvedShipmentId]
+          );
+
+          if (globalExisting.length > 0) {
+            console.log(`[DEDUPLICATE VIN] VIN ${ocrResult.vin} already exists in another shipment (ID: ${globalExisting[0].shipment_id}). Skipping.`);
+            processedResults.push({
+              fileName: image.originalname,
+              status: 'duplicate',
+              reason: `이미 다른 선적에 등록된 차대번호(${ocrResult.vin})입니다.`
+            });
+            continue;
+          }
+        }
 
         if (ocrResult.vin || ocrResult.plateNumber) {
           const [existing]: any = await pool.query(
@@ -552,24 +570,6 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
 
           if (!finalVin) finalVin = 'UNKNOWN_VIN';
           ocrResult.vin = finalVin;
-
-          let targetRelativeUrl: string;
-
-          if (photoType === 'docs') {
-            // docs 타입은 temp/BL/docs/ 폴더에 그대로 유지 (사진함에서 확인 가능)
-            targetRelativeUrl = tempRelativeUrl;
-            ocrResult.serverUrl = `http://localhost:5000${tempRelativeUrl}`;
-          } else {
-            // 외관 사진 등은 정식 폴더로 이동 (uploads/화주명/YYYY/MM/VIN)
-            const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, finalVin);
-            if (!fs.existsSync(targetDir)) {
-              fs.mkdirSync(targetDir, { recursive: true });
-            }
-            const targetPath = path.join(targetDir, tempFileName);
-            targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${finalVin}/${tempFileName}`;
-            fs.renameSync(tempPath, targetPath);
-            ocrResult.serverUrl = `http://localhost:5000${targetRelativeUrl}`;
-          }
 
           const isDoc = ocrResult.type === 'document' || photoType === 'docs';
           const isVin = ocrResult.type === 'vin' || photoType === 'vin';
@@ -712,11 +712,29 @@ export const getUnclassifiedPhotos = async (req: Request, res: Response) => {
     if (!blNumber) {
       return res.status(400).json({ success: false, message: 'BL 번호가 누락되었습니다.' });
     }
+
+    // 선적 정보 및 화주명 조회하여 정규 디렉토리 경로 구성
+    const [shipments]: any = await pool.query(
+      'SELECT id, shipper, etd FROM shipments WHERE bl_number = ?',
+      [blNumber]
+    );
+
+    if (shipments.length === 0) {
+      return res.json({ success: true, data: { exterior: [], docs: [] } });
+    }
+
+    const dbShipment = shipments[0];
+    const rawShipperName = dbShipment.shipper || '일반화주';
+    const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
+    const uploadDate = dbShipment.etd ? new Date(dbShipment.etd) : new Date();
+    const year = uploadDate.getFullYear().toString();
+    const month = String(uploadDate.getMonth() + 1).padStart(2, '0');
     const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const tempFolder = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
-    
-    const exteriorFolder = path.join(tempFolder, 'exterior');
-    const docsFolder = path.join(tempFolder, 'docs');
+
+    // 정규 저장 경로
+    const realFolder = path.join(__dirname, '../../uploads', shipperName, year, month, safeBlNumber);
+    const exteriorFolder = path.join(realFolder, 'exterior');
+    const docsFolder = path.join(realFolder, 'docs');
 
     const getUrlsFromDir = (dirPath: string, relativeSub: string) => {
       if (!fs.existsSync(dirPath)) return [];
@@ -727,8 +745,11 @@ export const getUnclassifiedPhotos = async (req: Request, res: Response) => {
       const uniqueUrls: string[] = [];
       
       for (const file of files) {
-        // 포워더 화면 뱃지/미분류함에서 포워더가 올린 파일은 제외 (필터링 로직 추가)
-        if (file.startsWith('forwarder_')) continue;
+        // linked_ 접두사 파일은 이미 차량에 배정 완료된 상태이므로 미분류 사진함에서 숨김
+        if (file.startsWith('linked_')) continue;
+
+        // analyzed_ 접두사 파일은 이미 OCR 분석이 완료된 서류이므로 미분류 사진함에서 숨김
+        if (file.startsWith('analyzed_')) continue;
 
         try {
           const filePath = path.join(dirPath, file);
@@ -737,74 +758,41 @@ export const getUnclassifiedPhotos = async (req: Request, res: Response) => {
           
           if (!seenHashes.has(fileHash)) {
             seenHashes.add(fileHash);
-            uniqueUrls.push(`http://localhost:5000/uploads/temp/${safeBlNumber}/${relativeSub}/${file}`);
+            uniqueUrls.push(`http://localhost:5000/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${relativeSub}/${file}`);
           }
         } catch (e) {
-          // Fallback to push if reading hash fails
-          uniqueUrls.push(`http://localhost:5000/uploads/temp/${safeBlNumber}/${relativeSub}/${file}`);
+          uniqueUrls.push(`http://localhost:5000/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${relativeSub}/${file}`);
         }
       }
       return uniqueUrls;
     };
 
-    // 하위 호환성: 루트 temp 폴더에 바로 파일들이 있는 경우 읽어오기
-    let rootFiles: string[] = [];
-    if (fs.existsSync(tempFolder)) {
-      const files = fs.readdirSync(tempFolder).filter(file => file.match(/\.(jpg|jpeg|png)$/i));
-      const seenHashes = new Set<string>();
-      for (const file of files) {
-        if (file.startsWith('forwarder_')) continue;
-        try {
-          const filePath = path.join(tempFolder, file);
-          const fileBuffer = fs.readFileSync(filePath);
-          const fileHash = crypto.createHash('md5').update(fileBuffer).digest('hex');
-          if (!seenHashes.has(fileHash)) {
-            seenHashes.add(fileHash);
-            rootFiles.push(`http://localhost:5000/uploads/temp/${safeBlNumber}/${file}`);
-          }
-        } catch (e) {
-          rootFiles.push(`http://localhost:5000/uploads/temp/${safeBlNumber}/${file}`);
-        }
-      }
-    }
-
     let exteriorFiles = getUrlsFromDir(exteriorFolder, 'exterior');
     const docsFiles = getUrlsFromDir(docsFolder, 'docs');
-
-    if (rootFiles.length > 0) {
-      exteriorFiles = [...exteriorFiles, ...rootFiles];
-    }
 
     return res.json({
       success: true,
       data: {
-        exterior: exteriorFiles,
-        docs: docsFiles
+        exterior: Array.from(new Set(exteriorFiles)),
+        docs: Array.from(new Set(docsFiles))
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('미분류 사진 조회 에러:', error);
-    return res.status(500).json({ success: false, message: '미분류 사진을 가져오는 중 오류가 발생했습니다.' });
+    return res.status(500).json({ success: false, message: '미분류 사진 목록을 가져오는 중 오류가 발생했습니다.' });
   }
 };
 
+// 포워더가 선택한 대기 사진들에 대해 OCR 분석 수행 후 DB 저장 (파일은 temp 폴더에 그대로 유지)
 export const analyzePendingPhotos = async (req: Request, res: Response) => {
   try {
-    const { shipmentId, blNumber, photoUrls } = req.body;
-    if (!shipmentId || !photoUrls || !Array.isArray(photoUrls) || photoUrls.length === 0) {
-      return res.status(400).json({ success: false, message: '유효하지 않은 요청 데이터입니다.' });
+    const { photoUrls, shipmentId, blNumber } = req.body;
+    if (!photoUrls || !Array.isArray(photoUrls) || photoUrls.length === 0) {
+      return res.status(400).json({ success: false, message: 'photoUrls 배열이 필요합니다.' });
     }
-
-    const safeBlNumber = blNumber ? String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown_bl';
-    
-    // 화주명 조회
-    const [shipment]: any = await pool.query('SELECT shipper FROM shipments WHERE id = ?', [shipmentId]);
-    const rawShipperName = shipment.length > 0 && shipment[0].shipper ? shipment[0].shipper : '일반화주';
-    const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
-    
-    const dateObj = new Date();
-    const year = dateObj.getFullYear().toString();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    if (!shipmentId) {
+      return res.status(400).json({ success: false, message: 'shipmentId가 필요합니다.' });
+    }
 
     let newVehiclesCount = 0;
     const processedResults = [];
@@ -812,7 +800,7 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
     for (const url of photoUrls) {
       try {
         const urlObj = new URL(url);
-        const relativePath = urlObj.pathname.replace('/uploads/', ''); // e.g. temp/123/photo.jpg
+        const relativePath = urlObj.pathname.replace('/uploads/', ''); // e.g. temp/BL번호/docs/photo.jpg
         const absolutePath = path.join(__dirname, '../../uploads', relativePath);
         
         if (!fs.existsSync(absolutePath)) {
@@ -851,24 +839,19 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
         if (!finalVin) finalVin = 'UNKNOWN_VIN';
         ocrResult.vin = finalVin;
 
-        const targetDir = path.join(__dirname, '../../uploads', shipperName, year, month, finalVin);
-        if (!fs.existsSync(targetDir)) {
-          fs.mkdirSync(targetDir, { recursive: true });
-        }
-        
+        // OCR 분석 완료 후 파일명 앞에 analyzed_ 접두사를 추가하여 미분류 사진함에서 제외
         const tempFileName = path.basename(absolutePath);
-        const newRelativeUrl = saveVehiclePhotoAndDeduplicate(
-          buffer,
-          targetDir,
-          finalVin,
-          shipperName,
-          year,
-          month
-        );
-        
-        // 전체 저장 전까지 뱃지에서 유지하기 위해, 원본은 'analyzed_' 접두어를 붙여 남겨둡니다.
-        const analyzedTempPath = path.join(path.dirname(absolutePath), `analyzed_${tempFileName}`);
-        fs.renameSync(absolutePath, analyzedTempPath);
+        let newRelativeUrl = urlObj.pathname;
+        if (!tempFileName.startsWith('analyzed_')) {
+          const newFileName = `analyzed_${tempFileName}`;
+          const newAbsolutePath = path.join(path.dirname(absolutePath), newFileName);
+          try {
+            fs.renameSync(absolutePath, newAbsolutePath);
+            newRelativeUrl = urlObj.pathname.replace(`/${tempFileName}`, `/${newFileName}`);
+          } catch (renameErr) {
+            console.error('[analyzePendingPhotos] rename to analyzed_ failed:', renameErr);
+          }
+        }
 
         ocrResult.serverUrl = `http://localhost:5000${newRelativeUrl}`;
 

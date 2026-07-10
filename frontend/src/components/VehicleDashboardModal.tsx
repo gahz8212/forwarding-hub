@@ -277,8 +277,8 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
           return combined;
         });
 
-        setUnclassifiedPhotos(prev => [...prev, ...newUnclassified]);
-        setPendingPhotos(prev => [...prev, ...newPendingDocs]);
+        setUnclassifiedPhotos(prev => Array.from(new Set([...prev, ...newUnclassified])));
+        setPendingPhotos(prev => Array.from(new Set([...prev, ...newPendingDocs])));
 
         if (newUnclassified.length > 0) {
           setShowUnclassifiedDrawer(true);
@@ -503,7 +503,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       const data = await response.json();
       if (data.success) {
         alert('모든 데이터가 성공적으로 저장되었습니다.');
-        // 저장 후 남아있는(정리된) 뱃지나 미분류 사진 등을 최신화
+        fetchVehicles(); // 전체저장된 상태 데이터(정규 URL 등)를 새로고침하여 화면에 정상 표시
         fetchUnclassifiedPhotos();
       } else {
         alert('저장 실패: ' + data.message);
@@ -547,7 +547,22 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       alert(`최대 10장 제한으로 인해 ${spaceLeft}장만 배정되었습니다.`);
     }
 
-    setUnclassifiedPhotos(unclass => unclass.filter(url => !photosToAdd.includes(url)));
+    const removeFn = (unclass: string[]) => unclass.filter(url => {
+      return !photosToAdd.some(addedUrl => {
+        const rel = addedUrl.replace(/^https?:\/\/[^\/]+/, '');
+        const fileName = rel.split('/').pop() || '';
+        const linkedRel = rel.replace(`/${fileName}`, `/linked_${fileName}`);
+        return url === addedUrl || url === `http://localhost:5000${rel}` || url === `http://localhost:5000${linkedRel}`;
+      });
+    });
+
+    // 탭에 따라 올바른 미분류 사진 목록에서 배정된 사진들을 제외시킵니다.
+    if (globalPhotoTab === 'document') {
+      setPendingPhotos(prev => removeFn(prev));
+    } else {
+      setUnclassifiedPhotos(prev => removeFn(prev));
+    }
+    
     setSelectedPhotos([]);
 
     setVehicles(prev => prev.map(v => {
@@ -651,7 +666,20 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       return v;
     }));
 
-    setUnclassifiedPhotos(prev => [photoToRemove, ...prev]);
+    // 미분류함에 일단 낙관적 복원 (linked_ 접두사 제거한 URL 추정)
+    const getRestoredUrl = (url: string) => {
+      const fileName = url.split('/').pop() || '';
+      if (fileName.startsWith('linked_')) {
+        return url.replace(`/${fileName}`, `/${fileName.replace(/^linked_/, '')}`);
+      }
+      return url;
+    };
+    const optimisticRestoredUrl = getRestoredUrl(photoToRemove);
+    if (globalPhotoTab === 'document') {
+      setPendingPhotos(prev => [optimisticRestoredUrl, ...prev]);
+    } else {
+      setUnclassifiedPhotos(prev => [optimisticRestoredUrl, ...prev]);
+    }
 
     const newPhotos = photos.filter((_, idx) => idx !== currentIndex);
     if (newPhotos.length === 0) {
@@ -665,7 +693,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     }
 
     try {
-      await fetch(`http://localhost:5000/api/tracking/vehicles/${vehicleId}/photos/remove`, {
+      const res = await fetch(`http://localhost:5000/api/tracking/vehicles/${vehicleId}/photos/remove`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -673,6 +701,19 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
           type: globalPhotoTab
         })
       });
+      const data = await res.json();
+      // 백엔드에서 실제로 복원된 URL이 다른 경우 교체
+      if (data.restoredUrl) {
+        const restoredFull = `http://localhost:5000${data.restoredUrl}`;
+        if (restoredFull !== optimisticRestoredUrl) {
+          const replaceFn = (prev: string[]) => prev.map(u => u === optimisticRestoredUrl ? restoredFull : u);
+          if (globalPhotoTab === 'document') {
+            setPendingPhotos(prev => replaceFn(prev));
+          } else {
+            setUnclassifiedPhotos(prev => replaceFn(prev));
+          }
+        }
+      }
     } catch (err) {
       console.error("사진 배정 해제 API 에러:", err);
     }
@@ -685,8 +726,36 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
       const data = await res.json();
       if (data.success) {
         const list = data.data || [];
-        // 1. 데이터베이스에서 불러온 차량 목록을 즉시 화면에 세팅하여 리스트 추가 확인 보장
-        setVehicles(list);
+        // 1. 데이터베이스에서 불러온 차량 목록을 로컬에서 편집 중이던 임시 값들과 병합하여 화면에 세팅
+        setVehicles(prev => {
+          return list.map((v: Vehicle) => {
+            const existing = prev.find(p => p.id === v.id);
+            if (existing) {
+              return {
+                ...v,
+                // 로컬 UI상에서 사용자가 입력/수정한 값들을 유지
+                vin: existing.vin !== undefined ? existing.vin : v.vin,
+                plate_number: existing.plate_number !== undefined ? existing.plate_number : v.plate_number,
+                vehicle_type: existing.vehicle_type !== undefined ? existing.vehicle_type : v.vehicle_type,
+                mileage: existing.mileage !== undefined ? existing.mileage : v.mileage,
+                initial_registration_date: existing.initial_registration_date !== undefined ? existing.initial_registration_date : v.initial_registration_date,
+                make: existing.make !== undefined ? existing.make : v.make,
+                model: existing.model !== undefined ? existing.model : v.model,
+                year: existing.year !== undefined ? existing.year : v.year,
+                price: existing.price !== undefined ? existing.price : v.price,
+                drivability: existing.drivability !== undefined ? existing.drivability : v.drivability,
+                length: existing.length !== undefined ? existing.length : v.length,
+                width: existing.width !== undefined ? existing.width : v.width,
+                height: existing.height !== undefined ? existing.height : v.height,
+                weight: existing.weight !== undefined ? existing.weight : v.weight,
+                cbm: existing.cbm !== undefined ? existing.cbm : v.cbm,
+                buyer: existing.buyer !== undefined ? existing.buyer : v.buyer,
+                customs_cleared: existing.customs_cleared !== undefined ? existing.customs_cleared : v.customs_cleared,
+              };
+            }
+            return v;
+          });
+        });
         
         // 2. 비동기로 누락된 제원 조회 (렌더링을 블로킹하지 않음)
         list.forEach(async (v: Vehicle) => {
@@ -764,6 +833,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
         alert("모든 데이터가 초기화되었습니다.");
         setVehicles([]);
         setUnclassifiedPhotos([]);
+        setPendingPhotos([]);
       } else {
         alert("초기화 실패: " + data.message);
       }
@@ -797,17 +867,17 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900">
       <div className="bg-white dark:bg-slate-900 w-full h-full flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex flex-col p-4 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 relative">
-          <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+        <div className="flex flex-col p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 relative">
+          <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors z-10">
             <X size={20} className="text-slate-500" />
           </button>
 
-          <h2 className="text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2 mb-4">
+          <h2 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
             차량 관리 대시보드
             {pendingPhotos.length > 0 && (
               <button
                 onClick={() => setShowPendingModal(true)}
-                className="ml-4 flex items-center gap-1.5 bg-rose-50 border border-rose-200 text-rose-600 px-4 py-2 rounded-full text-sm font-bold hover:bg-rose-100 transition-colors animate-pulse shadow-sm"
+                className="w-fit mt-1 sm:mt-0 sm:ml-4 flex items-center gap-1.5 bg-rose-50 border border-rose-200 text-rose-600 px-4 py-2 rounded-full text-xs md:text-sm font-bold hover:bg-rose-100 transition-colors animate-pulse shadow-sm"
               >
                 <BellRing size={16} className="animate-bounce" />
                 화주 대기 서류 {pendingPhotos.length}장 확인
@@ -816,69 +886,69 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
           </h2>
 
           {/* Controls Bar */}
-          <div className="flex items-end justify-between w-full pr-10">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between w-full gap-4 md:pr-10">
             {/* Left Controls (BL & Buyer) */}
-            <div className="flex items-center gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 md:gap-6">
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">B/L Number</span>
-                <span className="font-mono text-lg font-black text-blue-700 dark:text-blue-400">{blNumber}</span>
+                <span className="font-mono text-base md:text-lg font-black text-blue-700 dark:text-blue-400">{blNumber}</span>
               </div>
 
-              <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
+              <div className="hidden sm:block h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
 
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Buyer</span>
                 <button
                   onClick={() => setShowBuyerModal(true)}
-                  className={`text-left text-sm px-3 py-2 border ${globalBuyer ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800' : 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'} rounded focus:border-indigo-500 w-56 transition-colors text-slate-700 dark:text-slate-300 overflow-hidden text-ellipsis whitespace-nowrap`}
+                  className={`text-left text-sm px-3 py-2 border ${globalBuyer ? 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800' : 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'} rounded focus:border-indigo-500 w-full sm:w-56 transition-colors text-slate-700 dark:text-slate-300 overflow-hidden text-ellipsis whitespace-nowrap`}
                 >
                   {globalBuyer || <span className="text-blue-500 dark:text-blue-400 font-medium">수입자(바이어) 정보 입력...</span>}
                 </button>
               </div>
 
-              <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
+              <div className="hidden sm:block h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
 
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Vehicles</span>
-                <span className="font-mono text-lg font-black text-indigo-600 dark:text-indigo-400">
-                  총 {vehicles.length}대의 차량이 등록되었습니다.
+                <span className="font-mono text-sm md:text-base font-black text-indigo-600 dark:text-indigo-400">
+                  총 {vehicles.length}대 등록됨
                 </span>
               </div>
             </div>
 
             {/* Right Controls (Buttons) */}
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={handleReset}
                 disabled={loading}
-                className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 px-4 py-2 rounded text-sm font-bold transition-colors disabled:opacity-50 border border-red-200 dark:border-red-800"
+                className="flex items-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 px-3 py-2 rounded text-xs md:text-sm font-bold transition-colors disabled:opacity-50 border border-red-200 dark:border-red-800"
               >
-                <Trash2 size={16} />
+                <Trash2 size={15} />
                 초기화
               </button>
 
-              <div className="flex gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={handleSaveAll}
                   disabled={isSaveDisabled || loading}
-                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                   title={isSaveDisabled ? "차량번호 '?' 수정 및 구동상태를 모두 선택해야 저장할 수 있습니다." : "모든 변경사항 저장"}
                 >
-                  <Save size={16} />
+                  <Save size={15} />
                   전체 저장
                 </button>
 
                 <button
                   onClick={handleGeneratePDF}
                   disabled={isSending || loading}
-                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded text-sm font-bold transition-colors disabled:opacity-50 shadow-sm"
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded text-xs md:text-sm font-bold transition-colors disabled:opacity-50 shadow-sm"
                   title="바이어 정보를 기반으로 PDF 서류 생성 및 카카오톡 발송"
                 >
-                  <Send size={16} />
+                  <Send size={15} />
                   {isSending ? "전송 중..." : "PDF 전송"}
                 </button>
 
-                <div className="flex bg-slate-100 dark:bg-slate-800 rounded p-1 ml-1 border border-slate-200 dark:border-slate-700">
+                <div className="flex bg-slate-100 dark:bg-slate-800 rounded p-1 border border-slate-200 dark:border-slate-700">
                   <input
                     type="file"
                     multiple
@@ -890,10 +960,10 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                   <button
                     onClick={() => fastFileInputRef.current?.click()}
                     disabled={uploading}
-                    className="flex items-center gap-1.5 bg-white dark:bg-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-sm text-sm font-bold shadow-sm transition-colors disabled:opacity-50 border border-slate-200 dark:border-slate-600 mr-1"
+                    className="flex items-center gap-1.5 bg-white dark:bg-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-sm text-xs md:text-sm font-bold shadow-sm transition-colors disabled:opacity-50 border border-slate-200 dark:border-slate-600 mr-1"
                   >
-                    {uploading ? <Loader2 size={16} className="animate-spin" /> : <span className="text-amber-500">⚡</span>}
-                    외관사진 추가
+                    {uploading ? <Loader2 size={14} className="animate-spin" /> : <span className="text-amber-500">⚡</span>}
+                    외관사진
                   </button>
 
                   <input
@@ -907,9 +977,9 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
-                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-sm text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-sm text-xs md:text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
                   >
-                    {uploading ? <Loader2 size={16} className="animate-spin" /> : <FileImage size={16} />}
+                    {uploading ? <Loader2 size={14} className="animate-spin" /> : <FileImage size={14} />}
                     {uploading ? "분석 중..." : "차량 등록"}
                   </button>
                 </div>
@@ -917,7 +987,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                 {/* Floating Unclassified Drawer Toggle Button */}
                 <button
                   onClick={() => setShowUnclassifiedDrawer(!showUnclassifiedDrawer)}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded text-sm font-bold shadow-sm border transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded text-xs md:text-sm font-bold shadow-sm border transition-colors ${
                     showUnclassifiedDrawer 
                       ? 'bg-amber-100 text-amber-800 border-amber-300' 
                       : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 border-slate-200 dark:border-slate-700'
@@ -940,9 +1010,9 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               </div>
             ) : (
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-auto shadow-sm max-h-[540px]">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 sticky top-0 z-10 shadow-sm">
+              <div className="bg-slate-50 dark:bg-slate-950/20 rounded-lg overflow-auto shadow-sm max-h-[70vh]">
+                <table className="w-full text-left text-sm block lg:table">
+                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 sticky top-0 z-10 shadow-sm hidden lg:table-header-group">
                     <tr>
                       <th className="p-3 font-bold w-56">차대번호 (VIN)</th>
                       <th className="p-3 font-bold w-[650px]">제원 및 단가 정보</th>
@@ -968,19 +1038,19 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 block lg:table-row-group p-2 md:p-4 lg:p-0">
                     {vehicles.map((v, idx) => {
                       const isAlertRow = v.plate_number?.includes('?') || !v.drivability;
                       const isEven = idx % 2 === 0;
                       const rowBgClass = isAlertRow
-                        ? (isEven ? 'bg-red-100/30 dark:bg-red-950/20' : 'bg-red-50/60 dark:bg-red-950/10')
-                        : (isEven ? 'bg-white dark:bg-slate-900' : 'bg-gray-50 dark:bg-slate-800/30');
+                        ? (isEven ? 'bg-red-50/50 dark:bg-red-950/20 border-red-200' : 'bg-red-50/30 dark:bg-red-950/10 border-red-150')
+                        : (isEven ? 'bg-white dark:bg-slate-900 border-slate-200' : 'bg-slate-50/50 dark:bg-slate-800/30 border-slate-150');
 
                       const isCurrentViewingRow = viewerState.isOpen && viewerState.vehicleId === v.id;
 
                       return (
-                        <tr key={v.id} className={`transition-colors hover:bg-yellow-50 dark:hover:bg-yellow-950/10 ${rowBgClass} ${isCurrentViewingRow ? 'shadow-[0_4px_20px_rgba(239,68,68,0.15)]' : ''}`}>
-                          <td className={`p-3 align-top transition-all duration-150 ${isCurrentViewingRow ? 'border-l-4 border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
+                        <tr key={v.id} className={`transition-colors hover:bg-yellow-50 dark:hover:bg-yellow-950/10 ${rowBgClass} ${isCurrentViewingRow ? 'shadow-[0_4px_20px_rgba(239,68,68,0.15)]' : ''} block lg:table-row mb-6 lg:mb-0 p-4 lg:p-0 rounded-2xl border shadow-sm lg:shadow-none bg-white dark:bg-slate-900`}>
+                          <td className={`p-3 align-top transition-all duration-150 block lg:table-cell w-full lg:w-56 mb-4 lg:mb-0 border-b border-slate-100 dark:border-slate-800 lg:border-none pb-3 lg:pb-3 ${isCurrentViewingRow ? 'border-l-4 border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
                             <div className="flex gap-1.5 items-center mb-2">
                               <input
                                 type="text"
@@ -1015,7 +1085,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                               {getStatusBadge(v.status)}
                             </div>
                           </td>
-                          <td className={`p-3 align-top transition-all duration-150 ${isCurrentViewingRow ? 'border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
+                          <td className={`p-3 align-top transition-all duration-150 block lg:table-cell w-full lg:w-[650px] mb-4 lg:mb-0 border-b border-slate-100 dark:border-slate-800 lg:border-none pb-3 lg:pb-3 ${isCurrentViewingRow ? 'border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
                             {/* 차명, 연식, 수출단가 한 행 구성 */}
                             <div className="flex items-center gap-3 mb-4 text-sm">
                               {/* 차명 (모델명) */}
@@ -1229,7 +1299,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                               </div>
                             )}
                           </td>
-                          <td className={`p-3 align-top transition-all duration-150 ${isCurrentViewingRow ? 'border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
+                          <td className={`p-3 align-top transition-all duration-150 block lg:table-cell w-full lg:w-32 mb-4 lg:mb-0 border-b border-slate-100 dark:border-slate-800 lg:border-none pb-3 lg:pb-3 ${isCurrentViewingRow ? 'border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
                             <div className="flex flex-col gap-2.5">
                               {getDrivabilityIcon(v.drivability)}
                               <div className="flex flex-col gap-2 mt-1 border-t border-slate-200 dark:border-slate-700 pt-2">
@@ -1250,7 +1320,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                             </div>
                           </td>
                           <td
-                            className={`p-3 transition-all duration-150 ${isCurrentViewingRow ? 'border-r-4 border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}
+                            className={`p-3 transition-all duration-150 block lg:table-cell w-full lg:w-56 pb-1 lg:pb-3 ${isCurrentViewingRow ? 'border-r-4 border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDropToVehicle(e, v.id)}
                           >
@@ -1315,7 +1385,7 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
             <div 
               ref={unclassifiedRef}
               style={{ transform: `translate(${unclassifiedPos.current.x}px, ${unclassifiedPos.current.y}px)` }}
-              className="absolute right-6 top-24 z-[80] w-[472px] h-[578px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 select-none"
+              className="absolute inset-x-0 bottom-0 sm:inset-auto sm:right-6 sm:top-24 z-[80] w-full sm:w-[472px] h-[60vh] sm:h-[578px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-2xl sm:rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 select-none"
             >
               {/* Header */}
               <div 
@@ -1324,7 +1394,9 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
               >
                 <div className="flex items-center gap-2">
                   <Camera size={16} className="text-amber-500" />
-                  <span className="font-bold text-sm text-slate-800 dark:text-white">미분류 사진함 (외관 사진 상세)</span>
+                  <span className="font-bold text-sm text-slate-800 dark:text-white">
+                    {globalPhotoTab === 'document' ? '미분류 사진함 (말소증 상세)' : '미분류 사진함 (외관 사진 상세)'}
+                  </span>
                 </div>
                 <button onClick={() => setShowUnclassifiedDrawer(false)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500">
                   <X size={16} />
@@ -1334,12 +1406,15 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
               {/* Scrollable grid showing all pictures as tiles (overflow-y-auto shows scrollbar ONLY when content overflows) */}
               <div className="flex-1 overflow-y-auto p-4 bg-slate-950">
                 <p className="text-[11px] text-slate-400 w-full text-center mb-3 leading-relaxed bg-black/40 py-1.5 rounded">
-                  * OCR로 차대번호를 매칭하지 못한 외관 사진들입니다. 마우스로 끌어서 테이블의 데미지 사진 영역에 배정해 주세요.
+                  {globalPhotoTab === 'document' 
+                    ? '* 말소증 폴더(docs)에 들어있는 미분류 사진들입니다. 마우스로 끌어서 테이블의 말소증 사진 영역에 배정해 주세요.'
+                    : '* OCR로 차대번호를 매칭하지 못한 외관 사진들입니다. 마우스로 끌어서 테이블의 데미지 사진 영역에 배정해 주세요.'
+                  }
                 </p>
 
-                {unclassifiedPhotos.length > 0 ? (
+                {(globalPhotoTab === 'document' ? pendingPhotos : unclassifiedPhotos).length > 0 ? (
                   <div className="columns-2 gap-3 space-y-3 pb-4">
-                    {unclassifiedPhotos.map((url, idx) => (
+                    {(globalPhotoTab === 'document' ? pendingPhotos : unclassifiedPhotos).map((url, idx) => (
                       <div
                         key={idx}
                         draggable

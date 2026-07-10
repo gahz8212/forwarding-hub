@@ -53,6 +53,18 @@ export default function BookingListPage() {
       setBookings((prev) => prev.filter((b) => b.id !== data.bookingId));
     });
 
+    socket.on("booking_approved", (data) => {
+      console.log("실시간 부킹 승인 감지 ➔ 상태 업데이트 및 B/L 부여:", data);
+      setBookings((prev) =>
+        prev.map((b) => {
+          if (b.id === data.bookingId) {
+            return { ...b, status: data.status, bl_number: data.blNumber };
+          }
+          return b;
+        })
+      );
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -123,21 +135,6 @@ export default function BookingListPage() {
                   >
                     <td className="p-4 font-bold text-slate-800 align-top">
                       <div>BK-{bk.id.toString().padStart(5, "0")}</div>
-                      {bk.status === "Confirmed" && bk.bl_number && (
-                        <div className="mt-1">
-                          <span 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigator.clipboard.writeText(bk.bl_number);
-                              alert(`B/L 번호 (${bk.bl_number})가 복사되었습니다. 메인 대시보드의 트래킹 창에 붙여넣어 단계를 모니터링할 수 있습니다.`);
-                            }}
-                            className="inline-block text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100 transition px-1.5 py-0.5 rounded cursor-pointer"
-                            title="클릭하여 복사"
-                          >
-                            B/L: {bk.bl_number} (복사)
-                          </span>
-                        </div>
-                      )}
                     </td>
                     <td className="p-4 text-slate-600 text-sm align-top">
                       {bk.created_at ? new Date(bk.created_at).toLocaleDateString("ko-KR") : "-"}

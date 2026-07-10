@@ -111,6 +111,7 @@ const initDB = async () => {
         make VARCHAR(50) COMMENT '제조사',
         model VARCHAR(50) COMMENT '모델명',
         year INT COMMENT '연식',
+        price DECIMAL(10, 2) NULL COMMENT '차량 단가',
         length INT NULL COMMENT '전장(mm)',
         width INT NULL COMMENT '전폭(mm)',
         height INT NULL COMMENT '전고(mm)',

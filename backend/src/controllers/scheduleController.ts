@@ -285,6 +285,16 @@ export const approveBooking = async (req: Request, res: Response) => {
       }
     );
 
+    // Socket.io를 통해 실시간 부킹 승인 알림 전송 (화주 화면 갱신용)
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('booking_approved', {
+        bookingId: bookingDetails.id,
+        blNumber: blNumber,
+        status: 'Confirmed'
+      });
+    }
+
     res.json({ success: true, message: `부킹이 최종 승인되어 B/L 번호(${blNumber})로 신규 선적이 등록되었으며, 카카오톡 알림이 발송되었습니다.` });
   } catch (error: any) {
     console.error("카카오톡 발송 실패:", error.response?.data || error.message);

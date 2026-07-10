@@ -170,8 +170,8 @@ export default function AdminBookingPage() {
   const confirmedBookings = bookings.filter((b) => b.status === "Confirmed");
 
   return (
-    <div className="animate-fade-in-up space-y-6">
-      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center">
+    <div className="animate-fade-in-up space-y-4 md:space-y-6">
+      <div className="bg-white p-4 md:p-6 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-start gap-3">
         <div>
           <h3 className="text-lg font-bold text-slate-800 mb-1">부킹 승인 및 업무 현황판</h3>
           <p className="text-slate-500 text-sm">
@@ -182,8 +182,8 @@ export default function AdminBookingPage() {
 
       {/* 미처리 부킹 요청 내역 */}
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-        <div className="p-6 border-b bg-slate-50">
-          <h3 className="text-lg font-bold text-slate-800">미처리 부킹 요청 내역 ({pendingBookings.length}건)</h3>
+        <div className="p-4 md:p-6 border-b bg-slate-50">
+          <h3 className="text-base md:text-lg font-bold text-slate-800">미처리 부킹 요청 내역 ({pendingBookings.length}건)</h3>
         </div>
         <div className="overflow-x-auto">
           {loading ? (
@@ -193,8 +193,8 @@ export default function AdminBookingPage() {
           ) : pendingBookings.length === 0 ? (
             <div className="p-8 text-center text-slate-500">대기 중인 새로운 부킹 요청 건이 없습니다.</div>
           ) : (
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50 text-slate-500 text-sm uppercase tracking-wider border-b border-slate-100">
+            <table className="w-full text-left border-collapse block md:table">
+              <thead className="hidden md:table-header-group bg-slate-50 text-slate-500 text-sm uppercase tracking-wider border-b border-slate-100">
                 <tr>
                   <th className="p-4 font-bold">예약 번호</th>
                   <th className="p-4 font-bold">요청 화주</th>
@@ -205,27 +205,37 @@ export default function AdminBookingPage() {
                   <th className="p-4 font-bold text-center">작업</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 block md:table-row-group p-3 md:p-0 space-y-3 md:space-y-0">
                 {pendingBookings.map((bk) => (
-                  <tr key={bk.id} className="hover:bg-slate-50 transition">
-                    <td className="p-4 font-bold text-slate-800">
+                  <tr key={bk.id} className="hover:bg-slate-50 transition block md:table-row rounded-xl border border-slate-100 md:border-0 md:rounded-none bg-white shadow-sm md:shadow-none mb-3 md:mb-0 p-0 overflow-hidden">
+                    <td className="p-3 md:p-4 font-bold text-slate-800 block md:table-cell border-b md:border-b-0 border-slate-50">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">예약번호</span>
                       BK-{bk.id.toString().padStart(5, "0")}
                     </td>
-                    <td className="p-4 text-slate-700 text-sm font-semibold">{bk.shipper}</td>
-                    <td className="p-4 text-slate-800 font-semibold">{bk.vessel_name}</td>
-                    <td className="p-4 text-slate-600 text-sm">
+                    <td className="p-3 md:p-4 text-slate-700 text-sm font-semibold block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">요청 화주</span>
+                      {bk.shipper}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-800 font-semibold block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박명</span>
+                      {bk.vessel_name}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-600 text-sm block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">구간</span>
                       {bk.pol.split(",")[0]} ➔ {bk.pod.split(",")[0]}
                     </td>
-                    <td className="p-4 text-center font-bold text-slate-700">
+                    <td className="p-3 md:p-4 md:text-center font-bold text-slate-700 block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">거래 조건</span>
                       <span className="px-2 py-1 bg-slate-100 rounded text-xs">
                         {bk.incoterms || "-"}
                       </span>
                     </td>
-                    <td className="p-4 text-slate-600 text-sm text-center">
+                    <td className="p-3 md:p-4 text-slate-600 text-sm md:text-center block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박 일정</span>
                       {bk.etd ? bk.etd.split("T")[0] : ""} ➔ {bk.eta ? bk.eta.split("T")[0] : ""}
                     </td>
-                    <td className="p-4 text-center">
-                      <div className="flex justify-center gap-2">
+                    <td className="p-3 md:p-4 md:text-center block md:table-cell bg-slate-50 md:bg-transparent border-t border-slate-100 md:border-0">
+                      <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => handleNateOnShare(bk)}
                           title="네이트온 공유 텍스트 복사"
@@ -270,12 +280,12 @@ export default function AdminBookingPage() {
       {/* 처리 완료된 부킹 요청 내역 */}
       {confirmedBookings.length > 0 && (
         <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-          <div className="p-6 border-b bg-slate-50">
-            <h3 className="text-lg font-bold text-slate-800">승인 완료된 부킹 내역 ({confirmedBookings.length}건)</h3>
+          <div className="p-4 md:p-6 border-b bg-slate-50">
+            <h3 className="text-base md:text-lg font-bold text-slate-800">승인 완료된 부킹 내역 ({confirmedBookings.length}건)</h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50 text-slate-500 text-sm uppercase tracking-wider border-b border-slate-100">
+            <table className="w-full text-left border-collapse block md:table">
+              <thead className="hidden md:table-header-group bg-slate-50 text-slate-500 text-sm uppercase tracking-wider border-b border-slate-100">
                 <tr>
                   <th className="p-4 font-bold">예약 번호</th>
                   <th className="p-4 font-bold">요청 화주</th>
@@ -287,30 +297,41 @@ export default function AdminBookingPage() {
                   <th className="p-4 font-bold text-center">작업</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 block md:table-row-group p-3 md:p-0 space-y-3 md:space-y-0">
                 {confirmedBookings.map((bk) => (
-                  <tr key={bk.id} className="hover:bg-slate-50 transition text-sm">
-                    <td className="p-4 font-bold text-slate-800">
+                  <tr key={bk.id} className="hover:bg-slate-50 transition text-sm block md:table-row rounded-xl border border-slate-100 md:border-0 md:rounded-none bg-white shadow-sm md:shadow-none mb-3 md:mb-0 overflow-hidden">
+                    <td className="p-3 md:p-4 font-bold text-slate-800 block md:table-cell border-b md:border-b-0 border-slate-50">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">예약번호</span>
                       BK-{bk.id.toString().padStart(5, "0")}
                     </td>
-                    <td className="p-4 text-slate-700 font-semibold">{bk.shipper}</td>
-                    <td className="p-4 text-slate-800 font-semibold">{bk.vessel_name}</td>
-                    <td className="p-4 text-slate-600">
+                    <td className="p-3 md:p-4 text-slate-700 font-semibold block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">요청 화주</span>
+                      {bk.shipper}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-800 font-semibold block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박명</span>
+                      {bk.vessel_name}
+                    </td>
+                    <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">구간</span>
                       {bk.pol.split(",")[0]} ➔ {bk.pod.split(",")[0]}
                     </td>
-                    <td className="p-4 text-center font-bold text-slate-700">
+                    <td className="p-3 md:p-4 md:text-center font-bold text-slate-700 block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">거래 조건</span>
                       <span className="px-2 py-1 bg-slate-100 rounded text-xs">
                         {bk.incoterms || "-"}
                       </span>
                     </td>
-                    <td className="p-4 text-blue-600 font-bold">
+                    <td className="p-3 md:p-4 text-blue-600 font-bold block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">발행 B/L</span>
                       {bk.bl_number || "-"}
                     </td>
-                    <td className="p-4 text-slate-600 text-center">
+                    <td className="p-3 md:p-4 text-slate-600 md:text-center block md:table-cell">
+                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선적 일정</span>
                       {bk.etd ? bk.etd.split("T")[0] : ""} ➔ {bk.eta ? bk.eta.split("T")[0] : ""}
                     </td>
-                    <td className="p-4 text-center">
-                      <div className="flex justify-center gap-2">
+                    <td className="p-3 md:p-4 md:text-center block md:table-cell bg-slate-50 md:bg-transparent border-t border-slate-100 md:border-0">
+                      <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => handleNateOnShare(bk)}
                           title="네이트온 공유 텍스트 복사"

@@ -576,30 +576,44 @@ export default function DashboardPage() {
             </label>
           </div>
 
-          {/* B/L 드롭다운 선택기 */}
+          {/* B/L 드롭다운 선택기 및 입력 필드 */}
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-bold text-slate-500">선적 B/L 선택 (최근 일자 순)</label>
-            <select
-              value={trackingData?.bl_number || ""}
-              onChange={(e) => {
-                if (e.target.value) {
-                  setIsMapOpen(false);
-                  fetchTracking(e.target.value);
-                  setBlInput(e.target.value);
-                }
-              }}
-              className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white text-slate-800 shadow-sm transition font-mono font-bold"
-            >
-              {filteredShipments.length === 0 ? (
-                <option value="">조회된 B/L 번호가 없습니다.</option>
-              ) : (
-                filteredShipments.map(s => (
+            <label className="text-xs font-bold text-slate-500">선적 B/L 번호 입력 또는 선택 (최근 일자 순)</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                list="bl-list"
+                value={blInput}
+                onChange={(e) => setBlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && blInput.trim()) {
+                    setIsMapOpen(false);
+                    fetchTracking(blInput.trim());
+                  }
+                }}
+                placeholder="B/L 번호를 입력하거나 더블 클릭하여 선택하세요"
+                className="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white text-slate-800 shadow-sm transition font-mono font-bold"
+              />
+              <button
+                onClick={() => {
+                  if (blInput.trim()) {
+                    setIsMapOpen(false);
+                    fetchTracking(blInput.trim());
+                  }
+                }}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md transition whitespace-nowrap"
+              >
+                조회
+              </button>
+
+              <datalist id="bl-list">
+                {filteredShipments.map(s => (
                   <option key={s.bl_number} value={s.bl_number}>
                     {s.bl_number} ({s.vessel_name || '선명 미정'} - ETD: {s.etd || '미정'})
                   </option>
-                ))
-              )}
-            </select>
+                ))}
+              </datalist>
+            </div>
           </div>
         </div>
 
