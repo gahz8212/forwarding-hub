@@ -849,7 +849,7 @@ export default function AdminShipmentPage() {
   };
 
   return (
-    <div className="animate-fade-in-up space-y-6 max-w-[95%] mx-auto w-full min-h-[calc(100vh-12rem)] flex flex-col justify-center py-6 relative">
+    <div className="animate-fade-in-up space-y-6 max-w-[95%] mx-auto w-full min-h-[calc(100vh-12rem)] flex flex-col justify-start py-6 relative">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-slate-800">화물 및 선적 전체 관리 (어드민 전용)</h2>
