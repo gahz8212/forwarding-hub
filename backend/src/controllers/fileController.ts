@@ -474,8 +474,9 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         const uploadMd5 = crypto.createHash('md5').update(optimizedBuffer).digest('hex');
         let isDuplicate = false;
         
-        // uploads/temp 및 해당 화주의 영구 저장 폴더(uploads/화주명) 전체를 재귀적으로 돌며 동일 해시 파일이 존재하는지 검증
+        // uploads/temp/BL번호 및 해당 화주의 영구 저장 폴더(uploads/화주명) 전체를 재귀적으로 돌며 동일 해시 파일이 존재하는지 검증
         const tempRoot = path.join(__dirname, '../../uploads', 'temp');
+        const currentTempDir = path.join(tempRoot, safeBlNumber);
         const shipperRoot = path.join(__dirname, '../../uploads', shipperName);
         
         const checkHashRecursively = (dir: string): boolean => {
@@ -501,7 +502,7 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
           return false;
         };
 
-        if (checkHashRecursively(tempRoot) || checkHashRecursively(shipperRoot)) {
+        if (checkHashRecursively(currentTempDir) || checkHashRecursively(shipperRoot)) {
           isDuplicate = true;
         }
 
@@ -580,22 +581,29 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
               : 'condition_photo_url';
 
           if (existing.length > 0) {
-            if (ocrResult.type === 'document') {
-               const updates: string[] = [];
-               const params: any[] = [];
-               if (ocrResult.plateNumber) { updates.push('deregistration_no = ?'); params.push(ocrResult.plateNumber); }
+            const [currVeh]: any = await pool.query(
+              'SELECT condition_photo_url, deregistration_photo_url, vin_photo_url FROM vehicles WHERE id = ?',
+              [updateId]
+            );
+            const parsePhotos = (fieldVal: string | null) => {
+              if (!fieldVal) return [];
+              try { return JSON.parse(fieldVal); } catch (e) { return [fieldVal]; }
+            };
 
-               if (updates.length > 0) {
-                 params.push(updateId);
-                 await pool.query(`UPDATE vehicles SET ${updates.join(', ')} WHERE id = ?`, params);
-               }
+            const updates: string[] = [];
+            const params: any[] = [];
+            if (ocrResult.plateNumber) { updates.push('deregistration_no = ?'); params.push(ocrResult.plateNumber); }
+
+            if (updates.length > 0) {
+              params.push(updateId);
+              await pool.query(`UPDATE vehicles SET ${updates.join(', ')} WHERE id = ?`, params);
             }
             
             // Append photo URL to the corresponding column
-            const [currVeh]: any = await pool.query(`SELECT ${targetColumn} FROM vehicles WHERE id = ?`, [updateId]);
+            const [currVehForUpdate]: any = await pool.query(`SELECT ${targetColumn} FROM vehicles WHERE id = ?`, [updateId]);
             let photos: string[] = [];
-            if (currVeh[0]?.[targetColumn]) {
-              try { photos = JSON.parse(currVeh[0][targetColumn]); } catch (e) { photos = [currVeh[0][targetColumn]]; }
+            if (currVehForUpdate[0]?.[targetColumn]) {
+              try { photos = JSON.parse(currVehForUpdate[0][targetColumn]); } catch (e) { photos = [currVehForUpdate[0][targetColumn]]; }
             }
             if (!photos.includes(targetRelativeUrl)) photos.push(targetRelativeUrl);
             await pool.query(`UPDATE vehicles SET ${targetColumn} = ? WHERE id = ?`, [JSON.stringify(photos), updateId]);

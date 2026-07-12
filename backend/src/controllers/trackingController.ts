@@ -720,7 +720,7 @@ export const resetDashboardData = async (req: Request, res: Response) => {
 export const saveAllVehicles = async (req: Request, res: Response) => {
   try {
     const { shipmentId } = req.params;
-    const { vehicles } = req.body;
+    const { vehicles, blNumber } = req.body;
 
     if (!shipmentId) {
       return res.status(400).json({ success: false, message: '선적 ID가 필요합니다.' });
@@ -745,6 +745,104 @@ export const saveAllVehicles = async (req: Request, res: Response) => {
       }
     }
 
+    // 2. 화주명 및 날짜 정보 조회
+    const [shipments]: any = await pool.query('SELECT shipper, bl_number FROM shipments WHERE id = ?', [shipmentId]);
+    if (shipments.length === 0) {
+      return res.status(404).json({ success: false, message: '선적 정보를 찾을 수 없습니다.' });
+    }
+    const rawShipperName = shipments[0].shipper || '일반화주';
+    const shipperName = rawShipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주';
+    const finalBlNumber = blNumber || shipments[0].bl_number || 'UNKNOWN_BL';
+
+    const dateObj = new Date();
+    const year = dateObj.getFullYear().toString();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+
+    const safeBlNumber = String(finalBlNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    // 3. 최종 저장 목적지: uploads/화주명/연/월/BL/
+    const blTargetDir = path.join(__dirname, '../../uploads', shipperName, year, month, safeBlNumber);
+    if (!fs.existsSync(blTargetDir)) {
+      fs.mkdirSync(blTargetDir, { recursive: true });
+    }
+
+    // URL 변경 맵 (old relative url -> new relative url)
+    const urlRemap = new Map<string, string>();
+
+    // 파일을 BL 폴더의 하위 폴더(docs 또는 exterior)로 이동하는 헬퍼
+    const moveFileToBL = (srcPath: string, originalRelUrl: string, sub: 'docs' | 'exterior') => {
+      if (!fs.existsSync(srcPath)) return;
+      const fileName = path.basename(srcPath);
+      const subTargetDir = path.join(blTargetDir, sub);
+      if (!fs.existsSync(subTargetDir)) {
+        fs.mkdirSync(subTargetDir, { recursive: true });
+      }
+
+      const destPath = path.join(subTargetDir, fileName);
+      // 중복 파일명 방지
+      if (!fs.existsSync(destPath)) {
+        fs.renameSync(srcPath, destPath);
+      } else {
+        fs.unlinkSync(srcPath); // 이미 동일 파일 있으면 삭제
+      }
+      const newRelUrl = `/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${sub}/${fileName}`;
+      urlRemap.set(originalRelUrl, newRelUrl);
+    };
+
+    // 4. temp/BL/docs/ 및 temp/BL/exterior/ 파일을 BL/docs/ 및 BL/exterior/ 폴더로 그대로 이동
+    const tempRoot = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
+    for (const sub of ['docs', 'exterior'] as const) {
+      const subDir = path.join(tempRoot, sub);
+      if (fs.existsSync(subDir)) {
+        for (const file of fs.readdirSync(subDir)) {
+          const filePath = path.join(subDir, file);
+          if (fs.statSync(filePath).isFile() && file.match(/\.(jpg|jpeg|png)$/i)) {
+            const oldRelUrl = `/uploads/temp/${safeBlNumber}/${sub}/${file}`;
+            moveFileToBL(filePath, oldRelUrl, sub);
+          }
+        }
+        // 빈 하위 폴더 제거
+        try { fs.rmdirSync(subDir); } catch (e) {}
+      }
+    }
+    // temp/BL 루트 폴더 제거
+    try { fs.rmdirSync(tempRoot); } catch (e) {}
+
+    // 5. uploads/화주명/연/월/VIN/ 폴더의 파일도 BL/exterior/ 폴더로 이동 (차량 관련 사진이므로 exterior)
+    const [allVehicles]: any = await pool.query(
+      'SELECT id, vin, condition_photo_url, deregistration_photo_url, vin_photo_url FROM vehicles WHERE shipment_id = ?',
+      [shipmentId]
+    );
+
+    for (const veh of allVehicles) {
+      const vin = veh.vin;
+      if (!vin) continue;
+      const vinDir = path.join(__dirname, '../../uploads', shipperName, year, month, vin);
+      if (fs.existsSync(vinDir)) {
+        for (const file of fs.readdirSync(vinDir)) {
+          const filePath = path.join(vinDir, file);
+          if (fs.statSync(filePath).isFile() && file.match(/\.(jpg|jpeg|png)$/i)) {
+            const oldRelUrl = `/uploads/${shipperName}/${year}/${month}/${vin}/${file}`;
+            moveFileToBL(filePath, oldRelUrl, 'exterior');
+          }
+        }
+        // 빈 VIN 폴더 제거
+        try { fs.rmdirSync(vinDir); } catch (e) {}
+      }
+
+      // 6. DB의 각 사진 컬럼(condition, deregistration, vin) URL 경로 업데이트
+      for (const col of ['condition_photo_url', 'deregistration_photo_url', 'vin_photo_url'] as const) {
+        const val = veh[col];
+        if (val) {
+          let urls: string[] = [];
+          try { urls = JSON.parse(val); } catch (e) { urls = [val]; }
+          const updatedUrls = urls.map((u: string) => urlRemap.get(u) || u);
+          if (JSON.stringify(urls) !== JSON.stringify(updatedUrls)) {
+            await pool.query(`UPDATE vehicles SET ${col} = ? WHERE id = ?`, [JSON.stringify(updatedUrls), veh.id]);
+          }
+        }
+      }
+    }
     return res.json({ success: true, message: '모든 데이터가 저장되었습니다.' });
   } catch (error) {
     console.error('전체 저장 에러:', error);
