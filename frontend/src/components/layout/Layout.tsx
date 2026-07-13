@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useTrackingStore } from "../../store/useTrackingStore";
@@ -6,8 +6,9 @@ import { useNotificationStore } from "../../store/useNotificationStore";
 import axios from "axios";
 import { io } from "socket.io-client";
 import {
-  LayoutDashboard, Search, Calendar, FileText,
-  CreditCard, FolderOpen, LogOut, Bell, Anchor, Ship, BellRing, X, Truck
+  LayoutDashboard, Calendar, FileText,
+  CreditCard, FolderOpen, LogOut, Bell, Anchor, Ship, BellRing, X, Truck,
+  User, ChevronDown, Menu
 } from "lucide-react";
 
 export default function Layout() {
@@ -16,12 +17,25 @@ export default function Layout() {
   const { user, setUser } = useAuthStore();
   const { clearData } = useTrackingStore();
   const currentPath = location.pathname;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   const { alerts, addAlert, removeAlert, missedAlerts, setMissedAlerts, showWindowsAlertDrawer, setShowWindowsAlertDrawer, setActiveDashboardShipment } = useNotificationStore();
 
+  // 외부 클릭 시 프로필 드롭다운 닫기
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
-
     const socket = io("http://localhost:5000");
 
     socket.on("connect", () => {
@@ -33,130 +47,71 @@ export default function Layout() {
       }
     });
 
-    // 신규 부킹 요청 및 서류 업로드 알람 리스너 (어드민 전용)
     if (user.role === "admin") {
       socket.on("new_booking_alert", (data) => {
         const requestTime = new Date().toLocaleString("ko-KR", {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false
+          year: "numeric", month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
         });
-        addAlert({
-          type: "booking",
-          title: "🚨 새로운 부킹요청",
-          meta: { ...data, requestTime }
-        });
+        addAlert({ type: "booking", title: "🚨 새로운 부킹요청", meta: { ...data, requestTime } });
       });
 
       socket.on("shipment_status_changed", (data) => {
         if (data.status === "Documents Uploaded") {
           const requestTime = new Date().toLocaleString("ko-KR", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: false
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
           });
-          addAlert({
-            type: "document",
-            title: "📄 서류 업로드 완료",
-            meta: { ...data, requestTime }
-          });
+          addAlert({ type: "document", title: "📄 서류 업로드 완료", meta: { ...data, requestTime } });
         }
       });
     }
 
-    // 신규 채팅 메시지 실시간 알람 리스너 (어드민/화주 공용)
     socket.on("booking_message_notification", (data) => {
-      console.log("실시간 채팅 메시지 알림 감지:", data);
       const isAdmin = user.role === "admin";
       const isClient = user.role === "client";
-
       let shouldAlert = false;
-      // 1) 어드민인 경우: 화주(client)가 보낸 대화글 감지
-      if (isAdmin && data.senderRole === "client") {
-        shouldAlert = true;
-      }
-      // 2) 화주인 경우: 본인의 부킹 건이고 어드민이 보낸 비공개가 아닌 대화글 감지
-      else if (
-        isClient &&
-        user.id === data.shipperId &&
-        data.senderRole === "admin" &&
-        data.isPrivate === 0
-      ) {
-        shouldAlert = true;
-      }
+      if (isAdmin && data.senderRole === "client") shouldAlert = true;
+      else if (isClient && user.id === data.shipperId && data.senderRole === "admin" && data.isPrivate === 0) shouldAlert = true;
 
       if (shouldAlert) {
-        const timeStr = new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit"
-        });
-        addAlert({
-          type: "chat",
-          title: "💬 새로운 업무 메시지",
-          message: data.message,
-          meta: { ...data, requestTime: timeStr }
-        });
+        const timeStr = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        addAlert({ type: "chat", title: "💬 새로운 업무 메시지", message: data.message, meta: { ...data, requestTime: timeStr } });
       }
     });
 
-    // PDF 발행 실시간 알림 리스너 (화주 전용)
     if (user.role === "client") {
       socket.on("pdf_generated_alert", (data) => {
-        console.log("실시간 PDF 발행 알림 감지:", data);
-        const timeStr = new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit"
-        });
-        addAlert({
-          type: "pdf",
-          title: "📄 서류 발행 완료",
-          message: data.message,
-          meta: { ...data, requestTime: timeStr }
-        });
+        const timeStr = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        addAlert({ type: "pdf", title: "📄 서류 발행 완료", message: data.message, meta: { ...data, requestTime: timeStr } });
       });
     }
 
-    return () => {
-      socket.disconnect();
-    };
+    return () => { socket.disconnect(); };
   }, [user, addAlert]);
 
-
-
   const clientMenus = [
-    { name: "내 화물 대시보드", path: "/", icon: <LayoutDashboard size={20} /> },
-    { name: "선박 스케줄/부킹", path: "/schedules", icon: <Calendar size={20} /> },
-    { name: "예약 현황", path: "/bookings", icon: <FileText size={20} /> },
-    { name: "정산 & 인보이스", path: "/invoices", icon: <CreditCard size={20} /> },
-    { name: "서류 보관함", path: "/documents", icon: <FolderOpen size={20} /> },
+    { name: "대시보드", path: "/", icon: <LayoutDashboard size={20} />, mobileIcon: <LayoutDashboard size={22} /> },
+    { name: "스케줄/부킹", path: "/schedules", icon: <Calendar size={20} />, mobileIcon: <Calendar size={22} /> },
+    { name: "예약 현황", path: "/bookings", icon: <FileText size={20} />, mobileIcon: <FileText size={22} /> },
+    { name: "정산/인보이스", path: "/invoices", icon: <CreditCard size={20} />, mobileIcon: <CreditCard size={22} /> },
+    { name: "서류 보관함", path: "/documents", icon: <FolderOpen size={20} />, mobileIcon: <FolderOpen size={22} /> },
   ];
 
   const adminMenus = [
-    { name: "부킹 요청 승인", path: "/admin/bookings", icon: <FileText size={20} /> },
-    { name: "전체 화물/선적 관리", path: "/admin/shipments", icon: <Ship size={20} /> },
-    { name: "내륙 배차 관리", path: "/admin/dispatches", icon: <Truck size={20} /> },
-    { name: "발행된 데빗노트", path: "/invoices", icon: <FileText size={20} /> },
-    { name: "정산 & 단가 관리", path: "/admin/billing", icon: <CreditCard size={20} /> },
-    { name: "선박 스케줄 관리", path: "/admin/schedules", icon: <Calendar size={20} /> },
+    { name: "부킹 승인", path: "/admin/bookings", icon: <FileText size={20} />, mobileIcon: <FileText size={22} /> },
+    { name: "화물/선적", path: "/admin/shipments", icon: <Ship size={20} />, mobileIcon: <Ship size={22} /> },
+    { name: "내륙 배차", path: "/admin/dispatches", icon: <Truck size={20} />, mobileIcon: <Truck size={22} /> },
+    { name: "데빗노트", path: "/invoices", icon: <FileText size={20} />, mobileIcon: <FileText size={22} /> },
+    { name: "정산/단가", path: "/admin/billing", icon: <CreditCard size={20} />, mobileIcon: <CreditCard size={22} /> },
+    { name: "스케줄 관리", path: "/admin/schedules", icon: <Calendar size={20} />, mobileIcon: <Calendar size={22} /> },
   ];
+
+  const activeMenus = user?.role === "client" ? clientMenus : adminMenus;
 
   const handleLogout = async () => {
     try {
-      await axios.post(
-        "http://localhost:5000/api/auth/logout",
-        {},
-        { withCredentials: true }
-      );
+      await axios.post("http://localhost:5000/api/auth/logout", {}, { withCredentials: true });
       setUser(null);
       clearData();
       navigate("/login");
@@ -165,7 +120,6 @@ export default function Layout() {
     }
   };
 
-  // 현재 경로명 매칭
   const getPageTitle = () => {
     const allMenus = [...clientMenus, ...adminMenus];
     const matched = allMenus.find((m) => m.path === currentPath);
@@ -174,93 +128,36 @@ export default function Layout() {
     return "Forwarding Hub";
   };
 
+  const isActive = (path: string) => currentPath === path;
+
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden print:block print:h-auto print:overflow-visible">
-      {/* 1. Sidebar (Desktop) */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col justify-between z-20 shrink-0 print:hidden">
-        <div>
-          {/* Logo */}
-          <div className="h-16 flex items-center gap-2 px-6 border-b border-slate-800 bg-slate-950">
-            <Anchor size={24} className="text-blue-400" />
-            <span className="text-lg font-black tracking-tight text-white">Forwarding Hub</span>
-          </div>
+    <div className="flex flex-col min-h-screen bg-slate-50 font-sans text-slate-800 print:block print:h-auto">
 
-          {/* Navigation Links */}
-          <nav className="p-4 space-y-1">
-            {/* 화주 전용 메뉴 (client) */}
-            {user?.role === "client" && (
-              <>
-                <p className="text-xs font-semibold text-slate-500 px-3 uppercase tracking-wider mb-2">
-                  화주 메뉴
-                </p>
-                {clientMenus.map((menu) => (
-                  <Link
-                    key={menu.path}
-                    to={menu.path}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition ${currentPath === menu.path
-                        ? "bg-blue-600 text-white"
-                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                      }`}
-                  >
-                    {menu.icon}
-                    {menu.name}
-                  </Link>
-                ))}
-              </>
-            )}
+      {/* ============================================================
+          TOP NAVIGATION BAR (데스크탑 + 모바일 공용 상단바)
+      ============================================================ */}
+      <header className="sticky top-0 z-50 bg-slate-900 text-white shadow-lg print:hidden">
 
-            {/* 포워더 전용 메뉴 (admin) */}
-            {user?.role === "admin" && (
-              <>
-                <p className="text-xs font-semibold text-slate-500 px-3 uppercase tracking-wider mb-2">
-                  포워더 메뉴
-                </p>
-                {adminMenus.map((menu) => (
-                  <Link
-                    key={menu.path}
-                    to={menu.path}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition ${currentPath === menu.path
-                        ? "bg-blue-600 text-white"
-                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                      }`}
-                  >
-                    {menu.icon}
-                    {menu.name}
-                  </Link>
-                ))}
-              </>
-            )}
-          </nav>
-        </div>
+        {/* ── 1행: 로고(좌) + 알림·프로필(우) ── */}
+        <div className="max-w-screen-2xl mx-auto px-4 h-12 flex items-center justify-between border-b border-white/5">
 
-        {/* User profile & Logout */}
-        <div className="p-4 border-t border-slate-800 space-y-2">
-          <div className="px-3 py-2 bg-slate-950/40 rounded-lg flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-sm">
-              {user?.username?.[0]?.toUpperCase()}
+          {/* 로고 */}
+          <Link to="/" className="flex items-center gap-2 shrink-0 group">
+            <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+              <Anchor size={16} className="text-blue-400" />
             </div>
-            <div className="truncate">
-              <p className="text-xs text-slate-400">환영합니다</p>
-              <p className="text-sm font-bold text-white truncate">{user?.username}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-semibold text-rose-400 hover:bg-slate-800 transition"
-          >
-            <LogOut size={18} />
-            로그아웃
-          </button>
-        </div>
-      </aside>
+            <span className="text-sm font-black tracking-tight text-white hidden sm:block">
+              Forwarding Hub
+            </span>
+            <span className="text-sm font-black tracking-tight text-white sm:hidden">
+              FHub
+            </span>
+          </Link>
 
-      {/* 2. Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden print:block print:h-auto print:overflow-visible">
-        {/* Header */}
-        <header className="h-16 bg-white border-b flex items-center justify-between px-8 z-10 shrink-0 shadow-sm print:hidden">
-          <h2 className="text-lg font-black text-slate-800">{getPageTitle()}</h2>
-          <div className="flex items-center gap-4">
-            {/* Notifications */}
+          {/* 우측 영역: 알림 + 프로필 + (모바일)햄버거 */}
+          <div className="flex items-center gap-1 shrink-0">
+
+            {/* 알림 벨 */}
             <div className="relative">
               <style>{`
                 @keyframes layout-bell-wiggle {
@@ -268,56 +165,52 @@ export default function Layout() {
                   10%, 30%, 50%, 70%, 90% { transform: rotate(-10deg); }
                   20%, 40%, 60%, 80% { transform: rotate(10deg); }
                 }
-                .animate-layout-bell-wiggle {
-                  animation: layout-bell-wiggle 1.5s ease-in-out infinite;
-                }
+                .animate-layout-bell-wiggle { animation: layout-bell-wiggle 1.5s ease-in-out infinite; }
               `}</style>
               <button
-                onClick={() => {
-                  if (user?.role === "admin") {
-                    setShowWindowsAlertDrawer(!showWindowsAlertDrawer);
-                  }
-                }}
-                className="text-slate-500 hover:text-slate-800 relative p-2 rounded-full hover:bg-slate-100 transition"
+                onClick={() => { if (user?.role === "admin") setShowWindowsAlertDrawer(!showWindowsAlertDrawer); }}
+                className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
               >
-                <Bell size={24} className={user?.role === "admin" && missedAlerts.length > 0 ? "animate-layout-bell-wiggle text-blue-600 font-bold" : ""} />
-                {user?.role === "admin" && missedAlerts.length > 0 ? (
-                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white font-mono text-[9px] font-black h-5 w-5 flex items-center justify-center rounded-full border border-white animate-pulse">
+                <Bell size={20} className={user?.role === "admin" && missedAlerts.length > 0 ? "animate-layout-bell-wiggle text-blue-400" : ""} />
+                {user?.role === "admin" && missedAlerts.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white font-mono text-[8px] font-black h-4 w-4 flex items-center justify-center rounded-full border border-slate-900 animate-pulse">
                     {missedAlerts.length}
                   </span>
-                ) : (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
+                )}
+                {!(user?.role === "admin" && missedAlerts.length > 0) && (
+                  <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full" />
                 )}
               </button>
 
-              {/* Windows 11 style Notification Center Drawer - aligned horizontally with bell icon */}
+              {/* 알림 드로어 */}
               {user?.role === "admin" && showWindowsAlertDrawer && (
-                <div className="absolute right-12 top-0 z-[120] w-[360px] max-h-[480px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-150">
-                  {/* List Content */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
+                <div className="absolute right-0 top-12 z-[120] w-80 max-h-[480px] bg-slate-800/95 backdrop-blur-md border border-slate-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+                    <span className="text-sm font-bold text-white">알림센터</span>
+                    <button onClick={() => setShowWindowsAlertDrawer(false)} className="text-slate-400 hover:text-white">
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-3 space-y-2">
                     {missedAlerts.length > 0 ? (
                       missedAlerts.map((alert) => (
-                        <div 
-                          key={alert.id}
-                          className="p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:shadow-md transition-shadow flex flex-col justify-between gap-3 text-left"
-                        >
+                        <div key={alert.id} className="p-3 bg-slate-700/60 border border-slate-600 rounded-xl flex flex-col gap-3">
                           <div>
                             <div className="flex justify-between items-start">
                               <span className="text-[10px] font-bold text-slate-400">{alert.timestamp}</span>
-                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${alert.photoType === 'docs' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
+                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${alert.photoType === 'docs' ? 'bg-emerald-900/60 text-emerald-300' : 'bg-blue-900/60 text-blue-300'}`}>
                                 {alert.photoType === 'docs' ? '서류' : '외관사진'}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-750 dark:text-slate-250 font-bold mt-1.5 leading-relaxed">
-                              {alert.photoType === 'docs' 
-                                ? <><span className="text-blue-600 dark:text-blue-400">@{alert.shipperName || '화주'}</span>로부터 말소증/차대각인사진이 도착</>
-                                : <><span className="text-blue-600 dark:text-blue-400">@{alert.shipperName || '화주'}</span>로부터 차량 외관 사진 도착</>
+                            <p className="text-xs text-slate-200 font-bold mt-1.5 leading-relaxed">
+                              {alert.photoType === 'docs'
+                                ? <><span className="text-blue-400">@{alert.shipperName || '화주'}</span>로부터 말소증/차대각인사진이 도착</>
+                                : <><span className="text-blue-400">@{alert.shipperName || '화주'}</span>로부터 차량 외관 사진 도착</>
                               }
                             </p>
                             <p className="text-[10px] text-slate-400 font-mono mt-0.5">B/L: {alert.blNumber}</p>
                           </div>
-                          
-                          <div className="flex gap-2 w-full mt-1">
+                          <div className="flex gap-2">
                             <button
                               onClick={() => {
                                 setActiveDashboardShipment({ id: alert.shipmentId, blNumber: alert.blNumber });
@@ -325,24 +218,18 @@ export default function Layout() {
                                 setShowWindowsAlertDrawer(false);
                                 navigate("/admin/shipments");
                               }}
-                              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold py-1.5 rounded-lg transition-colors text-center"
-                            >
-                              확인하러가기
-                            </button>
+                              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold py-1.5 rounded-lg transition"
+                            >확인하러가기</button>
                             <button
-                              onClick={() => {
-                                setMissedAlerts(prev => prev.filter(a => a.id !== alert.id));
-                              }}
-                              className="px-3 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-655 text-slate-750 dark:text-slate-200 text-[11px] font-bold py-1.5 rounded-lg transition-colors"
-                            >
-                              확인
-                            </button>
+                              onClick={() => setMissedAlerts(prev => prev.filter(a => a.id !== alert.id))}
+                              className="px-3 bg-slate-600 hover:bg-slate-500 text-slate-200 text-[11px] font-bold py-1.5 rounded-lg transition"
+                            >확인</button>
                           </div>
                         </div>
                       ))
                     ) : (
-                      <div className="flex flex-col items-center justify-center text-slate-400 dark:text-slate-600 py-12">
-                        <BellRing size={28} className="mb-2 opacity-30 animate-bounce" />
+                      <div className="flex flex-col items-center justify-center text-slate-500 py-10">
+                        <BellRing size={26} className="mb-2 opacity-30 animate-bounce" />
                         <span className="text-xs font-bold">새로운 알림이 없습니다.</span>
                       </div>
                     )}
@@ -350,26 +237,173 @@ export default function Layout() {
                 </div>
               )}
             </div>
+
+            {/* 프로필 드롭다운 (데스크탑) */}
+            <div className="relative hidden md:block" ref={profileRef}>
+              <button
+                onClick={() => setProfileOpen(!profileOpen)}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/10 transition"
+              >
+                <div className="w-7 h-7 rounded-full bg-blue-500/30 border border-blue-500/50 flex items-center justify-center text-blue-300 font-black text-xs">
+                  {user?.username?.[0]?.toUpperCase()}
+                </div>
+                <span className="text-sm font-semibold text-slate-200 max-w-[80px] truncate">{user?.username}</span>
+                <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${profileOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {profileOpen && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-700">
+                    <p className="text-xs text-slate-400">로그인 계정</p>
+                    <p className="text-sm font-bold text-white truncate">{user?.username}</p>
+                    <span className="inline-block mt-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      {user?.role === "admin" ? "포워더" : "화주"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 w-full px-4 py-3 text-sm font-semibold text-rose-400 hover:bg-white/5 transition"
+                  >
+                    <LogOut size={16} />
+                    로그아웃
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 모바일 햄버거 (프로필/로그아웃용, md 미만) */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+            >
+              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
           </div>
-        </header>
+        </div>
 
-        {/* Dynamic Route View */}
-        <main className="flex-1 overflow-y-auto p-8 print:p-0 print:overflow-visible">
+        {/* ── 2행: 데스크탑 네비게이션 (정중앙, md 이상) ── */}
+        <div className="hidden md:block border-t border-white/5">
+          <nav className="max-w-screen-2xl mx-auto px-4 flex items-center justify-center gap-1 h-10">
+            {activeMenus.map((menu) => {
+              const active = isActive(menu.path);
+              return (
+                <Link
+                  key={menu.path}
+                  to={menu.path}
+                  className={`relative flex items-center gap-1.5 px-4 h-full text-xs font-semibold transition-all duration-200 group ${
+                    active ? "text-white" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {/* 액티브 하단 인디케이터 */}
+                  <span
+                    className={`absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full transition-all duration-300 ${
+                      active ? "bg-blue-400 opacity-100" : "bg-white/0 opacity-0 group-hover:opacity-30 group-hover:bg-white/40"
+                    }`}
+                  />
+                  {menu.icon}
+                  <span>{menu.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* 모바일 드롭다운 메뉴 (프로필/로그아웃) */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-slate-800 bg-slate-900 px-4 py-3 space-y-1 animate-fade-in-up">
+            <div className="flex items-center gap-3 px-3 py-2 mb-2">
+              <div className="w-9 h-9 rounded-full bg-blue-500/30 border border-blue-500/50 flex items-center justify-center text-blue-300 font-black text-sm">
+                {user?.username?.[0]?.toUpperCase()}
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">로그인 계정</p>
+                <p className="text-sm font-bold text-white">{user?.username}</p>
+              </div>
+              <span className="ml-auto text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                {user?.role === "admin" ? "포워더" : "화주"}
+              </span>
+            </div>
+            <button
+              onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
+              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-semibold text-rose-400 hover:bg-white/5 transition"
+            >
+              <LogOut size={16} />
+              로그아웃
+            </button>
+          </div>
+        )}
+      </header>
+
+      {/* ============================================================
+          MAIN CONTENT
+      ============================================================ */}
+      <main className="flex-1 overflow-y-auto pb-24 md:pb-8 print:p-0 print:overflow-visible">
+        <div className="px-4 md:px-8 py-5 max-w-screen-2xl mx-auto print:p-0">
           <Outlet />
-        </main>
-      </div>
+        </div>
+      </main>
 
-      {/* Unified Real-time Toast Notifications Container */}
+      {/* ============================================================
+          MOBILE BOTTOM TAB BAR (모바일 하단 탭바 — md 미만에서만 표시)
+      ============================================================ */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 print:hidden">
+        {/* 배경: 유리형 블러 */}
+        <div className="bg-white/90 backdrop-blur-xl border-t border-slate-200/80 shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
+          <div className="flex items-stretch h-16">
+            {activeMenus.map((menu) => {
+              const active = isActive(menu.path);
+              return (
+                <Link
+                  key={menu.path}
+                  to={menu.path}
+                  className="flex-1 flex flex-col items-center justify-center gap-0.5 relative group transition-all"
+                >
+                  {/* 액티브 인디케이터 (상단 선) */}
+                  <span
+                    className={`absolute top-0 left-1/2 -translate-x-1/2 h-0.5 rounded-b-full transition-all duration-300 ${
+                      active ? "w-8 bg-blue-500" : "w-0 bg-transparent"
+                    }`}
+                  />
+                  {/* 아이콘 + pill 배경 */}
+                  <span
+                    className={`flex items-center justify-center w-10 h-6 rounded-full transition-all duration-300 ${
+                      active
+                        ? "bg-blue-100 text-blue-600 scale-110"
+                        : "text-slate-400 group-hover:text-slate-600 group-hover:bg-slate-100"
+                    }`}
+                  >
+                    {menu.mobileIcon}
+                  </span>
+                  {/* 라벨 */}
+                  <span
+                    className={`text-[10px] font-bold leading-none transition-colors duration-200 ${
+                      active ? "text-blue-600" : "text-slate-400"
+                    }`}
+                  >
+                    {menu.name}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+          {/* Safe Area (아이폰 홈버튼 없는 모델) */}
+          <div className="h-safe-area-inset-bottom bg-white/90" style={{ height: "env(safe-area-inset-bottom)" }} />
+        </div>
+      </nav>
+
+      {/* ============================================================
+          TOAST 알림 (공용)
+      ============================================================ */}
       {alerts.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-4 max-h-[85vh] overflow-y-auto w-80 p-2 scrollbar-thin print:hidden">
+        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex flex-col gap-3 max-h-[75vh] overflow-y-auto w-72 md:w-80 p-1 scrollbar-thin print:hidden">
           {alerts.map((alert) => {
             const isChat = alert.type === 'chat';
             return (
               <div
                 key={alert.id}
-                className={`p-6 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300 border-2 ${
-                  isChat 
-                    ? "bg-slate-900 border-blue-500 text-white" 
+                className={`p-4 rounded-2xl shadow-2xl animate-alarm-shake transition-all duration-300 border-2 ${
+                  isChat
+                    ? "bg-slate-900 border-blue-500 text-white"
                     : alert.type === 'booking'
                     ? "bg-white border-red-500 text-slate-800"
                     : alert.type === 'document'
@@ -377,138 +411,76 @@ export default function Layout() {
                     : "bg-white border-blue-500 text-slate-800"
                 }`}
               >
-                {/* Header */}
                 <div className="flex justify-between items-start mb-2">
-                  <h4 className={`text-base font-black ${
-                    isChat 
-                      ? "text-blue-400" 
-                      : alert.type === 'booking'
-                      ? "text-red-600"
-                      : alert.type === 'document'
-                      ? "text-green-600"
-                      : "text-blue-600"
-                  }`}>
-                    {alert.title}
-                  </h4>
-                  <button 
-                    onClick={() => removeAlert(alert.id)} 
-                    className="text-slate-400 hover:text-slate-600 transition"
-                  >
-                    <X size={16} />
+                  <h4 className={`text-sm font-black ${
+                    isChat ? "text-blue-400" :
+                    alert.type === 'booking' ? "text-red-600" :
+                    alert.type === 'document' ? "text-green-600" : "text-blue-600"
+                  }`}>{alert.title}</h4>
+                  <button onClick={() => removeAlert(alert.id)} className="text-slate-400 hover:text-slate-600 transition ml-2">
+                    <X size={14} />
                   </button>
                 </div>
 
-                {/* Content Body based on type */}
                 {alert.type === 'booking' && (
                   <>
-                    <p className="text-slate-800 text-sm font-bold mt-2">화주: {alert.meta?.username} 님</p>
-                    <p className="text-slate-500 text-xs mt-1">요청일시: {alert.meta?.requestTime || alert.time}</p>
-                    <div className="mt-4">
-                      <button
-                        onClick={() => {
-                          removeAlert(alert.id);
-                          navigate("/admin/bookings");
-                        }}
-                        className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg font-bold text-xs shadow-sm transition"
-                      >
-                        부킹 요청 확인하러 가기
-                      </button>
-                    </div>
+                    <p className="text-slate-800 text-xs font-bold mt-1">화주: {alert.meta?.username} 님</p>
+                    <p className="text-slate-500 text-[10px] mt-0.5">요청일시: {alert.meta?.requestTime || alert.time}</p>
+                    <button onClick={() => { removeAlert(alert.id); navigate("/admin/bookings"); }}
+                      className="w-full mt-3 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg font-bold text-xs transition">
+                      부킹 요청 확인하러 가기
+                    </button>
                   </>
                 )}
 
                 {alert.type === 'document' && (
                   <>
-                    <p className="text-slate-800 text-sm font-bold mt-2">B/L 번호: {alert.meta?.blNumber}</p>
-                    <p className="text-slate-500 text-xs mt-1">업로드 시각: {alert.meta?.requestTime || alert.time}</p>
-                    <div className="mt-4 flex gap-2">
-                      <button
-                        onClick={() => {
-                          removeAlert(alert.id);
-                          navigate("/admin/shipments");
-                        }}
-                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
-                      >
-                        확인하러 가기
-                      </button>
-                      <button
-                        onClick={() => removeAlert(alert.id)}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg font-bold text-xs transition"
-                      >
-                        닫기
-                      </button>
+                    <p className="text-slate-800 text-xs font-bold mt-1">B/L 번호: {alert.meta?.blNumber}</p>
+                    <p className="text-slate-500 text-[10px] mt-0.5">업로드 시각: {alert.meta?.requestTime || alert.time}</p>
+                    <div className="mt-3 flex gap-2">
+                      <button onClick={() => { removeAlert(alert.id); navigate("/admin/shipments"); }}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs transition">확인하러 가기</button>
+                      <button onClick={() => removeAlert(alert.id)}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg font-bold text-xs transition">닫기</button>
                     </div>
                   </>
                 )}
 
                 {alert.type === 'chat' && (
                   <>
-                    <p className="text-slate-350 text-sm mt-2 font-bold">보낸 사람: {alert.meta?.senderName}</p>
-                    <p className="text-slate-300 text-xs mt-1 bg-white/10 p-2.5 rounded-lg italic break-all">
+                    <p className="text-slate-300 text-xs mt-1 font-bold">보낸 사람: {alert.meta?.senderName}</p>
+                    <p className="text-slate-300 text-[11px] mt-1 bg-white/10 p-2 rounded-lg italic break-all">
                       "{alert.message && alert.message.length > 40 ? alert.message.slice(0, 40) + "..." : alert.message}"
                     </p>
-                    <p className="text-slate-500 text-[10px] mt-2">수신일시: {alert.meta?.requestTime || alert.time}</p>
-                    <div className="mt-4 flex gap-2">
-                      <button
-                        onClick={() => {
-                          removeAlert(alert.id);
-                          const targetPath = user?.role === "admin" ? "/admin/bookings" : "/bookings";
-                          navigate(`${targetPath}?openChat=${alert.meta?.bookingId}`);
-                        }}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
-                      >
-                        확인하러 가기
-                      </button>
-                      <button
-                        onClick={() => removeAlert(alert.id)}
-                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg font-bold text-xs transition"
-                      >
-                        닫기
-                      </button>
+                    <p className="text-slate-500 text-[10px] mt-1">수신일시: {alert.meta?.requestTime || alert.time}</p>
+                    <div className="mt-3 flex gap-2">
+                      <button onClick={() => { removeAlert(alert.id); navigate(`${user?.role === "admin" ? "/admin/bookings" : "/bookings"}?openChat=${alert.meta?.bookingId}`); }}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs transition">확인하러 가기</button>
+                      <button onClick={() => removeAlert(alert.id)}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg font-bold text-xs transition">닫기</button>
                     </div>
                   </>
                 )}
 
                 {alert.type === 'pdf' && (
                   <>
-                    <p className="text-slate-800 text-sm font-bold mt-2">B/L 번호: {alert.meta?.blNumber}</p>
-                    <p className="text-slate-500 text-xs mt-1">발행 시간: {alert.meta?.requestTime || alert.time}</p>
-                    <p className="text-slate-600 text-xs mt-2 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100 italic">
-                      {alert.message}
-                    </p>
-                    <div className="mt-4 flex gap-2">
-                      <button
-                        onClick={() => {
-                          removeAlert(alert.id);
-                          navigate("/client/documents");
-                        }}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
-                      >
-                        확인하러 가기
-                      </button>
-                      <button
-                        onClick={() => removeAlert(alert.id)}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg font-bold text-xs transition"
-                      >
-                        닫기
-                      </button>
+                    <p className="text-slate-800 text-xs font-bold mt-1">B/L 번호: {alert.meta?.blNumber}</p>
+                    <p className="text-slate-500 text-[10px] mt-0.5">발행 시간: {alert.meta?.requestTime || alert.time}</p>
+                    <p className="text-slate-600 text-[11px] mt-1.5 bg-slate-50 p-2 rounded-lg border border-slate-100 italic">{alert.message}</p>
+                    <div className="mt-3 flex gap-2">
+                      <button onClick={() => { removeAlert(alert.id); navigate("/client/documents"); }}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs transition">확인하러 가기</button>
+                      <button onClick={() => removeAlert(alert.id)}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg font-bold text-xs transition">닫기</button>
                     </div>
                   </>
                 )}
 
                 {alert.type === 'general' && (
                   <>
-                    <p className="text-slate-700 text-xs mt-2 leading-relaxed">
-                      {alert.message}
-                    </p>
-                    <div className="mt-4">
-                      <button
-                        onClick={() => removeAlert(alert.id)}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs shadow-sm transition"
-                      >
-                        확인
-                      </button>
-                    </div>
+                    <p className="text-slate-700 text-xs mt-1.5 leading-relaxed">{alert.message}</p>
+                    <button onClick={() => removeAlert(alert.id)}
+                      className="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold text-xs transition">확인</button>
                   </>
                 )}
               </div>
