@@ -7,7 +7,7 @@ import axios from "axios";
 import { io } from "socket.io-client";
 import {
   LayoutDashboard, Search, Calendar, FileText,
-  CreditCard, FolderOpen, LogOut, Bell, Anchor, Ship, BellRing, X
+  CreditCard, FolderOpen, LogOut, Bell, Anchor, Ship, BellRing, X, Truck
 } from "lucide-react";
 
 export default function Layout() {
@@ -144,8 +144,10 @@ export default function Layout() {
   const adminMenus = [
     { name: "부킹 요청 승인", path: "/admin/bookings", icon: <FileText size={20} /> },
     { name: "전체 화물/선적 관리", path: "/admin/shipments", icon: <Ship size={20} /> },
-    { name: "선박 스케줄 관리", path: "/admin/schedules", icon: <Calendar size={20} /> },
+    { name: "내륙 배차 관리", path: "/admin/dispatches", icon: <Truck size={20} /> },
+    { name: "발행된 데빗노트", path: "/invoices", icon: <FileText size={20} /> },
     { name: "정산 & 단가 관리", path: "/admin/billing", icon: <CreditCard size={20} /> },
+    { name: "선박 스케줄 관리", path: "/admin/schedules", icon: <Calendar size={20} /> },
   ];
 
   const handleLogout = async () => {
@@ -173,9 +175,9 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden print:block print:h-auto print:overflow-visible">
       {/* 1. Sidebar (Desktop) */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col justify-between z-20 shrink-0">
+      <aside className="w-64 bg-slate-900 text-white flex flex-col justify-between z-20 shrink-0 print:hidden">
         <div>
           {/* Logo */}
           <div className="h-16 flex items-center gap-2 px-6 border-b border-slate-800 bg-slate-950">
@@ -253,9 +255,9 @@ export default function Layout() {
       </aside>
 
       {/* 2. Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden print:block print:h-auto print:overflow-visible">
         {/* Header */}
-        <header className="h-16 bg-white border-b flex items-center justify-between px-8 z-10 shrink-0 shadow-sm">
+        <header className="h-16 bg-white border-b flex items-center justify-between px-8 z-10 shrink-0 shadow-sm print:hidden">
           <h2 className="text-lg font-black text-slate-800">{getPageTitle()}</h2>
           <div className="flex items-center gap-4">
             {/* Notifications */}
@@ -352,14 +354,14 @@ export default function Layout() {
         </header>
 
         {/* Dynamic Route View */}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-y-auto p-8 print:p-0 print:overflow-visible">
           <Outlet />
         </main>
       </div>
 
       {/* Unified Real-time Toast Notifications Container */}
       {alerts.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-4 max-h-[85vh] overflow-y-auto w-80 p-2 scrollbar-thin">
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-4 max-h-[85vh] overflow-y-auto w-80 p-2 scrollbar-thin print:hidden">
           {alerts.map((alert) => {
             const isChat = alert.type === 'chat';
             return (

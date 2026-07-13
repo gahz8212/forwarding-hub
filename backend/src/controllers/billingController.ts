@@ -156,15 +156,16 @@ export const calculateInvoice = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: '로그인이 필요합니다.' });
     }
 
-    const { shipmentId, clientId, exchangeRate } = req.body;
-    if (!shipmentId || !clientId || !exchangeRate) {
+    const { shipmentIds, clientId, exchangeRate } = req.body;
+    if (!shipmentIds || !Array.isArray(shipmentIds) || shipmentIds.length === 0 || !clientId || !exchangeRate) {
       return res.status(400).json({ success: false, message: '필수 인자가 누락되었습니다.' });
     }
 
-    // 1. Fetch vehicles of this shipment
+    // 1. Fetch vehicles of ALL selected shipments
+    const placeholders = shipmentIds.map(() => '?').join(',');
     const [vehicles]: any = await pool.query(
-      'SELECT vin, model, vehicle_type FROM vehicles WHERE shipment_id = ?',
-      [shipmentId]
+      `SELECT vin, model, vehicle_type, inland_cost_krw, surcharge_cost_krw FROM vehicles WHERE shipment_id IN (${placeholders})`,
+      shipmentIds
     );
 
     if (vehicles.length === 0) {
@@ -191,7 +192,9 @@ export const calculateInvoice = async (req: Request, res: Response) => {
     const carList = vehicles.map((v: any) => ({
       vin: v.vin,
       model_name: v.model || 'Unknown',
-      cargo_type: mapVehicleTypeToCargoType(v.vehicle_type, v.model)
+      cargo_type: mapVehicleTypeToCargoType(v.vehicle_type, v.model),
+      inland_cost_krw: Number(v.inland_cost_krw) || 0,
+      surcharge_cost_krw: Number(v.surcharge_cost_krw) || 0
     }));
 
     // 5. Calculate
@@ -235,7 +238,8 @@ export const createInvoice = async (req: Request, res: Response) => {
       bl_fee_krw,
       customs_fee_krw,
       due_date,
-      items
+      items,
+      shipmentIds
     } = req.body;
 
     if (!invoice_no || !client_id || !vessel_name || !exchange_rate || !final_amount_krw || !due_date || !Array.isArray(items)) {
@@ -251,6 +255,7 @@ export const createInvoice = async (req: Request, res: Response) => {
     );
 
     if (existing.length > 0) {
+      await connection.rollback();
       connection.release();
       return res.status(400).json({ success: false, message: '이미 존재하는 인보이스 번호입니다.' });
     }
@@ -280,8 +285,8 @@ export const createInvoice = async (req: Request, res: Response) => {
     // Insert Items
     const itemQuery = `
       INSERT INTO invoice_items 
-        (invoice_no, vin, model_name, cargo_type, applied_ocean_usd, applied_lashing_krw, applied_thc_krw, applied_wharfage_krw)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (invoice_no, vin, model_name, cargo_type, applied_ocean_usd, applied_lashing_krw, applied_thc_krw, applied_wharfage_krw, applied_inland_krw)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     for (const item of items) {
@@ -293,15 +298,17 @@ export const createInvoice = async (req: Request, res: Response) => {
         item.applied_ocean_usd,
         item.applied_lashing_krw,
         item.applied_thc_krw,
-        item.applied_wharfage_krw
+        item.applied_wharfage_krw,
+        item.applied_inland_krw || 0
       ]);
     }
 
-    // Update shipments table's invoice_amount and is_paid if bl_number is provided
-    if (bl_number) {
+    // Update shipments table's invoice details and link the invoice_no
+    if (shipmentIds && Array.isArray(shipmentIds) && shipmentIds.length > 0) {
+      const placeholders = shipmentIds.map(() => '?').join(',');
       await connection.query(
-        'UPDATE shipments SET invoice_amount = ?, invoice_currency = "KRW", is_paid = FALSE WHERE bl_number = ?',
-        [final_amount_krw, bl_number]
+        `UPDATE shipments SET invoice_amount = ?, invoice_currency = 'KRW', is_paid = FALSE, invoice_no = ? WHERE id IN (${placeholders})`,
+        [final_amount_krw, invoice_no, ...shipmentIds]
       );
     }
 
@@ -331,13 +338,13 @@ export const getInvoices = async (req: Request, res: Response) => {
     `;
     const params: any[] = [];
 
-    // If client, restrict to their own client_id
+    // If client, restrict to their own client_id and ONLY show SENT invoices
     if (userSession.role === 'client') {
       const clientId = userSession.client_id;
       if (!clientId) {
         return res.json({ success: true, invoices: [] });
       }
-      query += ' WHERE i.client_id = ?';
+      query += " WHERE i.client_id = ? AND i.publish_status = 'SENT'";
       params.push(clientId);
     }
 
@@ -430,6 +437,157 @@ export const payInvoice = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('payInvoice error:', error);
     res.status(500).json({ success: false, message: '서버 에러가 발생했습니다.' });
+  }
+};
+
+// DELETE /api/billing/invoices/:invoiceNo
+export const deleteInvoice = async (req: Request, res: Response) => {
+  const connection = await pool.getConnection();
+  try {
+    const userSession = (req.session as any).user;
+    if (!userSession || userSession.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '권한이 없습니다.' });
+    }
+
+    const { invoiceNo } = req.params;
+
+    const [rows]: any = await connection.query('SELECT bl_number, payment_status FROM invoices WHERE invoice_no = ?', [invoiceNo]);
+    if (rows.length === 0) {
+      connection.release();
+      return res.status(404).json({ success: false, message: '인보이스를 찾을 수 없습니다.' });
+    }
+
+    const invoice = rows[0];
+    if (invoice.payment_status === 'PAID') {
+      connection.release();
+      return res.status(400).json({ success: false, message: '이미 결제 완료된 정산서는 삭제할 수 없습니다. 결제 취소가 필요합니다.' });
+    }
+
+    const blNumber = invoice.bl_number;
+
+    await connection.beginTransaction();
+
+    await connection.query('DELETE FROM invoices WHERE invoice_no = ?', [invoiceNo]);
+
+    // Revert shipment status by searching for linked invoice_no
+    await connection.query(
+      'UPDATE shipments SET invoice_amount = NULL, invoice_currency = NULL, is_paid = FALSE, invoice_no = NULL WHERE invoice_no = ?',
+      [invoiceNo]
+    );
+
+    await connection.commit();
+    res.json({ success: true, message: '정산서가 성공적으로 삭제되었습니다.' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('deleteInvoice error:', error);
+    res.status(500).json({ success: false, message: '서버 에러가 발생했습니다.' });
+  } finally {
+    await connection.release();
+  }
+};
+
+// PUT /api/billing/invoices/publish
+export const publishInvoices = async (req: Request, res: Response) => {
+  const connection = await pool.getConnection();
+  try {
+    const userSession = (req.session as any).user;
+    if (!userSession || userSession.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '권한이 없습니다.' });
+    }
+
+    const { invoiceNos } = req.body;
+    if (!invoiceNos || !Array.isArray(invoiceNos) || invoiceNos.length === 0) {
+      return res.status(400).json({ success: false, message: '인보이스를 선택해주세요.' });
+    }
+
+    const placeholders = invoiceNos.map(() => '?').join(',');
+    await connection.query(`UPDATE invoices SET publish_status = 'SENT' WHERE invoice_no IN (${placeholders})`, invoiceNos);
+
+    res.json({ success: true, message: '선택한 정산서가 화주에게 전송되었습니다.' });
+  } catch (error) {
+    console.error('publishInvoices error:', error);
+    res.status(500).json({ success: false, message: '서버 에러가 발생했습니다.' });
+  } finally {
+    connection.release();
+  }
+};
+
+// POST /api/billing/invoices/merge
+export const mergeAndPublishInvoices = async (req: Request, res: Response) => {
+  const connection = await pool.getConnection();
+  try {
+    const userSession = (req.session as any).user;
+    if (!userSession || userSession.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '권한이 없습니다.' });
+    }
+
+    const { invoiceNos, newInvoiceNo, dueDate } = req.body;
+    if (!invoiceNos || !Array.isArray(invoiceNos) || invoiceNos.length === 0 || !newInvoiceNo || !dueDate) {
+      return res.status(400).json({ success: false, message: '필수 값이 누락되었습니다.' });
+    }
+
+    const placeholders = invoiceNos.map(() => '?').join(',');
+    const [oldInvoices]: any = await connection.query(
+      `SELECT * FROM invoices WHERE invoice_no IN (${placeholders})`,
+      invoiceNos
+    );
+
+    if (oldInvoices.length !== invoiceNos.length) {
+      connection.release();
+      return res.status(404).json({ success: false, message: '일부 인보이스를 찾을 수 없습니다.' });
+    }
+
+    const clientId = oldInvoices[0].client_id;
+    const vesselName = oldInvoices[0].vessel_name;
+    const pol = oldInvoices[0].pol;
+    const pod = oldInvoices[0].pod;
+    const exchangeRate = oldInvoices[0].exchange_rate;
+
+    if (oldInvoices.some((i: any) => i.publish_status !== 'DRAFT' || i.client_id !== clientId)) {
+      connection.release();
+      return res.status(400).json({ success: false, message: '동일 화주의 임시(DRAFT) 정산서만 병합할 수 있습니다.' });
+    }
+
+    await connection.beginTransaction();
+
+    let total_ocean_usd = 0;
+    let total_local_krw = 0;
+    let final_amount_krw = 0;
+    let bl_fee_krw = 0;
+    let customs_fee_krw = 0;
+
+    for (const inv of oldInvoices) {
+      total_ocean_usd += Number(inv.total_ocean_usd);
+      total_local_krw += Number(inv.total_local_krw);
+      final_amount_krw += Number(inv.final_amount_krw);
+      bl_fee_krw += Number(inv.bl_fee_krw);
+      customs_fee_krw += Number(inv.customs_fee_krw);
+    }
+
+    const [shipments]: any = await connection.query(
+      `SELECT bl_number FROM shipments WHERE invoice_no IN (${placeholders})`,
+      invoiceNos
+    );
+    const blNumbers = shipments.map((s: any) => s.bl_number).filter(Boolean);
+    const combinedBlString = blNumbers.length > 1 ? `${blNumbers[0]} 외 ${blNumbers.length - 1}건` : blNumbers[0] || "";
+
+    await connection.query(`
+      INSERT INTO invoices (invoice_no, client_id, publish_status, bl_number, vessel_name, pol, pod, exchange_rate, total_ocean_usd, total_local_krw, final_amount_krw, bl_fee_krw, customs_fee_krw, due_date)
+      VALUES (?, ?, 'SENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [newInvoiceNo, clientId, combinedBlString, vesselName, pol, pod, exchangeRate, total_ocean_usd, total_local_krw, final_amount_krw, bl_fee_krw, customs_fee_krw, dueDate]);
+
+    await connection.query(`UPDATE invoice_items SET invoice_no = ? WHERE invoice_no IN (${placeholders})`, [newInvoiceNo, ...invoiceNos]);
+    await connection.query(`UPDATE shipments SET invoice_no = ? WHERE invoice_no IN (${placeholders})`, [newInvoiceNo, ...invoiceNos]);
+    await connection.query(`DELETE FROM invoices WHERE invoice_no IN (${placeholders})`, invoiceNos);
+
+    await connection.commit();
+    res.json({ success: true, message: '성공적으로 병합 및 전송되었습니다.' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('mergeAndPublishInvoices error:', error);
+    res.status(500).json({ success: false, message: '서버 에러가 발생했습니다.' });
+  } finally {
+    connection.release();
   }
 };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-import { X, Camera, Search, CheckCircle, Truck, Ship, AlertTriangle, Upload, FileImage, Loader2, Send, GripHorizontal, ChevronLeft, ChevronRight, Save, Trash2, BellRing } from "lucide-react";
+import { X, Camera, Search, CheckCircle, Truck, Ship, AlertTriangle, Upload, FileImage, Loader2, Send, GripHorizontal, ChevronLeft, ChevronRight, Save, Trash2, BellRing, CreditCard } from "lucide-react";
 import BuyerInfoModal from './BuyerInfoModal';
 import PendingDocsModal from './PendingDocsModal';
 
@@ -37,9 +37,9 @@ interface ViewerState {
 }
 
 interface Props {
-  shipmentId: number;
-  blNumber: string;
+  shipment: any;
   onClose: () => void;
+  onOpenDraftGenerator?: (shipment: any) => void;
 }
 
 const formatDateToSlash = (val?: string) => {
@@ -48,7 +48,11 @@ const formatDateToSlash = (val?: string) => {
   return dateOnly.replace(/-/g, '/');
 };
 
-export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }: Props) {
+export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGenerator }: Props) {
+  if (!shipment) return null;
+  const shipmentId = shipment.id;
+  const blNumber = shipment.bl_number;
+
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [globalPhotoTab, setGlobalPhotoTab] = useState<'plate' | 'document' | 'vin'>('plate');
   const [unclassifiedPhotos, setUnclassifiedPhotos] = useState<string[]>([]);
@@ -864,8 +868,8 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900">
-      <div className="bg-white dark:bg-slate-900 w-full h-full flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 md:p-6">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-[95vw] h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 relative">
         {/* Header */}
         <div className="flex flex-col p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 relative">
           <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors z-10">
@@ -947,6 +951,18 @@ export default function VehicleDashboardModal({ shipmentId, blNumber, onClose }:
                   <Send size={15} />
                   {isSending ? "전송 중..." : "PDF 전송"}
                 </button>
+
+                {onOpenDraftGenerator && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDraftGenerator(shipment)}
+                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs md:text-sm font-bold transition-colors shadow-sm"
+                    title="임시 정산서(Draft) 발행 폼 열기"
+                  >
+                    <CreditCard size={15} />
+                    임시 정산서(Draft) 발행
+                  </button>
+                )}
 
                 <div className="flex bg-slate-100 dark:bg-slate-800 rounded p-1 border border-slate-200 dark:border-slate-700">
                   <input

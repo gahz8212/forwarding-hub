@@ -27,12 +27,29 @@ function parseDateForDb(dateStr: any): string | null {
 
 export const getAllShipments = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query(`
+    const userSession = (req.session as any).user;
+    let query = `
       SELECT s.*, i.invoice_no as debit_note_invoice_no, i.payment_status as debit_note_payment_status 
       FROM shipments s
       LEFT JOIN invoices i ON s.bl_number = i.bl_number
-      ORDER BY s.etd DESC
-    `);
+    `;
+    const params: any[] = [];
+
+    if (userSession && userSession.role === 'client') {
+      let clientName = '';
+      if (userSession.client_id) {
+        const [clients]: any = await pool.query('SELECT client_name FROM clients WHERE client_id = ?', [userSession.client_id]);
+        if (clients.length > 0) {
+          clientName = clients[0].client_name;
+        }
+      }
+      query += ' WHERE s.shipper = ? OR (s.shipper = ? AND ? <> "")';
+      params.push(userSession.username, clientName, clientName);
+    }
+
+    query += ' ORDER BY s.etd DESC';
+
+    const [rows] = await pool.query(query, params);
     res.json({
       success: true,
       message: '전체 선적 및 선박 정보를 불러왔습니다.',
@@ -59,6 +76,21 @@ export const getTrackingInfo = async (req: Request, res: Response) => {
     }
 
     const shipment = rows[0];
+
+    // Client ownership check
+    const userSession = (req.session as any).user;
+    if (userSession && userSession.role === 'client') {
+      let clientName = '';
+      if (userSession.client_id) {
+        const [clients]: any = await pool.query('SELECT client_name FROM clients WHERE client_id = ?', [userSession.client_id]);
+        if (clients.length > 0) {
+          clientName = clients[0].client_name;
+        }
+      }
+      if (shipment.shipper !== userSession.username && shipment.shipper !== clientName) {
+        return res.status(403).json({ success: false, message: '해당 선적 정보 조회 권한이 없습니다.' });
+      }
+    }
 
     // Fetch vehicle statistics for progress rate
     const [vehicles]: any = await pool.query(
@@ -300,7 +332,7 @@ export const updateShipmentStatus = async (req: Request, res: Response) => {
               `template_object=${JSON.stringify({
                 object_type: 'text',
                 text: messageText,
-                link: { web_url: 'http://localhost:3000/client/invoices', mobile_web_url: 'http://localhost:3000/client/invoices' },
+                link: { web_url: 'http://localhost:5173/invoices', mobile_web_url: 'http://localhost:5173/invoices' },
                 button_title: '청구서 보기'
               })}`,
               {

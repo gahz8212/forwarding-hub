@@ -20,6 +20,7 @@ import AdminBookingPage from "./pages/admin/AdminBookingPage";
 import AdminShipmentPage from "./pages/admin/AdminShipmentPage";
 import AdminSchedulePage from "./pages/admin/AdminSchedulePage";
 import AdminBillingPage from "./pages/admin/AdminBillingPage";
+import AdminDispatchPage from "./pages/admin/AdminDispatchPage";
 
 function App() {
   const { isAuthenticated, checkAuth, user } = useAuthStore();
@@ -73,6 +74,7 @@ function App() {
             <Route path="/admin/shipments" element={<AdminShipmentPage />} />
             <Route path="/admin/schedules" element={<AdminSchedulePage />} />
             <Route path="/admin/billing" element={<AdminBillingPage />} />
+            <Route path="/admin/dispatches" element={<AdminDispatchPage />} />
           </Route>
         </Route>
 

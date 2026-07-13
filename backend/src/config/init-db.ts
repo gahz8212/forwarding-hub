@@ -81,8 +81,9 @@ const initDB = async () => {
         eta DATE,
         doc_closing_date DATETIME NULL,
         cargo_closing_date DATETIME NULL,
-        invoice_amount DECIMAL(10, 2) COMMENT '청구될 총액',
-        invoice_currency VARCHAR(10) DEFAULT 'USD',
+        invoice_amount DECIMAL(15, 2) DEFAULT NULL,
+        invoice_currency VARCHAR(10) DEFAULT NULL,
+        invoice_no VARCHAR(50) DEFAULT NULL,
         is_paid BOOLEAN DEFAULT FALSE COMMENT '결제 여부',
         invoice_file_path VARCHAR(255) NULL,
         packing_list_file_path VARCHAR(255) NULL,
@@ -90,9 +91,6 @@ const initDB = async () => {
         packing_list_file_key VARCHAR(36) NULL,
         invoice_approved TINYINT DEFAULT 0,
         packing_approved TINYINT DEFAULT 0,
-        truck_date DATE NULL,
-        truck_plate_number VARCHAR(50) NULL,
-        truck_driver_phone VARCHAR(20) NULL,
         last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
@@ -124,6 +122,14 @@ const initDB = async () => {
         vin_photo_url TEXT NULL COMMENT '차대번호 사진 경로 (JSON 배열)',
         deregistration_no VARCHAR(100) NULL COMMENT '수출말소등록번호',
         customs_cleared BOOLEAN DEFAULT FALSE COMMENT '수출통관 완료 여부',
+        dispatch_method ENUM('CAR_CARRIER', 'DRIVER_DISPATCH', 'SELF_LOADER') NULL COMMENT '탁송 방식',
+        dispatch_status ENUM('PENDING', 'DISPATCHED', 'IN_TRANSIT', 'DELIVERED') DEFAULT 'PENDING' COMMENT '탁송 상태',
+        carrier_company VARCHAR(100) NULL COMMENT '운송사',
+        truck_plate_number VARCHAR(50) NULL COMMENT '캐리어 차량번호',
+        truck_driver_phone VARCHAR(20) NULL COMMENT '운송기사 연락처',
+        dispatch_date DATE NULL COMMENT '내륙 배차일',
+        inland_cost_krw DECIMAL(15, 0) DEFAULT 0 COMMENT '내륙 탁송 원가',
+        surcharge_cost_krw DECIMAL(15, 0) DEFAULT 0 COMMENT '할증 비용',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE
@@ -201,7 +207,8 @@ const initDB = async () => {
       CREATE TABLE invoices (
         invoice_no VARCHAR(50) PRIMARY KEY,
         client_id VARCHAR(50) NOT NULL,
-        bl_number VARCHAR(100) NULL,
+        publish_status VARCHAR(20) DEFAULT 'DRAFT',
+        bl_number VARCHAR(255) DEFAULT NULL,
         vessel_name VARCHAR(100) NOT NULL,
         pol VARCHAR(50) NOT NULL,
         pod VARCHAR(50) NOT NULL,
@@ -231,6 +238,7 @@ const initDB = async () => {
         applied_lashing_krw DECIMAL(15, 0) NOT NULL,
         applied_thc_krw DECIMAL(15, 0) NOT NULL,
         applied_wharfage_krw DECIMAL(15, 0) NOT NULL,
+        applied_inland_krw DECIMAL(15, 0) NOT NULL DEFAULT 0,
         FOREIGN KEY (invoice_no) REFERENCES invoices(invoice_no) ON DELETE CASCADE
       )
     `);

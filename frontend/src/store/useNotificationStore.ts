@@ -13,13 +13,13 @@ interface NotificationState {
   alerts: NotificationAlert[];
   missedAlerts: any[];
   showWindowsAlertDrawer: boolean;
-  activeDashboardShipment: { id: number; blNumber: string } | null;
+  activeDashboardShipment: any | null;
   addAlert: (alert: Omit<NotificationAlert, 'id' | 'time'>) => void;
   removeAlert: (id: string) => void;
   clearAll: () => void;
   setMissedAlerts: (updater: any[] | ((prev: any[]) => any[])) => void;
   setShowWindowsAlertDrawer: (val: boolean) => void;
-  setActiveDashboardShipment: (shipment: { id: number; blNumber: string } | null) => void;
+  setActiveDashboardShipment: (shipment: any | null) => void;
 }
 
 export const useNotificationStore = create<NotificationState>((set) => ({

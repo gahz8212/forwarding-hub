@@ -4,6 +4,8 @@ export interface CarItem {
   vin: string;
   model_name: string;
   cargo_type: 'SEDAN' | 'SUV' | 'TRUCK' | 'BUS';
+  inland_cost_krw?: number;
+  surcharge_cost_krw?: number;
 }
 
 export interface ClientMargin {
@@ -42,6 +44,7 @@ export interface CalculationResult {
     applied_lashing_krw: string;
     applied_thc_krw: string;
     applied_wharfage_krw: string;
+    applied_inland_krw: string;
   }>;
 }
 
@@ -131,8 +134,10 @@ export function calculateSafeInvoice(
       sellWharfageKRW = sellWharfageKRW.round(0, 1);
     }
 
+    let sellInlandKRW = new Big(car.inland_cost_krw || 0).plus(car.surcharge_cost_krw || 0);
+
     totalOceanUSD = totalOceanUSD.plus(sellOceanUSD);
-    totalLocalKRW = totalLocalKRW.plus(sellLashingKRW).plus(sellThcKRW).plus(sellWharfageKRW);
+    totalLocalKRW = totalLocalKRW.plus(sellLashingKRW).plus(sellThcKRW).plus(sellWharfageKRW).plus(sellInlandKRW);
 
     calculatedItems.push({
       vin: car.vin,
@@ -141,7 +146,8 @@ export function calculateSafeInvoice(
       applied_ocean_usd: sellOceanUSD.toFixed(2),
       applied_lashing_krw: sellLashingKRW.toFixed(0),
       applied_thc_krw: sellThcKRW.toFixed(0),
-      applied_wharfage_krw: sellWharfageKRW.toFixed(0)
+      applied_wharfage_krw: sellWharfageKRW.toFixed(0),
+      applied_inland_krw: sellInlandKRW.toFixed(0)
     });
   }
 

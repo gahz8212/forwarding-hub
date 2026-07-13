@@ -21,7 +21,14 @@ import {
   X,
   Car,
   BellRing,
-  CreditCard
+  CreditCard,
+  Globe,
+  Coins,
+  ChevronLeft,
+  ChevronRight,
+  Warehouse,
+  Ship,
+  Compass
 } from "lucide-react";
 import VehicleDashboardModal from "../../components/VehicleDashboardModal";
 import { useNotificationStore } from "../../store/useNotificationStore";
@@ -42,6 +49,16 @@ const EXTRACTION_KEYS: ExtractionKey[] = [
   { id: "cbm", label: "CBM", desc: "차량 부피 (CBM)", color: "bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-700" },
   { id: "drivability", label: "구동상태", desc: "Running / Towing / Forklift", color: "bg-pink-600 text-white hover:bg-pink-700 border-pink-700" },
   { id: "deregistration_no", label: "말소증번호", desc: "수출말소등록번호", color: "bg-rose-600 text-white hover:bg-rose-700 border-rose-700" }
+];
+
+const STAGES = [
+  { value: "Documents Verified", label: "서류 검증 완료", icon: FileText, activeColor: "text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-800" },
+  { value: "Trucking", label: "내륙 운송 중", icon: Truck, activeColor: "text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800" },
+  { value: "Gate In", label: "CY 입고 완료", icon: Warehouse, activeColor: "text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800" },
+  { value: "Loaded on Vessel", label: "선적 완료", icon: Ship, activeColor: "text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800" },
+  { value: "Departed", label: "출항 완료", icon: Compass, activeColor: "text-pink-600 bg-pink-50 border-pink-200 dark:bg-pink-950/40 dark:border-pink-800" },
+  { value: "In Transit", label: "해상 운송 중", icon: Globe, activeColor: "text-purple-600 bg-purple-50 border-purple-200 dark:bg-purple-950/40 dark:border-purple-800" },
+  { value: "Delivered", label: "배달 완료", icon: Check, activeColor: "text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-950/40 dark:border-teal-800" }
 ];
 
 export default function AdminShipmentPage() {
@@ -83,10 +100,10 @@ export default function AdminShipmentPage() {
   const [copied, setCopied] = useState<boolean>(false);
 
   // 로로선 차량 대시보드 상태 및 화주 대기 서류 알림 토스트 상태 관리 (Zustand 전역 스토어 연동)
-  const { 
-    missedAlerts, 
-    setMissedAlerts, 
-    showWindowsAlertDrawer, 
+  const {
+    missedAlerts,
+    setMissedAlerts,
+    showWindowsAlertDrawer,
     setShowWindowsAlertDrawer,
     activeDashboardShipment,
     setActiveDashboardShipment
@@ -111,15 +128,15 @@ export default function AdminShipmentPage() {
   const handleOpenDebitNoteGenerator = async (shipment: any) => {
     setBillingShipment(shipment);
     setInvoiceNoInput(`INV-${shipment.bl_number}`);
-    
+
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
     setDueDateInput(nextWeek.toISOString().split('T')[0]);
-    
+
     setCalculationResult(null);
     setBillingError("");
     setIsBillingModalOpen(true);
-    
+
     try {
       const [clientsRes, rateRes] = await Promise.all([
         axios.get("http://localhost:5000/api/billing/clients", { withCredentials: true }),
@@ -132,7 +149,7 @@ export default function AdminShipmentPage() {
       if (clientsRes.data.success) {
         setBillingClients(clientsRes.data.clients);
         // Match shipper name to client name
-        const matched = clientsRes.data.clients.find((c: any) => 
+        const matched = clientsRes.data.clients.find((c: any) =>
           c.client_name.includes(shipment.shipper) || shipment.shipper.includes(c.client_name)
         );
         if (matched) {
@@ -162,7 +179,7 @@ export default function AdminShipmentPage() {
     setBillingError("");
     try {
       const res = await axios.post("http://localhost:5000/api/billing/invoices/calculate", {
-        shipmentId: billingShipment.id,
+        shipmentIds: [billingShipment.id],
         clientId: selectedBillingClientId,
         exchangeRate: parseFloat(exchangeRateInput)
       }, { withCredentials: true });
@@ -178,6 +195,16 @@ export default function AdminShipmentPage() {
       setCalculating(false);
     }
   };
+
+  // 화주 정보, 적용 환율 등이 바뀌거나 모달이 열리면 자동으로 정산 계산 실행
+  useEffect(() => {
+    if (isBillingModalOpen && selectedBillingClientId && exchangeRateInput) {
+      const delayDebounceFn = setTimeout(() => {
+        handleCalculateInvoice();
+      }, 300); // 입력 후 0.3초 대기 후 백엔드 요청 (디바운싱)
+      return () => clearTimeout(delayDebounceFn);
+    }
+  }, [isBillingModalOpen, selectedBillingClientId, exchangeRateInput]);
 
   const handleSaveInvoice = async () => {
     if (!calculationResult || !invoiceNoInput || !dueDateInput) {
@@ -201,14 +228,15 @@ export default function AdminShipmentPage() {
         bl_fee_krw: parseFloat(calculationResult.master.bl_fee_krw),
         customs_fee_krw: parseFloat(calculationResult.master.customs_fee_krw),
         due_date: dueDateInput,
-        items: calculationResult.items
+        items: calculationResult.items,
+        shipmentIds: [billingShipment.id]
       };
 
       const res = await axios.post("http://localhost:5000/api/billing/invoices", payload, { withCredentials: true });
       if (res.data.success) {
-        alert("정산서(데빗노트)가 정상적으로 발행 및 저장되었습니다!");
+        alert("정산서(가승인)가 성공적으로 임시 발행되었습니다!\n\n발행된 데빗노트 메뉴에서 화주에게 전송할 수 있습니다.");
         setIsBillingModalOpen(false);
-        fetchShipments();
+        fetchShipments(true);
       }
     } catch (err: any) {
       console.error("Save invoice error:", err);
@@ -218,8 +246,10 @@ export default function AdminShipmentPage() {
     }
   };
 
-  const fetchShipments = () => {
-    setLoading(true);
+  const fetchShipments = (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
     axios
       .get("http://localhost:5000/api/tracking/all", { withCredentials: true })
       .then((res) => {
@@ -232,7 +262,9 @@ export default function AdminShipmentPage() {
         setError("선적 목록을 불러오는 중 오류가 발생했습니다.");
       })
       .finally(() => {
-        setLoading(false);
+        if (!silent) {
+          setLoading(false);
+        }
       });
   };
 
@@ -247,7 +279,7 @@ export default function AdminShipmentPage() {
     socket.on("shipment_status_changed", (data) => {
       console.log("실시간 선적 상태 업데이트 수신:", data);
       // 목록 갱신
-      fetchShipments();
+      fetchShipments(true);
     });
 
     // 화주 대기 서류 알림 토스트 상태 및 미확인 알림창 히스토리 상태 관리
@@ -255,10 +287,10 @@ export default function AdminShipmentPage() {
       console.log("화주 서류 업로드 수신:", data);
       const alertId = `shipper_alert_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const newAlert = { ...data, id: alertId, timestamp: new Date().toLocaleTimeString() };
-      
+
       // 알림 노출
       setDocAlert(newAlert);
-      
+
       // 15초 후 자동 닫히며 미확인 리스트에 저장
       const timer = setTimeout(() => {
         setDocAlert(current => {
@@ -274,7 +306,7 @@ export default function AdminShipmentPage() {
           return current;
         });
       }, 15000);
-      
+
       // 타이머 등록
       setAlertTimers(prev => ({ ...prev, [alertId]: timer }));
     });
@@ -309,7 +341,7 @@ export default function AdminShipmentPage() {
       if (res.data.success) {
         setVerifierGridData(res.data.data.gridData);
         setVerifierFileName(res.data.data.fileName);
-        
+
         // 화주별 매핑 설정을 로드합니다.
         try {
           const mappingRes = await axios.get(`http://localhost:5000/api/files/mapping/${encodeURIComponent(verifierShipperName)}`, {
@@ -361,10 +393,10 @@ export default function AdminShipmentPage() {
       );
       if (res.data.success) {
         setIsVerifierOpen(false);
-        fetchShipments();
+        fetchShipments(true);
         const targetShipment = shipments.find(s => s.bl_number === blNumber);
         if (targetShipment && window.confirm(`${res.data.message}\n\n화주가 아직 차량 사진 3종을 업로드하지 않은 경우, 포워더 대행을 위해 차량 현황판으로 이동하시겠습니까?`)) {
-          setActiveDashboardShipment({ id: targetShipment.id, blNumber: targetShipment.bl_number });
+          setActiveDashboardShipment(targetShipment);
         } else if (!targetShipment) {
           alert(res.data.message);
         }
@@ -388,7 +420,7 @@ export default function AdminShipmentPage() {
       if (res.data.success) {
         alert(res.data.message);
         setIsVerifierOpen(false);
-        fetchShipments();
+        fetchShipments(true);
       }
     } catch (err: any) {
       alert(err.response?.data?.message || "서류 재요청 처리 실패");
@@ -422,7 +454,7 @@ export default function AdminShipmentPage() {
         setTruckDate("");
         setTruckPlate("");
         setTruckPhone("");
-        fetchShipments();
+        fetchShipments(true);
       }
     } catch (err: any) {
       alert(err.response?.data?.message || "트럭 배정 등록 중 에러 발생");
@@ -434,16 +466,26 @@ export default function AdminShipmentPage() {
   // 3. 수동 상태 업데이트
   const handleStatusChange = async (blNumber: string, nextStatus: string) => {
     try {
+      // 1. 즉시 로컬 상태 변경하여 슬라이더가 딜레이 없이 움직이도록 낙관적 업데이트 수행
+      setShipments(prevShipments =>
+        prevShipments.map(s =>
+          s.bl_number === blNumber ? { ...s, status: nextStatus } : s
+        )
+      );
+
+      // 2. 서버 업데이트 요청
       const res = await axios.post(
         "http://localhost:5000/api/tracking/update-status",
         { blNumber, status: nextStatus },
         { withCredentials: true }
       );
       if (res.data.success) {
-        alert(res.data.message);
-        fetchShipments();
+        // 3. 백그라운드 서버 동기화 수행
+        fetchShipments(true);
       }
     } catch (err: any) {
+      // 에러 발생 시 원복하기 위해 강제 재동기화
+      fetchShipments(true);
       alert(err.response?.data?.message || "상태 변경 실패");
     }
   };
@@ -594,7 +636,7 @@ export default function AdminShipmentPage() {
       if (isAppend) {
         const blockCols = new Set<number>();
         additionalSelectionBlocks.forEach(b => {
-          for(let c = b.minCol; c <= b.maxCol; c++) blockCols.add(c);
+          for (let c = b.minCol; c <= b.maxCol; c++) blockCols.add(c);
         });
         cols.forEach(c => blockCols.add(c));
         newCols = Array.from(blockCols);
@@ -651,7 +693,7 @@ export default function AdminShipmentPage() {
       if (isAppend) {
         const blockCols = new Set<number>();
         additionalSelectionBlocks.forEach(b => {
-          for(let c = b.minCol; c <= b.maxCol; c++) blockCols.add(c);
+          for (let c = b.minCol; c <= b.maxCol; c++) blockCols.add(c);
         });
         cols.forEach(c => blockCols.add(c));
         newCols = Array.from(blockCols);
@@ -707,8 +749,8 @@ export default function AdminShipmentPage() {
             clickedBadgeQueue.forEach(k => delete updated[k]);
 
             let colOffset = 0;
-            
-            const sortedCols = [...selectedColIndices].sort((a,b)=>a-b);
+
+            const sortedCols = [...selectedColIndices].sort((a, b) => a - b);
             clickedBadgeQueue.forEach((keyId) => {
               const colIdx = sortedCols[colOffset];
               if (colIdx !== undefined) {
@@ -832,7 +874,7 @@ export default function AdminShipmentPage() {
         responseType: 'blob',
         withCredentials: true
       });
-      
+
       const blob = new Blob([response.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -849,224 +891,177 @@ export default function AdminShipmentPage() {
   };
 
   return (
-    <div className="animate-fade-in-up space-y-6 max-w-[95%] mx-auto w-full min-h-[calc(100vh-12rem)] flex flex-col justify-start py-6 relative">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-        <div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-800">화물 및 선적 전체 관리 (어드민 전용)</h2>
-          <p className="text-slate-500 text-sm mt-1">포워더 입장에서 진행 상태를 업데이트하고 제출된 관세 서류를 검증합니다.</p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-        <div className="p-6 border-b bg-slate-50">
-          <h3 className="text-base font-bold text-slate-800">운송 트래킹 현황 목록</h3>
+    <div className="max-w-[95%] mx-auto w-full min-h-[calc(100vh-12rem)] flex flex-col justify-start py-6 relative">
+      <div className="animate-fade-in-up space-y-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-800">화물 및 선적 전체 관리 (어드민 전용)</h2>
+            <p className="text-slate-500 text-sm mt-1">포워더 입장에서 진행 상태를 업데이트하고 제출된 관세 서류를 검증합니다.</p>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="p-12 text-center text-slate-500 font-bold">로딩 중...</div>
-          ) : error ? (
-            <div className="p-12 text-center text-rose-500 font-bold">{error}</div>
-          ) : shipments.length === 0 ? (
-            <div className="p-12 text-center text-slate-400">등록된 선적 정보가 없습니다.</div>
-          ) : (
-            <table className="w-full text-left border-collapse text-sm block md:table">
-              <thead className="hidden md:table-header-group bg-slate-50 text-slate-500 uppercase tracking-wider text-xs border-b">
-                <tr>
-                  <th className="p-4 font-bold">B/L 번호</th>
-                  <th className="p-4 font-bold">화주명</th>
-                  <th className="p-4 font-bold">선박명</th>
-                  <th className="p-4 font-bold">POL (출발)</th>
-                  <th className="p-4 font-bold">POD (도착)</th>
-                  <th className="p-4 font-bold">ETD / ETA</th>
-                  <th className="p-4 font-bold">상태</th>
-                  <th className="p-4 font-bold">운송 업무 제어</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-semibold block md:table-row-group p-3 md:p-0 space-y-3 md:space-y-0">
-                {shipments.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50 transition block md:table-row rounded-xl border border-slate-100 md:border-0 md:rounded-none bg-white shadow-sm md:shadow-none mb-3 md:mb-0 overflow-hidden">
-                    <td className="p-3 md:p-4 text-slate-800 font-bold block md:table-cell border-b md:border-b-0 border-slate-50">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">B/L 번호</span>
-                      {s.bl_number}
-                    </td>
-                    <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">화주명</span>
-                      {s.shipper}
-                    </td>
-                    <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박명</span>
-                      {s.vessel_name}
-                    </td>
-                    <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POL</span>
-                      {s.pol}
-                    </td>
-                    <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POD</span>
-                      {s.pod}
-                    </td>
-                    <td className="p-3 md:p-4 text-slate-500 text-xs block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">ETD / ETA</span>
-                      <div>D: {s.etd ? s.etd.split("T")[0] : "-"}</div>
-                      <div className="text-slate-400">A: {s.eta ? s.eta.split("T")[0] : "-"}</div>
-                    </td>
-                    <td className="p-3 md:p-4 block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">상태</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.status === "Pending Documents"
-                          ? "bg-red-50 text-red-600 border border-red-100"
-                          : s.status === "Documents Uploaded"
-                            ? "bg-amber-50 text-amber-600 border border-amber-100 animate-pulse"
-                            : "bg-blue-100 text-blue-700"
-                        }`}>
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="p-3 md:p-4 align-top block md:table-cell bg-slate-50 md:bg-transparent border-t border-slate-100 md:border-0">
-                      {/* 공통 기능: 차량 현황판 및 정산서 발행 */}
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        <button
-                          onClick={() => setActiveDashboardShipment({ id: s.id, blNumber: s.bl_number })}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
-                        >
-                          <Car size={14} /> 차량 현황판 (사진/수기입력)
-                        </button>
-                        <button
-                          onClick={() => handleOpenDebitNoteGenerator(s)}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
-                        >
-                          <CreditCard size={14} /> 정산서 발행 (Debit Note)
-                        </button>
-                      </div>
+        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+          <div className="p-6 border-b bg-slate-50 flex items-center justify-between">
+            <h3 className="text-base font-bold text-slate-800">운송 트래킹 현황 목록</h3>
+          </div>
 
-                      {/* 1단계: 서류 업로드 대기 */}
-                      {s.status === "Pending Documents" && (
-                        <span className="text-xs text-slate-400 font-medium italic">화주의 인보이스/패킹리스트 제출을 대기하고 있습니다.</span>
-                      )}
-
-                      {/* 2단계: 화주가 서류 제출 완료 ➔ 어드민이 단일 서류검증 버튼으로 한 화면에서 확인 */}
-                      {s.status === "Documents Uploaded" && (
-                        <div className="space-y-2">
-                          <div>
-                            <button
-                              onClick={() => {
-                                setVerifierBlNumber(s.bl_number);
-                                setVerifierShipperName(s.shipper || "일반 화주");
-                                setVerifierInvoiceKey(s.invoice_file_key);
-                                setVerifierPackingKey(s.packing_list_file_key);
-                                setVerifierActiveTab("invoice");
-                                setIsVerifierOpen(true);
-                              }}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
-                            >
-                              <Eye size={14} /> 서류 검증 (인보이스/패킹)
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 3단계: 서류 확인 완료 ➔ 트럭 운송 수동 배정 */}
-                      {s.status === "Documents Verified" && (
-                        <div className="space-y-3">
-                          {activeAssignBl !== s.bl_number ? (
-                            <button
-                              onClick={() => {
-                                setActiveAssignBl(s.bl_number);
-                                setTruckDate(s.truck_date ? s.truck_date.split("T")[0] : "");
-                                setTruckPlate(s.truck_plate_number || "");
-                                setTruckPhone(s.truck_driver_phone || "");
-                              }}
-                              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition shadow-sm"
-                            >
-                              <Truck size={14} /> 운송 차량 배정 등록
-                            </button>
-                          ) : (
-                            <form onSubmit={(e) => handleAssignTruckSubmit(e, s.bl_number)} className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs space-y-2 max-w-xs">
-                              <div className="font-bold text-slate-700">로컬 트럭 정보 매핑</div>
-                              <div className="space-y-1">
-                                <label className="block text-slate-500 font-bold">운송 예정일</label>
-                                <input
-                                  type="date"
-                                  className="w-full border rounded p-1 text-slate-700"
-                                  value={truckDate}
-                                  onChange={(e) => setTruckDate(e.target.value)}
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="block text-slate-500 font-bold">차량 번호</label>
-                                <input
-                                  type="text"
-                                  placeholder="예: 서울82가1234"
-                                  className="w-full border rounded p-1 text-slate-700"
-                                  value={truckPlate}
-                                  onChange={(e) => setTruckPlate(e.target.value)}
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="block text-slate-500 font-bold">기사 연락처</label>
-                                <input
-                                  type="text"
-                                  placeholder="예: 010-1234-5678"
-                                  className="w-full border rounded p-1 text-slate-700"
-                                  value={truckPhone}
-                                  onChange={(e) => setTruckPhone(e.target.value)}
-                                />
-                              </div>
-                              <div className="flex gap-2 justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveAssignBl(null)}
-                                  className="bg-white border text-slate-600 px-3 py-1 rounded font-bold"
-                                >
-                                  취소
-                                </button>
-                                <button
-                                  type="submit"
-                                  disabled={assigning}
-                                  className="bg-blue-600 text-white px-3 py-1 rounded font-bold hover:bg-blue-700 transition disabled:opacity-50"
-                                >
-                                  배정 등록
-                                </button>
-                              </div>
-                            </form>
-                          )}
-                        </div>
-                      )}
-
-                      {/* 4단계 및 이후 단계: 트럭 정보 표시 및 진행 단계 수동 제어(드롭다운) */}
-                      {["Trucking", "Gate In", "Loaded on Vessel", "Departed", "In Transit", "Delivered"].includes(s.status) && (
-                        <div className="space-y-3">
-                          {/* 트럭 정보 */}
-                          <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs space-y-1 max-w-sm">
-                            <div className="text-slate-500 font-bold flex items-center gap-1"><Truck size={12} /> 트럭 운송 매핑 정보</div>
-                            <div className="text-slate-700 font-semibold">운송일: {s.truck_date ? s.truck_date.split("T")[0] : "-"}</div>
-                            <div className="text-slate-700 font-semibold">차량: {s.truck_plate_number || "-"} | 기사: {s.truck_driver_phone || "-"}</div>
-                          </div>
-
-                          {/* 상태 전이 수동 변경 셀렉트박스 */}
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-500">운송 단계 제어:</span>
-                            <select
-                              value={s.status}
-                              onChange={(e) => handleStatusChange(s.bl_number, e.target.value)}
-                              className="border rounded px-2.5 py-1 text-xs bg-white font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
-                            >
-                              <option value="Trucking">Trucking (운송 중)</option>
-                              <option value="Gate In">Gate In (CY 입고완료)</option>
-                              <option value="Loaded on Vessel">Loaded on Vessel (선적 완료)</option>
-                              <option value="Departed">Departed (출항)</option>
-                              <option value="In Transit">In Transit (해상 운송 중)</option>
-                              <option value="Delivered">Delivered (배달 완료)</option>
-                            </select>
-                          </div>
-                        </div>
-                      )}
-                    </td>
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="p-12 text-center text-slate-500 font-bold">로딩 중...</div>
+            ) : error ? (
+              <div className="p-12 text-center text-rose-500 font-bold">{error}</div>
+            ) : shipments.length === 0 ? (
+              <div className="p-12 text-center text-slate-400">등록된 선적 정보가 없습니다.</div>
+            ) : (
+              <table className="w-full text-left border-collapse text-sm block md:table">
+                <thead className="hidden md:table-header-group bg-slate-50 text-slate-500 uppercase tracking-wider text-xs border-b">
+                  <tr>
+                    <th className="p-4 font-bold">B/L 번호</th>
+                    <th className="p-4 font-bold">화주명</th>
+                    <th className="p-4 font-bold">선박명</th>
+                    <th className="p-4 font-bold">POL (출발)</th>
+                    <th className="p-4 font-bold">POD (도착)</th>
+                    <th className="p-4 font-bold">ETD / ETA</th>
+                    <th className="p-4 font-bold">상태</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-semibold block md:table-row-group p-3 md:p-0 space-y-3 md:space-y-0">
+                  {shipments.map((s) => (
+                    <tr
+                      key={s.id}
+                      onClick={() => setActiveDashboardShipment(s)}
+                      className="cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition block md:table-row rounded-xl border border-slate-100 md:border-0 md:rounded-none bg-white dark:bg-slate-900 shadow-sm md:shadow-none mb-3 md:mb-0 overflow-hidden"
+                      title="클릭 시 차량 관리 대시보드 열기"
+                    >
+                      <td className="p-3 md:p-4 text-slate-800 font-bold block md:table-cell border-b md:border-b-0 border-slate-50">
+                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">B/L 번호</span>
+                        {s.bl_number}
+                      </td>
+                      <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
+                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">화주명</span>
+                        {s.shipper}
+                      </td>
+                      <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
+                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박명</span>
+                        {s.vessel_name}
+                      </td>
+                      <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
+                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POL</span>
+                        {s.pol}
+                      </td>
+                      <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
+                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POD</span>
+                        {s.pod}
+                      </td>
+                      <td className="p-3 md:p-4 text-slate-500 text-xs block md:table-cell">
+                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">ETD / ETA</span>
+                        <div>D: {s.etd ? s.etd.split("T")[0] : "-"}</div>
+                        <div className="text-slate-400">A: {s.eta ? s.eta.split("T")[0] : "-"}</div>
+                      </td>
+                      <td className="p-3 md:p-4 align-top block md:table-cell bg-slate-50 md:bg-transparent border-t border-slate-100 md:border-0">
+
+                        {/* 1단계: 서류 업로드 대기 */}
+                        {s.status === "Pending Documents" && (
+                          <span className="text-xs text-slate-400 font-medium italic">화주의 인보이스/패킹리스트 제출을 대기하고 있습니다.</span>
+                        )}
+
+                        {/* 2단계: 화주가 서류 제출 완료 ➔ 어드민이 단일 서류검증 버튼으로 한 화면에서 확인 */}
+                        {s.status === "Documents Uploaded" && (
+                          <div className="space-y-2">
+                            <div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation(); // 로우 클릭 이벤트 전파 차단
+                                  setVerifierBlNumber(s.bl_number);
+                                  setVerifierShipperName(s.shipper || "일반 화주");
+                                  setVerifierInvoiceKey(s.invoice_file_key);
+                                  setVerifierPackingKey(s.packing_list_file_key);
+                                  setVerifierActiveTab("invoice");
+                                  setIsVerifierOpen(true);
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
+                              >
+                                <Eye size={14} /> 서류 검증 (인보이스/패킹)
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3단계 및 이후 단계: 진행 단계 제어 (페이지네이션 스타일 스와이퍼) */}
+                        {["Documents Verified", "Trucking", "Gate In", "Loaded on Vessel", "Departed", "In Transit", "Delivered"].includes(s.status) && (
+                          <div className="space-y-3">
+                            {(() => {
+                              const currentIdx = STAGES.findIndex(stage => stage.value === s.status);
+                              if (currentIdx === -1) return null;
+
+                              const cardStepWidth = 120; // 110px card width + 10px gap (approx 50% larger than 74px + 8px gap)
+                              const translateX = -(currentIdx - 1) * cardStepWidth;
+
+                              return (
+                                <div className="flex flex-col gap-1 mt-1 p-3  max-w-[374px] overflow-hidden select-none">
+
+
+                                  {/* Viewport (Mask Layer) */}
+                                  <div className="relative w-[350px] h-[74px] mt-0.5 overflow-hidden">
+                                    {/* Conveyor Belt */}
+                                    <div
+                                      className="absolute flex gap-[10px] h-[72px] items-center"
+                                      style={{
+                                        transform: `translateX(${translateX}px)`,
+                                        transition: 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+                                        width: `${STAGES.length * 110 + (STAGES.length - 1) * 10}px`
+                                      }}
+                                    >
+                                      {STAGES.map((stage, idx) => {
+                                        const StageIcon = stage.icon;
+                                        const isActive = idx === currentIdx;
+
+                                        if (isActive) {
+                                          return (
+                                            <div
+                                              key={stage.value}
+                                              className={`w-[110px] h-[68px] shrink-0 flex flex-col items-center justify-center p-1.5 rounded-lg border font-black ${stage.activeColor} shadow-sm select-none relative overflow-hidden`}
+                                            >
+                                              <div className="absolute top-1 left-2 text-[6px] font-bold uppercase tracking-wider opacity-60">Active</div>
+                                              <StageIcon size={18} className="mb-0.5 animate-pulse" />
+                                              <span className="text-[11px] tracking-tight text-center leading-none truncate w-full">{stage.label}</span>
+                                            </div>
+                                          );
+                                        } else {
+                                          const isVisible = Math.abs(idx - currentIdx) <= 1;
+                                          return (
+                                            <button
+                                              key={stage.value}
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation(); // 로우 클릭 이벤트 전파 차단
+                                                handleStatusChange(s.bl_number, stage.value);
+                                              }}
+                                              disabled={!isVisible}
+                                              className={`w-[110px] h-[60px] shrink-0 flex flex-col items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition duration-150 shadow-sm group cursor-pointer ${!isVisible ? 'opacity-30' : ''
+                                                }`}
+                                              title={`클릭 시 '${stage.label}'(으)로 이동`}
+                                            >
+                                              <StageIcon size={15} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors mb-0.5" />
+                                              <span className="text-[10px] font-bold text-slate-500 group-hover:text-slate-700 dark:text-slate-400 transition-colors truncate w-full text-center">{stage.label}</span>
+                                            </button>
+                                          );
+                                        }
+                                      })}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1113,8 +1108,8 @@ export default function AdminShipmentPage() {
                 <button
                   onClick={() => setVerifierActiveTab("invoice")}
                   className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${verifierActiveTab === "invoice"
-                      ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                     }`}
                 >
                   <FileText size={14} /> 상업송장 (Invoice)
@@ -1122,8 +1117,8 @@ export default function AdminShipmentPage() {
                 <button
                   onClick={() => setVerifierActiveTab("packingList")}
                   className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${verifierActiveTab === "packingList"
-                      ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                     }`}
                 >
                   <FileSpreadsheet size={14} /> 패킹리스트 (Packing List)
@@ -1192,10 +1187,10 @@ export default function AdminShipmentPage() {
                               <th
                                 key={colIndex}
                                 className={`min-w-[130px] p-2 border border-slate-200 dark:border-slate-800 text-center relative select-none cursor-pointer transition ${isSelected
-                                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-bold border-blue-300 dark:border-blue-700'
-                                    : isDragOver
-                                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-dashed border-indigo-400'
-                                      : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                  ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-bold border-blue-300 dark:border-blue-700'
+                                  : isDragOver
+                                    ? 'bg-indigo-50 dark:bg-indigo-950/40 border-dashed border-indigo-400'
+                                    : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
                                   }`}
                                 onMouseDown={(e) => handleHeaderMouseDown(colIndex, e)}
                                 onMouseEnter={(e) => handleHeaderMouseEnter(colIndex, e)}
@@ -1261,16 +1256,16 @@ export default function AdminShipmentPage() {
                                 <td
                                   key={colIndex}
                                   className={`p-2.5 border whitespace-normal break-all max-w-[250px] transition select-none ${isHighlighted
-                                      ? 'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-400 dark:border-indigo-700 text-indigo-900 dark:text-indigo-100 font-bold'
-                                      : isSelected
-                                        ? 'bg-blue-50/70 dark:bg-blue-950/10 border-slate-200 dark:border-slate-800'
-                                        : isDragOver
-                                          ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-slate-200 dark:border-slate-800'
-                                          : cellBadges.length > 0 // 배지가 위치하는 라벨 셀에 부드러운 강조 배경
-                                            ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-700'
-                                            : isMappedCell
-                                              ? 'bg-blue-50 dark:bg-blue-900/20 border-x border-dashed border-blue-300 dark:border-blue-800'
-                                              : 'border-slate-200 dark:border-slate-800'
+                                    ? 'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-400 dark:border-indigo-700 text-indigo-900 dark:text-indigo-100 font-bold'
+                                    : isSelected
+                                      ? 'bg-blue-50/70 dark:bg-blue-950/10 border-slate-200 dark:border-slate-800'
+                                      : isDragOver
+                                        ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-slate-200 dark:border-slate-800'
+                                        : cellBadges.length > 0 // 배지가 위치하는 라벨 셀에 부드러운 강조 배경
+                                          ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-700'
+                                          : isMappedCell
+                                            ? 'bg-blue-50 dark:bg-blue-900/20 border-x border-dashed border-blue-300 dark:border-blue-800'
+                                            : 'border-slate-200 dark:border-slate-800'
                                     }`}
                                   onMouseDown={(e) => handleCellMouseDown(rowIndex, colIndex, e)}
                                   onMouseEnter={(e) => handleCellMouseEnter(rowIndex, colIndex, e)}
@@ -1349,10 +1344,10 @@ export default function AdminShipmentPage() {
                           onDragStart={(e) => e.dataTransfer.setData("text/plain", key.id)}
                           onClick={() => handleBadgeClick(key.id)}
                           className={`flex items-center justify-between p-2 border rounded-lg cursor-grab active:cursor-grabbing transition text-[11px] font-bold shadow-sm select-none ${isMapped
-                              ? `${key.color} border-slate-300 dark:border-slate-700`
-                              : isInQueue
-                                ? "bg-indigo-50 border-indigo-400 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-300"
-                                : "bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                            ? `${key.color} border-slate-300 dark:border-slate-700`
+                            : isInQueue
+                              ? "bg-indigo-50 border-indigo-400 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-300"
+                              : "bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
                             }`}
                           title={key.desc}
                         >
@@ -1503,9 +1498,9 @@ export default function AdminShipmentPage() {
       {/* 로로선 차량 현황 모달 */}
       {activeDashboardShipment && (
         <VehicleDashboardModal
-          shipmentId={activeDashboardShipment.id}
-          blNumber={activeDashboardShipment.blNumber}
+          shipment={activeDashboardShipment}
           onClose={() => setActiveDashboardShipment(null)}
+          onOpenDraftGenerator={(s) => handleOpenDebitNoteGenerator(s)}
         />
       )}
 
@@ -1533,7 +1528,7 @@ export default function AdminShipmentPage() {
                     {docAlert.photoType === 'docs' ? '새로운 서류/차대 사진 도착' : '새로운 차량 외관 사진 도착'}
                   </h4>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    {docAlert.photoType === 'docs' 
+                    {docAlert.photoType === 'docs'
                       ? <><span className="font-bold text-slate-700 dark:text-slate-350">{docAlert.shipperName || '화주'}</span>로부터 말소증/차대각인사진이 도착</>
                       : <><span className="font-bold text-slate-700 dark:text-slate-350">{docAlert.shipperName || '화주'}</span>로부터 차량 외관 사진 도착</>
                     }
@@ -1541,7 +1536,7 @@ export default function AdminShipmentPage() {
                   </p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   // 알림창 닫기를 눌렀을 때도 히스토리에 저장
                   setMissedAlerts(prev => {
@@ -1549,15 +1544,15 @@ export default function AdminShipmentPage() {
                     return [...prev, { ...docAlert, saved: true }];
                   });
                   setDocAlert(null);
-                }} 
+                }}
                 className="text-slate-400 hover:text-slate-600"
               >
                 <X size={18} />
               </button>
             </div>
-            <button 
+            <button
               onClick={() => {
-                setActiveDashboardShipment({ id: docAlert.shipmentId, blNumber: docAlert.blNumber });
+                setActiveDashboardShipment({ id: docAlert.shipmentId, bl_number: docAlert.blNumber });
                 setDocAlert(null);
               }}
               className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -1567,215 +1562,300 @@ export default function AdminShipmentPage() {
           </div>
         </>
       )}
-      {/* 정산서 발행 및 데빗노트 생성 모달 */}
+      {/* --- 정산서(Debit Note) 발행 모달 --- */}
       {isBillingModalOpen && billingShipment && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden border border-slate-100 my-8">
-            <div className="px-6 py-4 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-lg">데빗노트 정산서 발행</h3>
-                <p className="text-xs text-slate-300 mt-0.5">B/L 번호: {billingShipment.bl_number} | 선박: {billingShipment.vessel_name}</p>
+          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-100 my-2 md:my-4">
+            {/* Modal Header */}
+            <div className="px-4 py-2.5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <FileText size={20} />
+                <h3 className="font-bold text-lg">가승인(Draft) 정산서 발행</h3>
               </div>
-              <button 
-                onClick={() => setIsBillingModalOpen(false)}
-                className="text-white/60 hover:text-white transition font-bold"
-              >
-                닫기
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
-              {/* Parameters input grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">인보이스 번호</label>
-                  <input
-                    type="text"
-                    value={invoiceNoInput}
-                    onChange={(e) => setInvoiceNoInput(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">정산 대상 화주 선택</label>
-                  <select
-                    value={selectedBillingClientId}
-                    onChange={(e) => setSelectedBillingClientId(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white"
-                  >
-                    {billingClients.map((c) => (
-                      <option key={c.client_id} value={c.client_id}>
-                        {c.client_name} ({c.client_id})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-xs font-bold text-slate-500">적용 환율 (USD ➔ KRW)</label>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          setBillingError("");
-                          const res = await axios.get("http://localhost:5000/api/billing/exchange-rate", { withCredentials: true });
-                          if (res.data.success) {
-                            setExchangeRateInput(String(res.data.rate));
-                          }
-                        } catch (err: any) {
-                          setBillingError("실시간 환율을 가져오지 못했습니다.");
-                        }
-                      }}
-                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold transition flex items-center gap-0.5"
-                    >
-                      <RefreshCw size={10} /> 실시간 갱신
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={exchangeRateInput}
-                      onChange={(e) => setExchangeRateInput(e.target.value)}
-                      className="w-full pl-3 pr-10 py-2 border rounded-xl focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white"
-                    />
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs font-bold">₩</div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">납기일 (Due Date)</label>
-                  <input
-                    type="date"
-                    value={dueDateInput}
-                    onChange={(e) => setDueDateInput(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl focus:outline-none focus:border-indigo-500 text-sm font-semibold bg-white"
-                  />
-                </div>
-
-                <div className="md:col-span-2 flex items-end">
+              <div className="flex items-center gap-2">
+                {calculationResult && (
                   <button
-                    onClick={handleCalculateInvoice}
-                    disabled={calculating}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-xl text-sm transition active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+                    onClick={handleSaveInvoice}
+                    disabled={savingInvoice}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-md shadow-indigo-600/10"
                   >
-                    {calculating ? (
+                    {savingInvoice ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        계산 중...
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        발행 중...
                       </>
                     ) : (
-                      <>정산 금액 계산하기 (CBM / 마진 적용)</>
+                      <>임시 정산서(Draft) 저장 및 발행</>
                     )}
                   </button>
-                </div>
+                )}
+                <button
+                  onClick={() => setIsBillingModalOpen(false)}
+                  className="px-4 py-2 border border-white/20 rounded-xl hover:bg-white/10 font-bold text-xs text-white transition"
+                >
+                  닫기
+                </button>
               </div>
+            </div>
 
-              {/* Error box */}
-              {billingError && (
-                <div className="p-4 bg-red-50 text-red-800 rounded-xl border border-red-200 text-xs font-bold flex items-center gap-2">
-                  <AlertCircle size={16} />
-                  <span>{billingError}</span>
-                </div>
-              )}
+            {/* Print Content Area (Styled like Debit Note Sheet) */}
+            <div className="p-4 md:p-6 space-y-4  flex-1 text-slate-800 bg-slate-50/30">
 
-              {/* Calculation results */}
-              {calculationResult && (
-                <div className="space-y-6">
-                  {/* Summary Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-slate-50/50 p-4 border border-slate-100 rounded-2xl">
-                      <p className="text-xs font-bold text-slate-400">총 해상 운임 (USD)</p>
-                      <p className="text-xl font-black text-slate-800 mt-1">
-                        ${Number(calculationResult.master.total_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div className="bg-slate-50/50 p-4 border border-slate-100 rounded-2xl">
-                      <p className="text-xs font-bold text-slate-400">로컬 비용 합계 (KRW)</p>
-                      <p className="text-xl font-black text-slate-800 mt-1">
-                        ₩{Number(calculationResult.master.total_local_krw).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="bg-indigo-50 p-4 border border-indigo-100 rounded-2xl">
-                      <p className="text-xs font-bold text-indigo-500">최종 청구 금액 (KRW 절사)</p>
-                      <p className="text-2xl font-black text-indigo-700 mt-1">
-                        ₩{Number(calculationResult.master.final_amount_krw).toLocaleString()}
-                      </p>
+              {/* Document Sheet */}
+              <div className="bg-white rounded-3xl p-5 md:p-6 space-y-4 border border-slate-200/60 shadow-lg">
+
+                {/* Invoice Header */}
+                <div className="flex flex-col md:flex-row justify-between items-start gap-4 border-b pb-4">
+                  <div>
+                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                      DEBIT NOTE <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 ml-2 uppercase">Draft (가승인)</span>
+                    </h1>
+                    <p className="text-xs text-slate-400 font-bold mt-1 uppercase tracking-wider">Digital Forwarding Hub Services</p>
+
+                    <div className="mt-3 text-xs font-medium text-slate-500 space-y-1">
+                      <div>발행처: 주식회사 제로콜 로지스틱스</div>
+                      <div>주소: 부산광역시 중구 중앙대로 123 (중앙동)</div>
+                      <div>전화: 02-1234-5678 | Email: settlement@zerocall.com</div>
                     </div>
                   </div>
 
-                  {/* Vehicles breakdown table */}
-                  <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="bg-slate-50 px-4 py-3 border-b">
-                      <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">차량별 청구 상세 정보 ({calculationResult.items.length}대)</h4>
+                  {/* Parameter inputs styled as the document's metadata box */}
+                  <div className="text-left text-xs font-semibold text-slate-700 space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 w-full md:w-auto md:min-w-[340px]">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">인보이스 번호 (정산 번호)</label>
+                      <input
+                        type="text"
+                        value={invoiceNoInput}
+                        onChange={(e) => setInvoiceNoInput(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border rounded-xl focus:outline-none focus:border-indigo-500 text-xs font-bold bg-white"
+                      />
                     </div>
-                    <div className="overflow-x-auto max-h-[30vh]">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">정산 대상 화주 선택</label>
+                      <select
+                        value={selectedBillingClientId}
+                        onChange={(e) => setSelectedBillingClientId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border rounded-xl focus:outline-none focus:border-indigo-500 text-xs font-bold bg-white"
+                      >
+                        {billingClients.map((c) => (
+                          <option key={c.client_id} value={c.client_id}>
+                            {c.client_name} ({c.client_id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">납기 기한</label>
+                        <input
+                          type="date"
+                          value={dueDateInput}
+                          onChange={(e) => setDueDateInput(e.target.value)}
+                          className="w-full px-2.5 py-1.5 border rounded-xl focus:outline-none focus:border-indigo-500 text-xs font-bold bg-white"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase">적용 환율 (1 USD)</label>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                setBillingError("");
+                                const res = await axios.get("http://localhost:5000/api/billing/exchange-rate", { withCredentials: true });
+                                if (res.data.success) {
+                                  setExchangeRateInput(String(res.data.rate));
+                                }
+                              } catch (err: any) {
+                                setBillingError("실시간 환율을 가져오지 못했습니다.");
+                              }
+                            }}
+                            className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold transition flex items-center gap-0.5"
+                          >
+                            <RefreshCw size={8} /> 갱신
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={exchangeRateInput}
+                            onChange={(e) => setExchangeRateInput(e.target.value)}
+                            className="w-full pl-2.5 pr-6 py-1.5 border rounded-xl focus:outline-none focus:border-indigo-500 text-xs font-bold bg-white"
+                          />
+                          <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-slate-400 text-[10px] font-bold">₩</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Shipment Details Metadata Box */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50/50 p-3 rounded-2xl border border-slate-100 text-xs">
+                  <div>
+                    <span className="block text-slate-400 font-bold mb-1">선박명 (Vessel)</span>
+                    <span className="font-extrabold text-slate-700">{billingShipment.vessel_name}</span>
+                  </div>
+                  <div>
+                    <span className="block text-slate-400 font-bold mb-1">B/L 번호</span>
+                    <span className="font-extrabold text-blue-600">{billingShipment.bl_number || "-"}</span>
+                  </div>
+                  <div>
+                    <span className="block text-slate-400 font-bold mb-1">선적항 (POL)</span>
+                    <span className="font-extrabold text-slate-700">{billingShipment.pol || "-"}</span>
+                  </div>
+                  <div>
+                    <span className="block text-slate-400 font-bold mb-1">양하항 (POD)</span>
+                    <span className="font-extrabold text-slate-700">{billingShipment.pod || "-"}</span>
+                  </div>
+                </div>
+
+                {/* Error box */}
+                {billingError && (
+                  <div className="p-4 bg-red-50 text-red-800 rounded-xl border border-red-200 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle size={16} />
+                    <span>{billingError}</span>
+                  </div>
+                )}
+
+                {/* Calculations status indicator when calculating or completed */}
+                <div className="flex justify-between items-center text-xs">
+                  <div>
+                    {calculating && (
+                      <div className="flex items-center gap-2 text-indigo-600 font-bold bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100">
+                        <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                        정산 금액 실시간 계산 중...
+                      </div>
+                    )}
+                    {!calculating && calculationResult && (
+                      <div className="flex items-center gap-1.5 text-emerald-600 font-bold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
+                        <Sparkles size={12} className="animate-pulse" />
+                        금액 자동 계산 완료 (저장 가능)
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Calculation results */}
+                {calculationResult ? (
+                  <>
+                    {/* Vehicles breakdown table */}
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
                           <tr>
-                            <th className="p-3 pl-4">차대번호 (VIN)</th>
-                            <th className="p-3">차종 / 모델</th>
-                            <th className="p-3 text-right">해상운임 (USD)</th>
-                            <th className="p-3 text-right">고박료 (KRW)</th>
-                            <th className="p-3 text-right">THC (KRW)</th>
-                            <th className="p-3 text-right">부두사용료 (KRW)</th>
+                            <th className="p-2 pl-3">No.</th>
+                            <th className="p-2">차대번호 (VIN)</th>
+                            <th className="p-2">차종 모델명</th>
+                            <th className="p-2 text-right">해상운임 (USD)</th>
+                            <th className="p-2 text-right">고박료 (Lashing, KRW)</th>
+                            <th className="p-2 text-right">터미널료 (THC, KRW)</th>
+                            <th className="p-2 text-right">부두사용료 (Wharfage, KRW)</th>
+                            <th className="p-2 text-right">내륙탁송료 (Inland, KRW)</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-slate-100 font-medium">
                           {calculationResult.items.map((item: any, idx: number) => (
-                            <tr key={idx} className="hover:bg-slate-50/50 transition font-medium">
-                              <td className="p-3 pl-4 font-bold text-slate-800">{item.vin}</td>
-                              <td className="p-3 text-slate-600">
-                                <span className="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded mr-1 font-bold text-[10px]">{item.cargo_type}</span>
-                                {item.model_name}
+                            <tr key={idx} className="hover:bg-slate-50/50 transition">
+                              <td className="p-2 pl-3 text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="p-2 font-bold text-slate-800">{item.vin}</td>
+                              <td className="p-2">
+                                <div className="font-bold text-slate-800">{item.cargo_type}</div>
+                                <div className="text-slate-500 text-[10px] mt-0.5 font-normal">{item.model_name}</div>
                               </td>
-                              <td className="p-3 text-right font-bold text-slate-700">
+                              <td className="p-2 text-right font-bold text-slate-700">
                                 ${Number(item.applied_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </td>
-                              <td className="p-3 text-right font-bold text-slate-700">
+                              <td className="p-2 text-right font-bold text-slate-700">
                                 ₩{Number(item.applied_lashing_krw).toLocaleString()}
                               </td>
-                              <td className="p-3 text-right font-bold text-slate-700">
+                              <td className="p-2 text-right font-bold text-slate-700">
                                 ₩{Number(item.applied_thc_krw).toLocaleString()}
                               </td>
-                              <td className="p-3 text-right font-bold text-slate-700">
+                              <td className="p-2 text-right font-bold text-slate-700">
                                 ₩{Number(item.applied_wharfage_krw || 0).toLocaleString()}
+                              </td>
+                              <td className="p-2 text-right font-bold text-slate-700">
+                                ₩{Number(item.applied_inland_krw || 0).toLocaleString()}
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  </div>
 
-                  {/* Document metadata (B/L Fee & Customs fee) */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-3 border rounded-xl bg-slate-50 border-slate-100 text-xs font-bold text-slate-600 flex justify-between">
-                      <span>Pass-through 서류비 (B/L Fee):</span>
-                      <span>₩{Number(calculationResult.master.bl_fee_krw).toLocaleString()}</span>
+                    {/* Pass-through costs details */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="p-2 border rounded-xl bg-slate-50 border-slate-100 text-xs font-semibold text-slate-500 flex justify-between">
+                        <span>Pass-through 서류비 (B/L Fee):</span>
+                        <span className="font-extrabold text-slate-700">₩{Number(calculationResult.master.bl_fee_krw).toLocaleString()}</span>
+                      </div>
+                      <div className="p-2 border rounded-xl bg-slate-50 border-slate-100 text-xs font-semibold text-slate-500 flex justify-between">
+                        <span>Pass-through 관세사 수수료 (Customs):</span>
+                        <span className="font-extrabold text-slate-700">₩{Number(calculationResult.master.customs_fee_krw).toLocaleString()}</span>
+                      </div>
                     </div>
-                    <div className="p-3 border rounded-xl bg-slate-50 border-slate-100 text-xs font-bold text-slate-600 flex justify-between">
-                      <span>Pass-through 관세사 수수료 (Customs):</span>
-                      <span>₩{Number(calculationResult.master.customs_fee_krw).toLocaleString()}</span>
+
+                    {/* Calculation Summary Breakdowns */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                      <div className="text-xs font-semibold text-slate-500 space-y-1.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-1 text-slate-700 font-extrabold mb-1">
+                          <Globe size={14} className="text-indigo-500" /> 외화 정산 요약
+                        </div>
+                        <div className="flex justify-between">
+                          <span>총 해상운임 (USD):</span>
+                          <span className="text-slate-800 font-bold">${Number(calculationResult.master.total_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>적용 환율 (1 USD):</span>
+                          <span className="text-slate-800 font-bold">₩{Number(calculationResult.master.exchange_rate).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-1.5 text-indigo-600 font-bold">
+                          <span>원화 환산 금액 (절사):</span>
+                          <span>₩{Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-xs font-semibold text-slate-500 space-y-1.5 bg-indigo-50/30 p-3.5 rounded-2xl border border-indigo-100/50">
+                        <div className="flex items-center gap-1 text-indigo-800 font-extrabold mb-1">
+                          <Coins size={14} className="text-indigo-600" /> 최종 정산 금액 구성
+                        </div>
+                        <div className="flex justify-between">
+                          <span>해상 운임 환산액 (KRW):</span>
+                          <span className="text-slate-800 font-bold">₩{Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>로컬 비용 합계 (KRW):</span>
+                          <span className="text-slate-800 font-bold">₩{Number(calculationResult.master.total_local_krw).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2 text-base text-indigo-700 font-black">
+                          <span>합계 청구 금액:</span>
+                          <span>₩{Number(calculationResult.master.final_amount_krw).toLocaleString()}</span>
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Payment Info */}
+                    <div className="border-t pt-4 text-[10px] text-slate-500 text-center font-bold">
+                      <p>송금 계좌 안내: 부산은행 123-45-678901 (주)제로콜 로지스틱스</p>
+                      <p className="mt-0.5 text-slate-400 font-medium">※ 기한 내 송금 부탁드리며, 문의사항은 정산팀(02-1234-5678)으로 연락바랍니다.</p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-12 text-center text-slate-400 font-semibold text-sm">
+                    <span>정산 조건을 설정하면 금액 계산 결과가 여기에 표시됩니다.</span>
                   </div>
-                </div>
-              )}
+                )}
+
+              </div>
             </div>
 
-            <div className="px-6 py-4 bg-slate-50 border-t flex justify-end gap-3">
-              <button
-                onClick={() => setIsBillingModalOpen(false)}
-                className="px-4 py-2 border rounded-xl hover:bg-slate-100 font-bold text-xs text-slate-600 transition"
-              >
-                취소
-              </button>
+            {/* Modal Footer */}
+            {/* <div className="px-4 py-2.5 bg-slate-50 border-t flex justify-end gap-3 shrink-0">
               {calculationResult && (
                 <button
                   onClick={handleSaveInvoice}
                   disabled={savingInvoice}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition shadow-md shadow-indigo-600/10 flex items-center gap-1.5"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-md"
                 >
                   {savingInvoice ? (
                     <>
@@ -1783,11 +1863,18 @@ export default function AdminShipmentPage() {
                       발행 중...
                     </>
                   ) : (
-                    <>최종 청구서(데빗노트) 저장 및 발행</>
+                    <>임시 정산서(Draft) 저장 및 발행</>
                   )}
                 </button>
               )}
-            </div>
+              <button
+                onClick={() => setIsBillingModalOpen(false)}
+                className="px-4 py-2 border rounded-xl hover:bg-slate-100 font-bold text-xs text-slate-600 transition"
+              >
+                닫기
+              </button>
+            </div> */}
+
           </div>
         </div>
       )}
