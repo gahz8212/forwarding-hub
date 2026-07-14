@@ -614,7 +614,7 @@ export default function InvoiceListPage() {
               animation: invoice-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             }
           `}</style>
-          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-100 my-2 md:my-4 print:transform-none print:translate-y-0 print:my-0 print:h-auto print:w-full print:max-w-full print:shadow-none print:border-none print:rounded-none animate-invoice-slide-up">
+          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[88dvh] lg:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-100 my-1 md:my-4 print:transform-none print:translate-y-0 print:my-0 print:h-auto print:w-full print:max-w-full print:shadow-none print:border-none print:rounded-none animate-invoice-slide-up">
             {/* Modal Header (Hidden on Print) */}
             <div className="px-4 py-2.5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0 print:hidden">
               <div className="flex items-center gap-2">
@@ -780,11 +780,11 @@ export default function InvoiceListPage() {
             </div>
 
             {/* Modal Footer (Hidden on Print) */}
-            <div className="px-4 py-2.5 bg-slate-50 border-t flex justify-end gap-3 shrink-0 print:hidden">
+            <div className="px-4 py-2 bg-slate-50 border-t flex flex-wrap items-center justify-end gap-2 md:gap-3 shrink-0 print:hidden">
               {user?.role === "admin" && selectedInvoice.payment_status !== "PAID" && (
                 <button
                   onClick={() => handlePayInvoice(selectedInvoice.invoice_no)}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-bold text-xs rounded-xl transition"
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-green-600 hover:bg-green-500 text-white font-bold text-[11px] sm:text-xs rounded-xl transition cursor-pointer"
                 >
                   결제 완료 처리
                 </button>
@@ -792,20 +792,20 @@ export default function InvoiceListPage() {
               {user?.role === "admin" && selectedInvoice.payment_status !== "PAID" && (
                 <button
                   onClick={() => handleDeleteInvoice(selectedInvoice.invoice_no)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl transition"
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-[11px] sm:text-xs rounded-xl transition cursor-pointer"
                 >
                   정산서 삭제
                 </button>
               )}
               <button
                 onClick={printInvoice}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] sm:text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
               >
                 <Download size={14} /> PDF 다운로드
               </button>
               <button
                 onClick={handleCloseDetail}
-                className="px-4 py-2 border rounded-xl hover:bg-slate-100 font-bold text-xs text-slate-600 transition"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 border rounded-xl hover:bg-slate-100 font-bold text-[11px] sm:text-xs text-slate-600 transition cursor-pointer"
               >
                 닫기
               </button>
