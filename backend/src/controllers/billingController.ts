@@ -501,7 +501,51 @@ export const publishInvoices = async (req: Request, res: Response) => {
     }
 
     const placeholders = invoiceNos.map(() => '?').join(',');
+
+    // Fetch details of invoices to notify
+    const [invoicesToPublish]: any = await connection.query(
+      `SELECT invoice_no, client_id, bl_number, vessel_name, final_amount_krw FROM invoices WHERE invoice_no IN (${placeholders})`,
+      invoiceNos
+    );
+
     await connection.query(`UPDATE invoices SET publish_status = 'SENT' WHERE invoice_no IN (${placeholders})`, invoiceNos);
+
+    // Send Real-time Socket Notification & KakaoTalk
+    const io = req.app.get('io');
+    for (const invoice of invoicesToPublish) {
+      if (io && invoice.client_id) {
+        io.to(`client_${invoice.client_id}`).emit('pdf_generated_alert', {
+          blNumber: invoice.bl_number,
+          shipperId: invoice.client_id,
+          vesselName: invoice.vessel_name,
+          message: `정산서 [${invoice.invoice_no}] (청구금액: ₩${Number(invoice.final_amount_krw).toLocaleString()})가 전송되었습니다. 정산 & 인보이스 메뉴에서 확인해 주세요.`
+        });
+      }
+
+      if (userSession?.kakaoToken) {
+        try {
+          const messageText = `[정산서(데빗노트) 전송 알림]\nB/L 번호: ${invoice.bl_number || "-"}\n새로운 정산서가 발행 및 전송되었습니다.\n\n정산 번호: ${invoice.invoice_no}\n최종 청구 금액: ₩${Number(invoice.final_amount_krw).toLocaleString()}\n\n상세 내역은 화주 메뉴의 [정산 & 인보이스] 메뉴에서 확인해 주시기 바랍니다.`;
+          
+          await axios.post(
+            'https://kapi.kakao.com/v2/api/talk/memo/default/send',
+            `template_object=${JSON.stringify({
+              object_type: 'text',
+              text: messageText,
+              link: { web_url: 'http://localhost:5173/invoices', mobile_web_url: 'http://localhost:5173/invoices' },
+              button_title: '청구서 보기'
+            })}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${userSession.kakaoToken}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+              }
+            }
+          );
+        } catch (kakaoErr: any) {
+          console.error('KakaoTalk notification sending error (publish):', kakaoErr.message);
+        }
+      }
+    }
 
     res.json({ success: true, message: '선택한 정산서가 화주에게 전송되었습니다.' });
   } catch (error) {
@@ -581,6 +625,42 @@ export const mergeAndPublishInvoices = async (req: Request, res: Response) => {
     await connection.query(`DELETE FROM invoices WHERE invoice_no IN (${placeholders})`, invoiceNos);
 
     await connection.commit();
+
+    // Send Real-time Socket Notification & KakaoTalk for merged invoice
+    const io = req.app.get('io');
+    if (io && clientId) {
+      io.to(`client_${clientId}`).emit('pdf_generated_alert', {
+        blNumber: combinedBlString,
+        shipperId: clientId,
+        vesselName: vesselName,
+        message: `합계 정산서 [${newInvoiceNo}] (청구금액: ₩${Number(final_amount_krw).toLocaleString()})가 전송되었습니다. 정산 & 인보이스 메뉴에서 확인해 주세요.`
+      });
+    }
+
+    if (userSession?.kakaoToken) {
+      try {
+        const messageText = `[합계 정산서(데빗노트) 전송 알림]\nB/L 번호: ${combinedBlString}\n여러 건의 정산서가 합산되어 발행 및 전송되었습니다.\n\n합계 정산 번호: ${newInvoiceNo}\n최종 청구 금액: ₩${Number(final_amount_krw).toLocaleString()}\n\n상세 내역은 화주 메뉴의 [정산 & 인보이스] 메뉴에서 확인해 주시기 바랍니다.`;
+        
+        await axios.post(
+          'https://kapi.kakao.com/v2/api/talk/memo/default/send',
+          `template_object=${JSON.stringify({
+            object_type: 'text',
+            text: messageText,
+            link: { web_url: 'http://localhost:5173/invoices', mobile_web_url: 'http://localhost:5173/invoices' },
+            button_title: '청구서 보기'
+          })}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${userSession.kakaoToken}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          }
+        );
+      } catch (kakaoErr: any) {
+        console.error('KakaoTalk notification sending error (merge):', kakaoErr.message);
+      }
+    }
+
     res.json({ success: true, message: '성공적으로 병합 및 전송되었습니다.' });
   } catch (error) {
     await connection.rollback();
