@@ -550,7 +550,6 @@ export default function InvoiceListPage() {
         )}
       </div>
       </div>
-      </div>
 
       {/* Invoice (Debit Note) Detail Viewer Modal */}
       {selectedInvoice && (
@@ -600,7 +599,8 @@ export default function InvoiceListPage() {
               .print-summary-box > * + * {
                 margin-top: 4px !important;
             }
-            @keyframes invoice-slide-up {
+          }
+          @keyframes invoice-slide-up {
               from {
                 transform: translateY(100vh);
                 opacity: 0.9;
