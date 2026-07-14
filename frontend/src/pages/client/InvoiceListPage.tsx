@@ -667,8 +667,8 @@ export default function InvoiceListPage() {
                 </div>
               </div>
 
-              {/* Items Breakdown Table */}
-              <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm print-box">
+              {/* Items Breakdown Table (Desktop view: hidden sm:block) */}
+              <div className="hidden sm:block border border-slate-200 rounded-2xl overflow-hidden shadow-sm print-box">
                 <table className="w-full text-left border-collapse text-xs print-table">
                   <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
                     <tr>
@@ -712,6 +712,60 @@ export default function InvoiceListPage() {
                           </td>
                           <td className="p-2 text-right font-bold text-slate-700">
                             ₩{Number(item.applied_inland_krw || 0).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Items Breakdown Table (Mobile view: sm:hidden) */}
+              <div className="block sm:hidden border border-slate-200 rounded-2xl overflow-hidden shadow-sm print:hidden">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
+                    <tr>
+                      <th className="p-1.5 pl-2.5 text-[10px] w-8">No.</th>
+                      <th className="p-1.5 text-[10px]">차대번호<br /><span className="text-slate-400">모델명</span></th>
+                      <th className="p-1.5 text-[10px] w-12">차종</th>
+                      <th className="p-1.5 text-[10px] text-right">해상운임<br /><span className="text-slate-400">(USD)</span></th>
+                      <th className="p-1.5 text-[10px] text-right">내륙탁송료</th>
+                      <th className="p-1.5 pr-2.5 text-[10px] text-right">
+                        고박료<br />
+                        <span className="text-slate-400">터미널료</span><br />
+                        <span className="text-slate-400">부두사용료</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-[11px]">
+                    {detailLoading ? (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center">
+                          <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                        </td>
+                      </tr>
+                    ) : (
+                      invoiceItems.map((item, idx) => (
+                        <tr key={item.id} className="hover:bg-slate-50/50 transition align-top">
+                          <td className="p-1.5 pl-2.5 text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="p-1.5">
+                            <div className="font-bold text-slate-800 break-all">{item.vin}</div>
+                            <div className="text-slate-400 text-[10px] font-normal mt-0.5">{item.model_name}</div>
+                          </td>
+                          <td className="p-1.5 text-slate-700 font-bold">{item.cargo_type}</td>
+                          <td className="p-1.5 text-right">
+                            <div className="text-slate-400 text-[10px]">-</div>
+                            <div className="font-bold text-slate-800">
+                              ${Number(item.applied_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </div>
+                          </td>
+                          <td className="p-1.5 text-right font-bold text-slate-700">
+                            ₩{Number(item.applied_inland_krw || 0).toLocaleString()}
+                          </td>
+                          <td className="p-1.5 pr-2.5 text-right">
+                            <div className="font-bold text-slate-700">₩{Number(item.applied_lashing_krw).toLocaleString()}</div>
+                            <div className="text-slate-500 font-semibold mt-0.5">₩{Number(item.applied_thc_krw).toLocaleString()}</div>
+                            <div className="text-slate-400 font-normal mt-0.5">₩{Number(item.applied_wharfage_krw || 0).toLocaleString()}</div>
                           </td>
                         </tr>
                       ))
