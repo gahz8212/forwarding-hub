@@ -1098,7 +1098,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                                 }`}
                               />
                             </div>
-                            <div className="mt-1.5 w-full select-none border border-slate-200 dark:border-slate-800 rounded-lg p-1.5 bg-slate-50 dark:bg-slate-900/30 flex items-center justify-between gap-1">
+                            <div className="mt-1.5 w-4/5 mx-auto select-none border border-slate-200 dark:border-slate-800 rounded-lg p-1.5 bg-slate-50 dark:bg-slate-900/30 flex items-center justify-between gap-1">
                               {(() => {
                                 const currentIdx = VEHICLE_STAGES.findIndex(stage => stage.value === (v.status || "Pending"));
                                 const activeIdx = currentIdx === -1 ? 0 : currentIdx;
@@ -1122,23 +1122,23 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                                             e.stopPropagation();
                                             handleVehicleStatusChange(v.id, prevStage.value, v.status || "Pending");
                                           }}
-                                          className="w-[60px] h-[36px] flex flex-col items-center justify-center rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition duration-150 shadow-3xs cursor-pointer"
+                                          className="w-[60px] h-[48px] flex flex-col items-center justify-center rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition duration-150 shadow-3xs cursor-pointer"
                                           title={`클릭 시 '${prevStage.label}'(으)로 변경`}
                                         >
-                                          <PrevIcon size={10} className="text-slate-400 mb-0.5" />
+                                          <PrevIcon size={12} className="text-slate-400 mb-0.5" />
                                           <span className="text-[8px] leading-none font-bold">{prevStage.label}</span>
                                         </button>
                                       ) : (
-                                        <div className="w-[60px] h-[36px]" />
+                                        <div className="w-[60px] h-[48px]" />
                                       )}
                                     </div>
                                     {/* Center (Active) */}
                                     <div className="flex-1 flex justify-center">
                                       <div
-                                        className={`w-[84px] h-[36px] flex flex-col items-center justify-center rounded-md border font-black ${activeStage.activeColor} shadow-2xs relative overflow-hidden`}
+                                        className={`w-[84px] h-[48px] flex flex-col items-center justify-center rounded-md border font-black ${activeStage.activeColor} shadow-2xs relative overflow-hidden`}
                                       >
                                         <span className="text-[5px] font-bold uppercase tracking-wide opacity-50 absolute top-0.5">Active</span>
-                                        <ActiveIcon size={13} className="mb-0.5 mt-2.5 text-current animate-pulse shrink-0" />
+                                        <ActiveIcon size={15} className="mb-0.5 mt-2.5 text-current animate-pulse shrink-0" />
                                         <span className="text-[9.5px] tracking-tight text-center leading-none truncate w-full font-bold">{activeStage.label}</span>
                                       </div>
                                     </div>
@@ -1152,14 +1152,14 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                                             e.stopPropagation();
                                             handleVehicleStatusChange(v.id, nextStage.value, v.status || "Pending");
                                           }}
-                                          className="w-[60px] h-[36px] flex flex-col items-center justify-center rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition duration-150 shadow-3xs cursor-pointer"
+                                          className="w-[60px] h-[48px] flex flex-col items-center justify-center rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition duration-150 shadow-3xs cursor-pointer"
                                           title={`클릭 시 '${nextStage.label}'(으)로 변경`}
                                         >
-                                          <NextIcon size={10} className="text-slate-400 mb-0.5" />
+                                          <NextIcon size={12} className="text-slate-400 mb-0.5" />
                                           <span className="text-[8px] leading-none font-bold">{nextStage.label}</span>
                                         </button>
                                       ) : (
-                                        <div className="w-[60px] h-[36px]" />
+                                        <div className="w-[60px] h-[48px]" />
                                       )}
                                     </div>
                                   </>
