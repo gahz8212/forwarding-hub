@@ -8,8 +8,9 @@ import { io } from "socket.io-client";
 import {
   LayoutDashboard, Calendar, FileText,
   CreditCard, FolderOpen, LogOut, Bell, Anchor, Ship, BellRing, X, Truck,
-  User, ChevronDown, Menu
+  User, ChevronDown, Menu, MessageSquare
 } from "lucide-react";
+import BookingChatDrawer from "../chat/BookingChatDrawer";
 
 export default function Layout() {
   const location = useLocation();
@@ -22,6 +23,28 @@ export default function Layout() {
   const profileRef = useRef<HTMLDivElement>(null);
 
   const { alerts, addAlert, removeAlert, missedAlerts, setMissedAlerts, showWindowsAlertDrawer, setShowWindowsAlertDrawer, setActiveDashboardShipment } = useNotificationStore();
+
+  const [isHeaderChatOpen, setIsHeaderChatOpen] = useState(false);
+  const [latestBooking, setLatestBooking] = useState<any>(null);
+
+  const handleHeaderChatClick = async () => {
+    if (!user) return;
+    try {
+      const url = user.role === "admin" 
+        ? "http://localhost:5000/api/schedules/admin/bookings"
+        : "http://localhost:5000/api/schedules/bookings";
+      const res = await axios.get(url, { withCredentials: true });
+      if (res.data.success && res.data.data && res.data.data.length > 0) {
+        setLatestBooking(res.data.data[0]); // get the latest booking
+        setIsHeaderChatOpen(true);
+      } else {
+        alert("대화 가능한 예약 내역이 없습니다. 먼저 부킹 요청을 생성해 주세요.");
+      }
+    } catch (err) {
+      console.error("최근 대화방 조회 실패:", err);
+      alert("대화방을 열 수 없습니다.");
+    }
+  };
 
   // 외부 클릭 시 프로필 드롭다운 닫기
   useEffect(() => {
@@ -89,6 +112,44 @@ export default function Layout() {
 
     return () => { socket.disconnect(); };
   }, [user, addAlert]);
+
+  // 알림 토스트 자동 소멸 및 미확인 보관함(missedAlerts) 이동 처리
+  useEffect(() => {
+    if (alerts.length === 0) return;
+
+    // 최신 알림들 중 타이머가 등록되지 않은 건들에 대해 타이머 등록
+    const timers: any[] = [];
+    
+    alerts.forEach((alert) => {
+      const timer = setTimeout(() => {
+        // 토스트창에서 지우기
+        removeAlert(alert.id);
+        
+        // 미확인 알림창(missedAlerts)에 추가
+        setMissedAlerts((prev) => {
+          if (prev.some((a) => a.id === alert.id)) return prev;
+          return [
+            ...prev,
+            {
+              id: alert.id,
+              type: alert.type,
+              title: alert.title,
+              message: alert.message,
+              time: alert.time,
+              timestamp: alert.time,
+              meta: alert.meta
+            }
+          ];
+        });
+      }, 15000); // 15초 후 자동 이동
+
+      timers.push(timer);
+    });
+
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, [alerts, removeAlert, setMissedAlerts]);
 
   const clientMenus = [
     { name: "대시보드", path: "/", icon: <LayoutDashboard size={20} />, mobileIcon: <LayoutDashboard size={22} /> },
@@ -168,22 +229,22 @@ export default function Layout() {
                 .animate-layout-bell-wiggle { animation: layout-bell-wiggle 1.5s ease-in-out infinite; }
               `}</style>
               <button
-                onClick={() => { if (user?.role === "admin") setShowWindowsAlertDrawer(!showWindowsAlertDrawer); }}
+                onClick={() => setShowWindowsAlertDrawer(!showWindowsAlertDrawer)}
                 className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
               >
-                <Bell size={20} className={user?.role === "admin" && missedAlerts.length > 0 ? "animate-layout-bell-wiggle text-blue-400" : ""} />
-                {user?.role === "admin" && missedAlerts.length > 0 && (
+                <Bell size={20} className={missedAlerts.length > 0 ? "animate-layout-bell-wiggle text-blue-400" : ""} />
+                {missedAlerts.length > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white font-mono text-[8px] font-black h-4 w-4 flex items-center justify-center rounded-full border border-slate-900 animate-pulse">
                     {missedAlerts.length}
                   </span>
                 )}
-                {!(user?.role === "admin" && missedAlerts.length > 0) && (
+                {!(missedAlerts.length > 0) && (
                   <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full" />
                 )}
               </button>
 
               {/* 알림 드로어 */}
-              {user?.role === "admin" && showWindowsAlertDrawer && (
+              {showWindowsAlertDrawer && (
                 <div className="absolute right-0 top-12 z-[120] w-80 max-h-[480px] bg-slate-800/95 backdrop-blur-md border border-slate-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
                     <span className="text-sm font-bold text-white">알림센터</span>
@@ -193,40 +254,97 @@ export default function Layout() {
                   </div>
                   <div className="flex-1 overflow-y-auto p-3 space-y-2">
                     {missedAlerts.length > 0 ? (
-                      missedAlerts.map((alert) => (
-                        <div key={alert.id} className="p-3 bg-slate-700/60 border border-slate-600 rounded-xl flex flex-col gap-3">
-                          <div>
-                            <div className="flex justify-between items-start">
-                              <span className="text-[10px] font-bold text-slate-400">{alert.timestamp}</span>
-                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${alert.photoType === 'docs' ? 'bg-emerald-900/60 text-emerald-300' : 'bg-blue-900/60 text-blue-300'}`}>
-                                {alert.photoType === 'docs' ? '서류' : '외관사진'}
-                              </span>
+                      missedAlerts.map((alert) => {
+                        const isChat = alert.type === 'chat';
+                        const timeStr = alert.timestamp || alert.time;
+                        
+                        return (
+                          <div key={alert.id} className="p-3 bg-slate-700/60 border border-slate-600 rounded-xl flex flex-col gap-2">
+                            <div>
+                              <div className="flex justify-between items-start">
+                                <span className="text-[10px] font-bold text-slate-400">{timeStr}</span>
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                                  isChat ? 'bg-blue-900/60 text-blue-300' :
+                                  alert.type === 'booking' ? 'bg-red-900/60 text-red-300' :
+                                  alert.type === 'document' ? 'bg-emerald-900/60 text-emerald-300' :
+                                  alert.type === 'pdf' ? 'bg-indigo-900/60 text-indigo-300' : 'bg-slate-900/60 text-slate-300'
+                                }`}>
+                                  {isChat ? '메시지' :
+                                   alert.type === 'booking' ? '부킹' :
+                                   alert.type === 'document' ? '서류' :
+                                   alert.type === 'pdf' ? '인보이스' : '일반'}
+                                </span>
+                              </div>
+                              
+                              <h5 className="text-xs font-bold text-white mt-1">{alert.title}</h5>
+                              
+                              {/* Content based on type */}
+                              {alert.type === 'booking' && (
+                                <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                                  화주: {alert.meta?.username} 님
+                                </p>
+                              )}
+                              {alert.type === 'document' && (
+                                <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                                  B/L 번호: {alert.meta?.blNumber}
+                                </p>
+                              )}
+                              {alert.type === 'chat' && (
+                                <p className="text-[11px] text-slate-300 mt-1 leading-relaxed italic bg-white/5 p-1.5 rounded text-xs break-all">
+                                  "{alert.message && alert.message.length > 30 ? alert.message.slice(0, 30) + "..." : alert.message}"
+                                </p>
+                              )}
+                              {alert.type === 'pdf' && (
+                                <p className="text-[11px] text-slate-300 mt-1 leading-relaxed italic bg-white/5 p-1.5 rounded text-xs">
+                                  {alert.message}
+                                </p>
+                              )}
+                              {alert.type === 'shipper_docs' && (
+                                <>
+                                  <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                                    {alert.photoType === 'docs'
+                                      ? <><span className="text-blue-400">@{alert.shipperName || '화주'}</span>로부터 말소증/차대각인사진이 도착</>
+                                      : <><span className="text-blue-400">@{alert.shipperName || '화주'}</span>로부터 차량 외관 사진 도착</>
+                                    }
+                                  </p>
+                                  <p className="text-[9px] text-slate-400 font-mono">B/L: {alert.blNumber}</p>
+                                </>
+                              )}
                             </div>
-                            <p className="text-xs text-slate-200 font-bold mt-1.5 leading-relaxed">
-                              {alert.photoType === 'docs'
-                                ? <><span className="text-blue-400">@{alert.shipperName || '화주'}</span>로부터 말소증/차대각인사진이 도착</>
-                                : <><span className="text-blue-400">@{alert.shipperName || '화주'}</span>로부터 차량 외관 사진 도착</>
-                              }
-                            </p>
-                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">B/L: {alert.blNumber}</p>
+                            
+                            <div className="flex gap-1.5 mt-1">
+                              <button
+                                onClick={() => {
+                                  setMissedAlerts(prev => prev.filter(a => a.id !== alert.id));
+                                  setShowWindowsAlertDrawer(false);
+                                  
+                                  if (alert.type === 'booking') {
+                                    navigate("/admin/bookings");
+                                  } else if (alert.type === 'document') {
+                                    navigate("/admin/shipments");
+                                  } else if (alert.type === 'chat') {
+                                    navigate(`${user?.role === "admin" ? "/admin/bookings" : "/bookings"}?openChat=${alert.meta?.bookingId}`);
+                                  } else if (alert.type === 'pdf') {
+                                    navigate("/documents");
+                                  } else if (alert.type === 'shipper_docs') {
+                                    setActiveDashboardShipment({ id: alert.shipmentId, blNumber: alert.blNumber });
+                                    navigate("/admin/shipments");
+                                  }
+                                }}
+                                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold py-1.5 rounded-lg transition"
+                              >
+                                확인하러가기
+                              </button>
+                              <button
+                                onClick={() => setMissedAlerts(prev => prev.filter(a => a.id !== alert.id))}
+                                className="px-2.5 bg-slate-650 hover:bg-slate-600 text-slate-200 text-[11px] font-bold py-1.5 rounded-lg transition"
+                              >
+                                확인
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => {
-                                setActiveDashboardShipment({ id: alert.shipmentId, blNumber: alert.blNumber });
-                                setMissedAlerts(prev => prev.filter(a => a.id !== alert.id));
-                                setShowWindowsAlertDrawer(false);
-                                navigate("/admin/shipments");
-                              }}
-                              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold py-1.5 rounded-lg transition"
-                            >확인하러가기</button>
-                            <button
-                              onClick={() => setMissedAlerts(prev => prev.filter(a => a.id !== alert.id))}
-                              className="px-3 bg-slate-600 hover:bg-slate-500 text-slate-200 text-[11px] font-bold py-1.5 rounded-lg transition"
-                            >확인</button>
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="flex flex-col items-center justify-center text-slate-500 py-10">
                         <BellRing size={26} className="mb-2 opacity-30 animate-bounce" />
@@ -237,6 +355,15 @@ export default function Layout() {
                 </div>
               )}
             </div>
+
+            {/* 포워더 문의 말풍선 버튼 */}
+            <button
+              onClick={handleHeaderChatClick}
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+              title="포워더 문의 대화방"
+            >
+              <MessageSquare size={20} />
+            </button>
 
             {/* 프로필 드롭다운 (데스크탑) */}
             <div className="relative hidden md:block" ref={profileRef}>
@@ -487,6 +614,25 @@ export default function Layout() {
             );
           })}
         </div>
+      )}
+
+      {/* 글로벌 업무 대화방 서랍장 */}
+      {isHeaderChatOpen && latestBooking && (
+        <BookingChatDrawer
+          bookingId={latestBooking.id}
+          isOpen={isHeaderChatOpen}
+          onClose={() => {
+            setIsHeaderChatOpen(false);
+            setLatestBooking(null);
+          }}
+          vesselName={latestBooking.vessel_name}
+          pol={latestBooking.pol}
+          pod={latestBooking.pod}
+          currentUser={{
+            username: user?.username || "",
+            role: user?.role || ""
+          }}
+        />
       )}
     </div>
   );

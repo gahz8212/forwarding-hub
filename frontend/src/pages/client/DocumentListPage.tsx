@@ -221,79 +221,148 @@ export default function DocumentListPage() {
 
                 {/* Accordion Body */}
                 {isOpen && (
-                  <div className="border-t border-slate-100 dark:border-slate-800 overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead className="bg-slate-50/30 dark:bg-slate-950/20 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
-                        <tr>
-                          <th className="p-4 font-bold w-2/5">파일명 (Document Title)</th>
-                          <th className="p-4 font-bold w-1/5">업로드 일시</th>
-                          <th className="p-4 font-bold text-center w-2/5">작업</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {group.items.map((doc) => {
-                          const docTypeKey = doc.docType.includes("Invoice") ? 'invoice' : 'packing';
-                          const isDownloaded = !!downloadedDocs[doc.id];
-                          const isApproved = doc.approved === 1;
+                  <div className="border-t border-slate-100 dark:border-slate-800">
+                    {/* 모바일 카드 뷰 */}
+                    <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/20">
+                      {group.items.map((doc) => {
+                        const docTypeKey = doc.docType.includes("Invoice") ? 'invoice' : 'packing';
+                        const isDownloaded = !!downloadedDocs[doc.id];
+                        const isApproved = doc.approved === 1;
 
-                          return (
-                            <tr key={doc.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/20 transition font-semibold">
-                              <td className="p-4 text-slate-800 dark:text-slate-200">
-                                <span className="flex items-center gap-2">
-                                  {docTypeKey === 'invoice' ? (
-                                    <FileText size={16} className="text-blue-500 shrink-0" />
-                                  ) : (
-                                    <FileSpreadsheet size={16} className="text-emerald-500 shrink-0" />
-                                  )}
-                                  <span className="font-bold text-slate-800 dark:text-slate-300">{doc.fileName}</span>
+                        return (
+                          <div key={doc.id} className="p-4 space-y-3">
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="flex items-center gap-2 truncate">
+                                {docTypeKey === 'invoice' ? (
+                                  <FileText size={16} className="text-blue-500 shrink-0" />
+                                ) : (
+                                  <FileSpreadsheet size={16} className="text-emerald-500 shrink-0" />
+                                )}
+                                <span className="font-bold text-slate-800 dark:text-slate-300 truncate">{doc.fileName}</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">{doc.uploadedAt}</span>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 pt-1 justify-end">
+                              <a
+                                href={`http://localhost:5000/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={() => setDownloadedDocs(prev => ({ ...prev, [doc.id]: true }))}
+                                className="inline-flex items-center justify-center gap-1 text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-slate-800 dark:text-blue-400 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-blue-100 dark:border-slate-700 text-xs font-bold transition"
+                                title="파일 다운로드"
+                              >
+                                <FileDown size={14} />
+                                다운로드
+                              </a>
+                              
+                              {isApproved ? (
+                                <span className="text-green-600 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">
+                                  승인 완료
                                 </span>
-                              </td>
-                              <td className="p-4 text-slate-500 dark:text-slate-400 text-xs">{doc.uploadedAt}</td>
-                              <td className="p-4 text-center">
-                                <div className="flex gap-2 justify-center items-center">
-                                  <a
-                                    href={`http://localhost:5000/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    onClick={() => setDownloadedDocs(prev => ({ ...prev, [doc.id]: true }))}
-                                    className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-slate-800 dark:text-blue-400 dark:hover:bg-slate-700 px-3.5 py-1.5 rounded-lg border border-blue-100 dark:border-slate-700 text-xs font-bold transition"
-                                    title="파일 다운로드"
-                                  >
-                                    <FileDown size={14} />
-                                    다운로드 및 확인
-                                  </a>
-                                  {isApproved ? (
-                                    <span className="text-green-600 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-3 py-1.5 rounded-lg text-xs font-bold">
-                                      승인 완료
-                                    </span>
-                                  ) : (
-                                    !doc.fileKey && (
-                                      <button
-                                        onClick={() => handleApproveDocument(doc.blNumber, docTypeKey)}
-                                        disabled={!isDownloaded}
-                                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition border flex items-center gap-1 ${
-                                          isDownloaded 
-                                            ? "bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-sm cursor-pointer"
-                                            : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700"
-                                        }`}
-                                      >
-                                        승인
-                                      </button>
-                                    )
-                                  )}
+                              ) : (
+                                !doc.fileKey && (
                                   <button
-                                    onClick={() => handleDeleteDocument(doc.blNumber, docTypeKey)}
-                                    className="text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-800 text-xs font-bold flex items-center gap-1 border border-rose-200 dark:border-rose-800 bg-rose-50/50 dark:bg-slate-800 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                                    onClick={() => handleApproveDocument(doc.blNumber, docTypeKey)}
+                                    disabled={!isDownloaded}
+                                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition border flex items-center gap-1 shrink-0 ${
+                                      isDownloaded 
+                                        ? "bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-sm cursor-pointer"
+                                        : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700"
+                                    }`}
                                   >
-                                    삭제
+                                    승인
                                   </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                )
+                              )}
+                              
+                              <button
+                                onClick={() => handleDeleteDocument(doc.blNumber, docTypeKey)}
+                                className="text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-800 text-xs font-bold flex items-center gap-1 border border-rose-200 dark:border-rose-800 bg-rose-50/50 dark:bg-slate-800 px-3 py-1.5 rounded-lg transition cursor-pointer shrink-0"
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* 데스크탑 테이블 뷰 */}
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-sm">
+                        <thead className="bg-slate-50/30 dark:bg-slate-950/20 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
+                          <tr>
+                            <th className="p-4 font-bold w-2/5">파일명 (Document Title)</th>
+                            <th className="p-4 font-bold w-1/5">업로드 일시</th>
+                            <th className="p-4 font-bold text-center w-2/5">작업</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {group.items.map((doc) => {
+                            const docTypeKey = doc.docType.includes("Invoice") ? 'invoice' : 'packing';
+                            const isDownloaded = !!downloadedDocs[doc.id];
+                            const isApproved = doc.approved === 1;
+
+                            return (
+                              <tr key={doc.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/20 transition font-semibold">
+                                <td className="p-4 text-slate-800 dark:text-slate-200">
+                                  <span className="flex items-center gap-2">
+                                    {docTypeKey === 'invoice' ? (
+                                      <FileText size={16} className="text-blue-500 shrink-0" />
+                                    ) : (
+                                      <FileSpreadsheet size={16} className="text-emerald-500 shrink-0" />
+                                    )}
+                                    <span className="font-bold text-slate-800 dark:text-slate-300">{doc.fileName}</span>
+                                  </span>
+                                </td>
+                                <td className="p-4 text-slate-500 dark:text-slate-400 text-xs">{doc.uploadedAt}</td>
+                                <td className="p-4 text-center">
+                                  <div className="flex gap-2 justify-center items-center">
+                                    <a
+                                      href={`http://localhost:5000/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      onClick={() => setDownloadedDocs(prev => ({ ...prev, [doc.id]: true }))}
+                                      className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-slate-800 dark:text-blue-400 dark:hover:bg-slate-700 px-3.5 py-1.5 rounded-lg border border-blue-100 dark:border-slate-700 text-xs font-bold transition"
+                                      title="파일 다운로드"
+                                    >
+                                      <FileDown size={14} />
+                                      다운로드 및 확인
+                                    </a>
+                                    {isApproved ? (
+                                      <span className="text-green-600 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-3 py-1.5 rounded-lg text-xs font-bold">
+                                        승인 완료
+                                      </span>
+                                    ) : (
+                                      !doc.fileKey && (
+                                        <button
+                                          onClick={() => handleApproveDocument(doc.blNumber, docTypeKey)}
+                                          disabled={!isDownloaded}
+                                          className={`text-xs font-bold px-3 py-1.5 rounded-lg transition border flex items-center gap-1 ${
+                                            isDownloaded 
+                                              ? "bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-sm cursor-pointer"
+                                              : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700"
+                                          }`}
+                                        >
+                                          승인
+                                        </button>
+                                      )
+                                    )}
+                                    <button
+                                      onClick={() => handleDeleteDocument(doc.blNumber, docTypeKey)}
+                                      className="text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-800 text-xs font-bold flex items-center gap-1 border border-rose-200 dark:border-rose-800 bg-rose-50/50 dark:bg-slate-800 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                                    >
+                                      삭제
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>

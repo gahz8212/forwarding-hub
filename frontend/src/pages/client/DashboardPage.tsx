@@ -13,7 +13,8 @@ import {
   FileText,
   Truck,
   Camera,
-  AlertTriangle
+  AlertTriangle,
+  MousePointerClick
 } from "lucide-react";
 
 const STEPS = [
@@ -127,6 +128,22 @@ export default function DashboardPage() {
   };
 
   const activeIdx = trackingData ? getStepIndex(trackingData.status) : -1;
+  const currentIdx = trackingData ? Math.max(0, Math.min(getStepIndex(trackingData.status), STEPS.length - 1)) : 0;
+
+  const renderLabelInsideCircle = (label: string) => {
+    const parts = label.split(" ");
+    if (parts.length > 1) {
+      return (
+        <div className="flex flex-col items-center justify-center leading-tight text-[11px] md:text-[12px] tracking-tighter font-black select-none">
+          <span>{parts[0]}</span>
+          <span className="mt-0.5">{parts[1]}</span>
+        </div>
+      );
+    }
+    return (
+      <span className="text-[12px] md:text-[13px] tracking-tighter font-black leading-none select-none">{label}</span>
+    );
+  };
 
   // 선적 정보가 들어왔을 때, 상태가 해상 운송 단계(5, 6)이면 지도를 자동으로 켜고, 그 외에는 닫기
   useEffect(() => {
@@ -477,7 +494,7 @@ export default function DashboardPage() {
         if (hasDuplicate) {
           alert("선택한 이미지가 이미 저장되어 있습니다.");
         }
-        
+
         const successCount = data.data.filter((res: any) => res.status !== 'duplicate').length;
         if (successCount > 0) {
           alert(`차량 외관 사진 전송 완료! 총 ${successCount}장의 사진이 처리되었습니다.`);
@@ -579,7 +596,7 @@ export default function DashboardPage() {
           {/* B/L 드롭다운 선택기 및 입력 필드 */}
           <div className="flex flex-col gap-2">
             <label className="text-xs font-bold text-slate-500">선적 B/L 번호 입력 또는 선택 (최근 일자 순)</label>
-            <div className="flex gap-2">
+            <div className="flex gap-2 ">
               <input
                 type="text"
                 list="bl-list"
@@ -592,7 +609,7 @@ export default function DashboardPage() {
                   }
                 }}
                 placeholder="B/L 번호를 입력하거나 더블 클릭하여 선택하세요"
-                className="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white text-slate-800 shadow-sm transition font-mono font-bold"
+                className="min-w-[130px] flex-1 px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white text-slate-800 shadow-sm transition font-mono font-bold"
               />
               <button
                 onClick={() => {
@@ -655,30 +672,133 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* 가로형 Stepper UI */}
-          <style>{`
-            @keyframes wiggle-x {
-              0%, 100% { transform: translateX(0); }
-              25% { transform: translateX(-3px); }
-              75% { transform: translateX(3px); }
-            }
-            .animate-wiggle {
-              animation: wiggle-x 0.5s ease-in-out infinite;
-            }
-          `}</style>
-          <div className="flex items-start justify-between w-full my-10 overflow-x-auto py-4 scrollbar-thin">
+
+
+          {/* 모바일 컨베이어 벨트 Stepper (3개 상태만 노출) */}
+          <div className="block md:hidden w-full flex justify-center py-4 overflow-hidden select-none">
+            <div className="relative w-[320px] h-[160px] overflow-hidden">
+              <div
+                className="absolute flex items-start pt-10"
+                style={{
+                  transform: `translateX(${(1 - currentIdx) * 120}px)`,
+                  transition: 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+                  width: `${STEPS.length * 120 - 40}px`
+                }}
+              >
+                {STEPS.map((step, idx) => {
+                  const isCompleted = activeIdx > idx;
+                  const isActive = idx === currentIdx;
+                  const isWaitingVerify = activeIdx === 1 && idx === 1;
+
+                  return (
+                    <React.Fragment key={step.key}>
+                      {/* 단계 아이템 (폭 80px) */}
+                      <div className="w-[80px] flex flex-col items-center shrink-0 text-center relative">
+                        {/* 상단 배지 영역 (h-6) */}
+                        <div className="h-6 flex items-center justify-center mb-1.5 w-full">
+                          {isActive && (
+                            <>
+                              {step.key === "Pending Documents" && trackingData?.doc_closing_date && (() => {
+                                const deadline = new Date(trackingData.doc_closing_date);
+                                const diffDays = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
+                                const isUrgent = diffDays >= 0 && diffDays <= 1 && !isCompleted;
+                                const isWarn = diffDays > 1 && diffDays <= 3;
+                                const formattedDate = `${deadline.getMonth() + 1}/${deadline.getDate()}`;
+                                return (
+                                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto
+                                    ${diffDays < 0 ? 'bg-red-100 text-red-600' : isUrgent ? 'bg-red-100 text-red-600 animate-wiggle' : isWarn ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                                    {(isUrgent || diffDays < 0) && <AlertTriangle size={8} className="shrink-0" />}
+                                    <span>마감: {formattedDate}</span>
+                                  </span>
+                                );
+                              })()}
+                              {step.key === "Gate In" && trackingData?.cargo_closing_date && (() => {
+                                const deadline = new Date(trackingData.cargo_closing_date);
+                                const diffDays = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
+                                const isUrgent = diffDays >= 0 && diffDays <= 1 && !isCompleted;
+                                const isWarn = diffDays > 1 && diffDays <= 3;
+                                const formattedDate = `${deadline.getMonth() + 1}/${deadline.getDate()}`;
+                                return (
+                                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto
+                                    ${diffDays < 0 ? 'bg-red-100 text-red-600' : isUrgent ? 'bg-red-100 text-red-600 animate-wiggle' : isWarn ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                                    {(isUrgent || diffDays < 0) && <AlertTriangle size={8} className="shrink-0" />}
+                                    <span>마감: {formattedDate}</span>
+                                  </span>
+                                );
+                              })()}
+                              {step.key === "Departed" && trackingData?.etd && (
+                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto">
+                                  <span>ETD: {trackingData.etd.substring(5, 10).replace('-', '/')}</span>
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {/* 원형 아이콘 (w-14 h-14로 1/3 확대, 내부 글씨 삽입, active 시 animate-float 적용) */}
+                        <div
+                          onClick={step.key === "In Transit" ? () => setIsMapOpen(prev => !prev) : undefined}
+                          className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-xs transition shadow-sm shrink-0 relative ${
+                            step.key === "In Transit" ? "cursor-pointer hover:scale-105 active:scale-95 hover:shadow-md transition-all duration-200" : ""
+                          } ${isCompleted
+                            ? "bg-green-500 text-white"
+                            : isWaitingVerify
+                              ? "bg-amber-500 text-white animate-pulse"
+                              : isActive
+                                ? "bg-blue-600 text-white ring-2 ring-blue-100 animate-float"
+                                : "bg-slate-100 text-slate-400 border border-slate-200"
+                            }`}
+                        >
+                          {step.key === "In Transit" && (
+                            <div className="absolute top-2.5 right-[-2px] z-30 pointer-events-none select-none">
+                              <MousePointerClick size={22} className={`${isCompleted || isActive ? "text-white" : "text-blue-600"} drop-shadow-sm animate-click`} />
+                            </div>
+                          )}
+                          {renderLabelInsideCircle(step.label)}
+                        </div>
+
+                        {/* 하단 정보 영역 */}
+                        <div className="h-6 mt-2 flex flex-col items-center">
+                          {isActive && (
+                            <>
+                              {isWaitingVerify && (
+                                <span className="text-[8px] text-amber-500 font-bold">검증 대기</span>
+                              )}
+                              {step.key === "Trucking" && trackingData?.vehicleStats && trackingData.vehicleStats.total > 0 && (
+                                <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-700 px-1.5 py-0.2 rounded-full whitespace-nowrap shadow-xs">
+                                  {trackingData.vehicleStats.yardInCount}/{trackingData.vehicleStats.total}대
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 연결선 (폭 40px) */}
+                      {idx < STEPS.length - 1 && (
+                        <div className="w-[40px] shrink-0 pt-[52px]">
+                          <div className={`h-0.5 w-full ${activeIdx > idx + 0.5 ? "bg-green-500" : "bg-slate-200"}`} />
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 데스크탑 Stepper UI */}
+          <div className="hidden md:flex items-start justify-between w-full my-10 overflow-x-auto pt-14 pb-4 scrollbar-thin">
             {STEPS.map((step, idx) => {
               const isCompleted = activeIdx > idx;
-              const isActive = activeIdx === idx;
-              const isPending = activeIdx < idx;
+              const isActive = idx === currentIdx;
               const isWaitingVerify = activeIdx === 1 && idx === 1;
 
               return (
                 <React.Fragment key={step.key}>
-                  <div className="flex flex-col items-center flex-1 min-w-[75px] text-center px-1">
-                    {/* 상단 배지 영역 고정 높이 (h-6) 로 일관된 원형 세로 위치 보장 */}
+                  <div className="flex flex-col items-center flex-1 min-w-[15px] text-center px-1 relative">
+                    {/* 상단 배지 영역 */}
                     <div className="h-6 flex items-center justify-center mb-1.5 w-full">
-                      {/* 마감일 배지: 서류 업로드 단계 */}
                       {step.key === "Pending Documents" && trackingData?.doc_closing_date && (() => {
                         const deadline = new Date(trackingData.doc_closing_date);
                         const diffDays = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
@@ -693,7 +813,6 @@ export default function DashboardPage() {
                           </span>
                         );
                       })()}
-                      {/* 마감일 배지: CY 입고 단계 */}
                       {step.key === "Gate In" && trackingData?.cargo_closing_date && (() => {
                         const deadline = new Date(trackingData.cargo_closing_date);
                         const diffDays = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
@@ -708,48 +827,49 @@ export default function DashboardPage() {
                           </span>
                         );
                       })()}
-                      {/* 출항 예정일 배지: 출항 단계 */}
                       {step.key === "Departed" && trackingData?.etd && (
                         <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto">
                           <span>ETD: {trackingData.etd.substring(5, 10).replace('-', '/')}</span>
                         </span>
                       )}
                     </div>
+
+                    {/* 데스크탑 원형 아이콘 */}
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition shadow-sm ${isCompleted
-                          ? "bg-green-500 text-white"
-                          : isWaitingVerify
-                            ? "bg-amber-500 text-white animate-pulse"
-                            : isActive
-                              ? "bg-blue-600 text-white ring-4 ring-blue-100"
-                              : "bg-slate-100 text-slate-400"
-                        }`}
-                    >
-                      {isCompleted ? <CheckCircle2 size={18} /> : idx + 1}
-                    </div>
-                    <span
-                      className={`text-xs font-bold mt-2 whitespace-nowrap ${isWaitingVerify
-                          ? "text-amber-500"
+                      onClick={step.key === "In Transit" ? () => setIsMapOpen(prev => !prev) : undefined}
+                      className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-sm transition shadow-sm relative ${
+                        step.key === "In Transit" ? "cursor-pointer hover:scale-105 active:scale-95 hover:shadow-md transition-all duration-200" : ""
+                      } ${isCompleted
+                        ? "bg-green-500 text-white"
+                        : isWaitingVerify
+                          ? "bg-amber-500 text-white animate-pulse"
                           : isActive
-                            ? "text-blue-600"
-                            : isCompleted
-                              ? "text-green-600"
-                              : "text-slate-400"
+                            ? "bg-blue-600 text-white ring-4 ring-blue-100 animate-float"
+                            : "bg-slate-100 text-slate-400 border border-slate-200"
                         }`}
                     >
-                      {step.label}
-                    </span>
-                    {isWaitingVerify && (
-                      <span className="text-[9px] text-amber-500 font-bold mt-0.5">검증 대기</span>
-                    )}
-                    {step.key === "Trucking" && trackingData?.vehicleStats && trackingData.vehicleStats.total > 0 && (
-                      <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1 bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-700 px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm">
-                        반입: {trackingData.vehicleStats.yardInCount} / {trackingData.vehicleStats.total}대
-                      </span>
-                    )}
+                      {step.key === "In Transit" && (
+                        <div className="absolute top-2.5 right-[-2px] z-30 pointer-events-none select-none">
+                          <MousePointerClick size={22} className={`${isCompleted || isActive ? "text-white" : "text-blue-600"} drop-shadow-sm animate-click`} />
+                        </div>
+                      )}
+                      {renderLabelInsideCircle(step.label)}
+                    </div>
+
+                    {/* 데스크탑 하단 정보 영역 */}
+                    <div className="h-6 mt-2 flex flex-col items-center">
+                      {isWaitingVerify && (
+                        <span className="text-[9px] text-amber-500 font-bold">검증 대기</span>
+                      )}
+                      {step.key === "Trucking" && trackingData?.vehicleStats && trackingData.vehicleStats.total > 0 && (
+                        <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-700 px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm">
+                          반입: {trackingData.vehicleStats.yardInCount} / {trackingData.vehicleStats.total}대
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {idx < STEPS.length - 1 && (
-                    <div className="flex-1 min-w-[20px] flex items-center self-start pt-[44px]">
+                    <div className="flex-1 min-w-[20px] flex items-center self-start pt-[52px]">
                       <div className={`h-0.5 w-full mx-2 ${activeIdx > idx + 0.5 ? "bg-green-500" : "bg-slate-200"}`} />
                     </div>
                   )}
@@ -1016,11 +1136,11 @@ export default function DashboardPage() {
             <thead className="bg-slate-50 text-slate-500 text-sm uppercase tracking-wider border-b border-slate-100 sticky top-0 shadow-sm z-10">
               <tr>
                 <th className="p-4 font-bold">B/L 번호</th>
-                <th className="p-4 font-bold">선박명</th>
-                <th className="p-4 font-bold">상태</th>
-                <th className="p-4 font-bold">구간 (POL ➔ POD)</th>
+                {/* <th className="p-4 font-bold">선박명</th> */}
+                {/* <th className="p-4 font-bold">상태</th> */}
+                <th className="p-4 font-bold">구간</th>
                 <th className="p-4 font-bold">ETA</th>
-                <th className="p-4 font-bold text-right">청구 금액</th>
+                {/* <th className="p-4 font-bold text-right">청구 금액</th> */}
                 <th className="p-4 font-bold text-center">결제상태</th>
               </tr>
             </thead>
@@ -1036,26 +1156,26 @@ export default function DashboardPage() {
                     <td className="p-4 font-bold text-blue-600">
                       {shipment.bl_number}
                     </td>
-                    <td className="p-4 text-slate-800 font-medium">
+                    {/* <td className="p-4 text-slate-800 font-medium">
                       {shipment.vessel_name}
-                    </td>
-                    <td className="p-4">
+                    </td> */}
+                    {/* <td className="p-4">
                       <span
                         className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${shipment.status === "Delivered" ? "bg-slate-100 text-slate-700" : "bg-blue-100 text-blue-700"
                           }`}
                       >
                         {shipment.status}
                       </span>
-                    </td>
+                    </td> */}
                     <td className="p-4 text-slate-600 text-sm">
                       {shipment.pol.split(",")[0]} ➔ {shipment.pod.split(",")[0]}
                     </td>
                     <td className="p-4 text-slate-800 text-sm">
                       {shipment.eta}
                     </td>
-                    <td className="p-4 text-sm font-semibold text-right text-red-600">
+                    {/* <td className="p-4 text-sm font-semibold text-right text-red-600">
                       ${Number(shipment.invoice_amount).toLocaleString()}
-                    </td>
+                    </td> */}
                     <td className="p-4 text-center">
                       {shipment.is_paid ? (
                         <span className="text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded border border-green-200">

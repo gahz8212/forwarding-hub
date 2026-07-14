@@ -313,7 +313,7 @@ export const getClientBookings = async (req: Request, res: Response) => {
 
   try {
     const [rows]: any = await pool.query(`
-      SELECT b.id, b.status, b.created_at, b.incoterms, s.vessel_name, s.pol, s.pod, s.etd, s.eta, s.available_cbm, s.available_weight, s.doc_closing_date, s.cargo_closing_date, sh.bl_number
+      SELECT b.id, b.status, b.created_at, b.incoterms, s.vessel_name, s.pol, s.pod, s.etd, s.eta, s.available_cbm, s.available_weight, s.doc_closing_date, s.cargo_closing_date, s.metadata, sh.bl_number
       FROM bookings b
       JOIN schedules s ON b.schedule_id = s.id
       LEFT JOIN shipments sh ON sh.booking_id = b.id
@@ -342,7 +342,7 @@ export const getAdminBookings = async (req: Request, res: Response) => {
 
   try {
     const [rows]: any = await pool.query(`
-      SELECT b.id, b.status, b.created_at, b.incoterms, u.username as shipper, s.vessel_name, s.pol, s.pod, s.etd, s.eta, s.available_cbm, s.available_weight, s.doc_closing_date, s.cargo_closing_date, sh.bl_number
+      SELECT b.id, b.status, b.created_at, b.incoterms, u.username as shipper, s.vessel_name, s.pol, s.pod, s.etd, s.eta, s.available_cbm, s.available_weight, s.doc_closing_date, s.cargo_closing_date, s.metadata, sh.bl_number
       FROM bookings b
       JOIN schedules s ON b.schedule_id = s.id
       JOIN users u ON b.user_id = u.id

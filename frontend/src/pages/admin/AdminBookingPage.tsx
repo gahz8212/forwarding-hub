@@ -244,14 +244,6 @@ export default function AdminBookingPage() {
                           <Share2 size={14} />
                         </button>
                         <button
-                          onClick={() => handleOpenChat(bk)}
-                          title="부킹별 개별 대화 및 메모 열기"
-                          className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition flex items-center gap-1 text-xs font-bold"
-                        >
-                          <MessageSquare size={14} />
-                          대화/메모
-                        </button>
-                        <button
                           onClick={() => handleApprove(bk)}
                           disabled={processingId === bk.id}
                           className="bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition shadow-sm disabled:opacity-50"
@@ -283,9 +275,11 @@ export default function AdminBookingPage() {
           <div className="p-4 md:p-6 border-b bg-slate-50">
             <h3 className="text-base md:text-lg font-bold text-slate-800">승인 완료된 부킹 내역 ({confirmedBookings.length}건)</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse block md:table">
-              <thead className="hidden md:table-header-group bg-slate-50 text-slate-500 text-sm uppercase tracking-wider border-b border-slate-100">
+
+          {/* 데스크탑 전용 테이블 뷰 */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-xs border-b border-slate-100">
                 <tr>
                   <th className="p-4 font-bold">예약 번호</th>
                   <th className="p-4 font-bold">요청 화주</th>
@@ -297,62 +291,111 @@ export default function AdminBookingPage() {
                   <th className="p-4 font-bold text-center">작업</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 block md:table-row-group p-3 md:p-0 space-y-3 md:space-y-0">
+              <tbody className="divide-y divide-slate-100 font-semibold text-sm">
                 {confirmedBookings.map((bk) => (
-                  <tr key={bk.id} className="hover:bg-slate-50 transition text-sm block md:table-row rounded-xl border border-slate-100 md:border-0 md:rounded-none bg-white shadow-sm md:shadow-none mb-3 md:mb-0 overflow-hidden">
-                    <td className="p-3 md:p-4 font-bold text-slate-800 block md:table-cell border-b md:border-b-0 border-slate-50">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">예약번호</span>
+                  <tr key={bk.id} className="hover:bg-slate-50 transition">
+                    <td className="p-4 font-bold text-slate-800">
                       BK-{bk.id.toString().padStart(5, "0")}
                     </td>
-                    <td className="p-3 md:p-4 text-slate-700 font-semibold block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">요청 화주</span>
+                    <td className="p-4 text-slate-700 font-semibold">
                       {bk.shipper}
                     </td>
-                    <td className="p-3 md:p-4 text-slate-800 font-semibold block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박명</span>
+                    <td className="p-4 text-slate-800 font-semibold">
                       {bk.vessel_name}
                     </td>
-                    <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">구간</span>
+                    <td className="p-4 text-slate-600">
                       {bk.pol.split(",")[0]} ➔ {bk.pod.split(",")[0]}
                     </td>
-                    <td className="p-3 md:p-4 md:text-center font-bold text-slate-700 block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">거래 조건</span>
+                    <td className="p-4 text-center font-bold text-slate-700">
                       <span className="px-2 py-1 bg-slate-100 rounded text-xs">
                         {bk.incoterms || "-"}
                       </span>
                     </td>
-                    <td className="p-3 md:p-4 text-blue-600 font-bold block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">발행 B/L</span>
+                    <td className="p-4 text-blue-600 font-bold">
                       {bk.bl_number || "-"}
                     </td>
-                    <td className="p-3 md:p-4 text-slate-600 md:text-center block md:table-cell">
-                      <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선적 일정</span>
+                    <td className="p-4 text-slate-600 text-center">
                       {bk.etd ? bk.etd.split("T")[0] : ""} ➔ {bk.eta ? bk.eta.split("T")[0] : ""}
                     </td>
-                    <td className="p-3 md:p-4 md:text-center block md:table-cell bg-slate-50 md:bg-transparent border-t border-slate-100 md:border-0">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => handleNateOnShare(bk)}
-                          title="네이트온 공유 텍스트 복사"
-                          className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition"
-                        >
-                          <Share2 size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleOpenChat(bk)}
-                          title="대화 및 메모"
-                          className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition flex items-center gap-1 text-xs font-bold"
-                        >
-                          <MessageSquare size={14} />
-                          대화/메모
-                        </button>
-                      </div>
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={() => handleNateOnShare(bk)}
+                        title="네이트온 공유 텍스트 복사"
+                        className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition"
+                      >
+                        <Share2 size={14} />
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* 모바일 전용 3열 그리드 카드 레이아웃 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 md:p-6 bg-slate-50/30 md:hidden">
+            {confirmedBookings.map((bk) => (
+              <div
+                key={bk.id}
+                className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition duration-200"
+              >
+                {/* 카드 상단: 예약 번호 & 화주명 */}
+                <div className="flex justify-between items-center mb-2.5 pb-2.5 border-b border-slate-100">
+                  <span className="font-bold text-slate-800 text-sm">
+                    BK-{bk.id.toString().padStart(5, "0")}
+                  </span>
+                  <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
+                    {bk.shipper}
+                  </span>
+                </div>
+
+                {/* 카드 본문: 선박명 + 구간/일정 */}
+                <div className="space-y-3">
+                  <div className="text-xs text-slate-700 font-semibold flex items-center gap-1">
+                    <span className="text-slate-400">선박명:</span>
+                    <span className="text-slate-800">{bk.vessel_name}</span>
+                  </div>
+
+                  {/* 구간/일정 (2x2 그리드) */}
+                  <div className="p-2.5 bg-slate-50 rounded-lg">
+                    <div className="inline-grid grid-cols-[auto_auto] gap-x-6 gap-y-0.5 text-xs text-left align-middle leading-normal">
+                      <div className="font-bold text-slate-900">{bk.pol.split(",")[0]}</div>
+                      <div className="font-semibold text-slate-600">{bk.etd ? bk.etd.split("T")[0] : "-"}</div>
+                      
+                      <div className="text-slate-400 text-[10px] pl-1 font-bold">➔</div>
+                      <div className="text-slate-400 text-[10px] pl-1 font-bold">➔</div>
+                      
+                      <div className="font-bold text-blue-700">{bk.pod.split(",")[0]}</div>
+                      <div className="font-semibold text-blue-600">{bk.eta ? bk.eta.split("T")[0] : "-"}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 카드 하단: B/L & Incoterms & 공유 */}
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[10px] text-slate-400 font-bold">발행 B/L / 거래조건</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-blue-600">
+                        {bk.bl_number || "-"}
+                      </span>
+                      <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold">
+                        {bk.incoterms || "-"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 공유 버튼 */}
+                  <button
+                    onClick={() => handleNateOnShare(bk)}
+                    title="네이트온 공유 텍스트 복사"
+                    className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition shadow-2xs"
+                  >
+                    <Share2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

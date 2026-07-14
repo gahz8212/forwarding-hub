@@ -905,105 +905,254 @@ export default function AdminShipmentPage() {
             <h3 className="text-base font-bold text-slate-800">운송 트래킹 현황 목록</h3>
           </div>
 
-          <div className="overflow-x-auto">
-            {loading ? (
-              <div className="p-12 text-center text-slate-500 font-bold">로딩 중...</div>
-            ) : error ? (
-              <div className="p-12 text-center text-rose-500 font-bold">{error}</div>
-            ) : shipments.length === 0 ? (
-              <div className="p-12 text-center text-slate-400">등록된 선적 정보가 없습니다.</div>
-            ) : (
-              <table className="w-full text-left border-collapse text-sm block md:table">
-                <thead className="hidden md:table-header-group bg-slate-50 text-slate-500 uppercase tracking-wider text-xs border-b">
-                  <tr>
-                    <th className="p-4 font-bold">B/L 번호</th>
-                    <th className="p-4 font-bold">화주명</th>
-                    <th className="p-4 font-bold">선박명</th>
-                    <th className="p-4 font-bold">POL (출발)</th>
-                    <th className="p-4 font-bold">POD (도착)</th>
-                    <th className="p-4 font-bold">ETD / ETA</th>
-                    <th className="p-4 font-bold">상태</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-semibold block md:table-row-group p-3 md:p-0 space-y-3 md:space-y-0">
-                  {shipments.map((s) => (
-                    <tr
-                      key={s.id}
-                      onClick={() => setActiveDashboardShipment(s)}
-                      className="cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition block md:table-row rounded-xl border border-slate-100 md:border-0 md:rounded-none bg-white dark:bg-slate-900 shadow-sm md:shadow-none mb-3 md:mb-0 overflow-hidden"
-                      title="클릭 시 차량 관리 대시보드 열기"
-                    >
-                      <td className="p-3 md:p-4 text-slate-800 font-bold block md:table-cell border-b md:border-b-0 border-slate-50">
-                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">B/L 번호</span>
-                        {s.bl_number}
-                      </td>
-                      <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
-                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">화주명</span>
-                        {s.shipper}
-                      </td>
-                      <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
-                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박명</span>
-                        {s.vessel_name}
-                      </td>
-                      <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
-                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POL</span>
-                        {s.pol}
-                      </td>
-                      <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
-                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POD</span>
-                        {s.pod}
-                      </td>
-                      <td className="p-3 md:p-4 text-slate-500 text-xs block md:table-cell">
-                        <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">ETD / ETA</span>
-                        <div>D: {s.etd ? s.etd.split("T")[0] : "-"}</div>
-                        <div className="text-slate-400">A: {s.eta ? s.eta.split("T")[0] : "-"}</div>
-                      </td>
-                      <td className="p-3 md:p-4 align-top block md:table-cell bg-slate-50 md:bg-transparent border-t border-slate-100 md:border-0">
+          {loading ? (
+            <div className="p-12 text-center text-slate-500 font-bold">로딩 중...</div>
+          ) : error ? (
+            <div className="p-12 text-center text-rose-500 font-bold">{error}</div>
+          ) : shipments.length === 0 ? (
+            <div className="p-12 text-center text-slate-400">등록된 선적 정보가 없습니다.</div>
+          ) : (
+            <>
+              {/* 데스크탑 전용 테이블 뷰 */}
+              <div className="overflow-x-auto hidden md:block">
+                <table className="w-full text-left border-collapse text-sm block md:table">
+                  <thead className="hidden md:table-header-group bg-slate-50 text-slate-500 uppercase tracking-wider text-xs border-b">
+                    <tr>
+                      <th className="p-4 font-bold">B/L 번호</th>
+                      <th className="p-4 font-bold">화주명</th>
+                      <th className="p-4 font-bold">선박명</th>
+                      <th className="p-4 font-bold">POL (출발)</th>
+                      <th className="p-4 font-bold">POD (도착)</th>
+                      <th className="p-4 font-bold">ETD / ETA</th>
+                      <th className="p-4 font-bold">상태</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold block md:table-row-group p-3 md:p-0 space-y-3 md:space-y-0">
+                    {shipments.map((s) => (
+                      <tr
+                        key={s.id}
+                        onClick={() => setActiveDashboardShipment(s)}
+                        className="cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/40 transition block md:table-row rounded-xl border border-slate-100 md:border-0 md:rounded-none bg-white dark:bg-slate-900 shadow-sm md:shadow-none mb-3 md:mb-0 overflow-hidden"
+                        title="클릭 시 차량 관리 대시보드 열기"
+                      >
+                        <td className="p-3 md:p-4 text-slate-800 font-bold block md:table-cell border-b md:border-b-0 border-slate-50">
+                          <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">B/L 번호</span>
+                          {s.bl_number}
+                        </td>
+                        <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
+                          <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">화주명</span>
+                          {s.shipper}
+                        </td>
+                        <td className="p-3 md:p-4 text-slate-600 block md:table-cell">
+                          <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">선박명</span>
+                          {s.vessel_name}
+                        </td>
+                        <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
+                          <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POL</span>
+                          {s.pol}
+                        </td>
+                        <td className="p-3 md:p-4 text-slate-500 block md:table-cell">
+                          <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">POD</span>
+                          {s.pod}
+                        </td>
+                        <td className="p-3 md:p-4 text-slate-500 text-xs block md:table-cell">
+                          <span className="text-[10px] text-slate-400 font-semibold block md:hidden mb-0.5">ETD / ETA</span>
+                          <div>D: {s.etd ? s.etd.split("T")[0] : "-"}</div>
+                          <div className="text-slate-400">A: {s.eta ? s.eta.split("T")[0] : "-"}</div>
+                        </td>
+                        <td className="p-3 md:p-4 align-top block md:table-cell bg-slate-50 md:bg-transparent border-t border-slate-100 md:border-0">
+                          {/* 1단계: 서류 업로드 대기 */}
+                          {s.status === "Pending Documents" && (
+                            <span className="text-xs text-slate-400 font-medium italic">화주의 인보이스/패킹리스트 제출을 대기하고 있습니다.</span>
+                          )}
 
+                          {/* 2단계: 화주가 서류 제출 완료 ➔ 어드민이 단일 서류검증 버튼으로 한 화면에서 확인 */}
+                          {s.status === "Documents Uploaded" && (
+                            <div className="space-y-2">
+                              <div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // 로우 클릭 이벤트 전파 차단
+                                    setVerifierBlNumber(s.bl_number);
+                                    setVerifierShipperName(s.shipper || "일반 화주");
+                                    setVerifierInvoiceKey(s.invoice_file_key);
+                                    setVerifierPackingKey(s.packing_list_file_key);
+                                    setVerifierActiveTab("invoice");
+                                    setIsVerifierOpen(true);
+                                  }}
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
+                                >
+                                  <Eye size={14} /> 서류 검증 (인보이스/패킹)
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 3단계 및 이후 단계: 진행 단계 제어 (페이지네이션 스타일 스와이퍼) */}
+                          {["Documents Verified", "Trucking", "Gate In", "Loaded on Vessel", "Departed", "In Transit", "Delivered"].includes(s.status) && (
+                            <div className="space-y-3">
+                              {(() => {
+                                const currentIdx = STAGES.findIndex(stage => stage.value === s.status);
+                                if (currentIdx === -1) return null;
+
+                                const cardStepWidth = 120; // 110px card width + 10px gap (approx 50% larger than 74px + 8px gap)
+                                const translateX = -(currentIdx - 1) * cardStepWidth;
+
+                                return (
+                                  <div className="flex flex-col gap-1 mt-1 p-3  max-w-[374px] overflow-hidden select-none">
+                                    {/* Viewport (Mask Layer) */}
+                                    <div className="relative w-[350px] h-[74px] mt-0.5 overflow-hidden">
+                                      {/* Conveyor Belt */}
+                                      <div
+                                        className="absolute flex gap-[10px] h-[72px] items-center"
+                                        style={{
+                                          transform: `translateX(${translateX}px)`,
+                                          transition: 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+                                          width: `${STAGES.length * 110 + (STAGES.length - 1) * 10}px`
+                                        }}
+                                      >
+                                        {STAGES.map((stage, idx) => {
+                                          const StageIcon = stage.icon;
+                                          const isActive = idx === currentIdx;
+
+                                          if (isActive) {
+                                            return (
+                                              <div
+                                                key={stage.value}
+                                                className={`w-[110px] h-[68px] shrink-0 flex flex-col items-center justify-center p-1.5 rounded-lg border font-black ${stage.activeColor} shadow-sm select-none relative overflow-hidden`}
+                                              >
+                                                <div className="absolute top-1 left-2 text-[6px] font-bold uppercase tracking-wider opacity-60">Active</div>
+                                                <StageIcon size={18} className="mb-0.5 animate-pulse" />
+                                                <span className="text-[11px] tracking-tight text-center leading-none truncate w-full">{stage.label}</span>
+                                              </div>
+                                            );
+                                          } else {
+                                            const isVisible = Math.abs(idx - currentIdx) <= 1;
+                                            return (
+                                              <button
+                                                key={stage.value}
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation(); // 로우 클릭 이벤트 전파 차단
+                                                  handleStatusChange(s.bl_number, stage.value);
+                                                }}
+                                                disabled={!isVisible}
+                                                className={`w-[110px] h-[60px] shrink-0 flex flex-col items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition duration-150 shadow-sm group cursor-pointer ${!isVisible ? 'opacity-30' : ''}`}
+                                                title={`클릭 시 '${stage.label}'(으)로 이동`}
+                                              >
+                                                <StageIcon size={15} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors mb-0.5" />
+                                                <span className="text-[10px] font-bold text-slate-500 group-hover:text-slate-700 dark:text-slate-400 transition-colors truncate w-full text-center">{stage.label}</span>
+                                              </button>
+                                            );
+                                          }
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 모바일 전용 3열 그리드 카드 레이아웃 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 md:p-6 bg-slate-50/30 md:hidden animate-fade-in">
+                {shipments.map((s) => {
+                  const handleCardClick = (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    setActiveDashboardShipment(s);
+                  };
+
+                  return (
+                    <div
+                      key={s.id}
+                      className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between transition duration-200"
+                    >
+                      {/* 카드 상단: B/L 번호 & 화주명 */}
+                      <div className="flex justify-between items-center mb-2.5 pb-2.5 border-b border-slate-100">
+                        <span 
+                          onClick={handleCardClick}
+                          className="font-bold text-blue-600 hover:text-blue-800 hover:underline text-sm cursor-pointer"
+                          title="클릭 시 차량 관리 대시보드 열기"
+                        >
+                          {s.bl_number}
+                        </span>
+                        <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
+                          {s.shipper}
+                        </span>
+                      </div>
+
+                      {/* 카드 본문: 선박명 + 구간/일정 */}
+                      <div className="space-y-3 flex-1">
+                        <div className="text-xs text-slate-700 font-semibold flex items-center gap-1">
+                          <span className="text-slate-400">선박명:</span>
+                          <span className="text-slate-800">{s.vessel_name}</span>
+                        </div>
+
+                        {/* 구간/일정 (2x2 그리드) */}
+                        <div className="p-2.5 bg-slate-50 rounded-lg">
+                          <div className="inline-grid grid-cols-[auto_auto] gap-x-6 gap-y-0.5 text-xs text-left align-middle leading-normal">
+                            <div className="font-bold text-slate-900">{s.pol?.split(",")[0] || "-"}</div>
+                            <div className="font-semibold text-slate-600">{s.etd ? s.etd.split("T")[0] : "-"}</div>
+                            
+                            <div className="text-slate-400 text-[10px] pl-1 font-bold">➔</div>
+                            <div className="text-slate-400 text-[10px] pl-1 font-bold">➔</div>
+                            
+                            <div className="font-bold text-blue-700">{s.pod?.split(",")[0] || "-"}</div>
+                            <div className="font-semibold text-blue-600">{s.eta ? s.eta.split("T")[0] : "-"}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 카드 하단: 상태 및 운송 제어 */}
+                      <div className="mt-4 pt-3 border-t border-slate-100">
+                        <div className="text-[10px] text-slate-400 font-bold mb-1.5">진행 상태 제어</div>
+                        
                         {/* 1단계: 서류 업로드 대기 */}
                         {s.status === "Pending Documents" && (
-                          <span className="text-xs text-slate-400 font-medium italic">화주의 인보이스/패킹리스트 제출을 대기하고 있습니다.</span>
+                          <span className="text-xs text-slate-400 font-medium italic block py-2">
+                            화주의 인보이스/패킹리스트 제출 대기 중
+                          </span>
                         )}
 
-                        {/* 2단계: 화주가 서류 제출 완료 ➔ 어드민이 단일 서류검증 버튼으로 한 화면에서 확인 */}
+                        {/* 2단계: 서류 검증 */}
                         {s.status === "Documents Uploaded" && (
-                          <div className="space-y-2">
-                            <div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation(); // 로우 클릭 이벤트 전파 차단
-                                  setVerifierBlNumber(s.bl_number);
-                                  setVerifierShipperName(s.shipper || "일반 화주");
-                                  setVerifierInvoiceKey(s.invoice_file_key);
-                                  setVerifierPackingKey(s.packing_list_file_key);
-                                  setVerifierActiveTab("invoice");
-                                  setIsVerifierOpen(true);
-                                }}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-sm"
-                              >
-                                <Eye size={14} /> 서류 검증 (인보이스/패킹)
-                              </button>
-                            </div>
+                          <div className="py-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setVerifierBlNumber(s.bl_number);
+                                setVerifierShipperName(s.shipper || "일반 화주");
+                                setVerifierInvoiceKey(s.invoice_file_key);
+                                setVerifierPackingKey(s.packing_list_file_key);
+                                setVerifierActiveTab("invoice");
+                                setIsVerifierOpen(true);
+                              }}
+                              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
+                            >
+                              <Eye size={14} /> 서류 검증 (인보이스/패킹)
+                            </button>
                           </div>
                         )}
 
-                        {/* 3단계 및 이후 단계: 진행 단계 제어 (페이지네이션 스타일 스와이퍼) */}
+                        {/* 3단계 및 이후 단계: 컨베이어 벨트 스와이퍼 */}
                         {["Documents Verified", "Trucking", "Gate In", "Loaded on Vessel", "Departed", "In Transit", "Delivered"].includes(s.status) && (
-                          <div className="space-y-3">
+                          <div className="w-full overflow-hidden select-none">
                             {(() => {
                               const currentIdx = STAGES.findIndex(stage => stage.value === s.status);
                               if (currentIdx === -1) return null;
 
-                              const cardStepWidth = 120; // 110px card width + 10px gap (approx 50% larger than 74px + 8px gap)
+                              const cardStepWidth = 120;
                               const translateX = -(currentIdx - 1) * cardStepWidth;
 
                               return (
-                                <div className="flex flex-col gap-1 mt-1 p-3  max-w-[374px] overflow-hidden select-none">
-
-
-                                  {/* Viewport (Mask Layer) */}
-                                  <div className="relative w-[350px] h-[74px] mt-0.5 overflow-hidden">
-                                    {/* Conveyor Belt */}
+                                <div className="flex flex-col gap-1 max-w-full overflow-hidden">
+                                  <div className="relative w-full h-[74px] mt-0.5 overflow-hidden">
                                     <div
                                       className="absolute flex gap-[10px] h-[72px] items-center"
                                       style={{
@@ -1034,12 +1183,11 @@ export default function AdminShipmentPage() {
                                               key={stage.value}
                                               type="button"
                                               onClick={(e) => {
-                                                e.stopPropagation(); // 로우 클릭 이벤트 전파 차단
+                                                e.stopPropagation();
                                                 handleStatusChange(s.bl_number, stage.value);
                                               }}
                                               disabled={!isVisible}
-                                              className={`w-[110px] h-[60px] shrink-0 flex flex-col items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition duration-150 shadow-sm group cursor-pointer ${!isVisible ? 'opacity-30' : ''
-                                                }`}
+                                              className={`w-[110px] h-[60px] shrink-0 flex flex-col items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition duration-150 shadow-sm group cursor-pointer ${!isVisible ? 'opacity-30' : ''}`}
                                               title={`클릭 시 '${stage.label}'(으)로 이동`}
                                             >
                                               <StageIcon size={15} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors mb-0.5" />
@@ -1055,13 +1203,13 @@ export default function AdminShipmentPage() {
                             })()}
                           </div>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
