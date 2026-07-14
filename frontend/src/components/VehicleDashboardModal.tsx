@@ -1181,6 +1181,33 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                                 );
                               })()}
                             </div>
+
+                            {/* Row 3: 구동 여부 (운행가능, 견인필요, 지게차필요) 세그먼트 버튼 group (Desktop view: hidden lg:flex) */}
+                            <div className="mt-3 flex flex-col gap-1.5 hidden lg:flex">
+                              <div className="text-xs font-bold text-slate-500 dark:text-slate-400">구동상태:</div>
+                              <div className="flex w-full bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
+                                {[
+                                  { value: "Running", label: "운행 가능", activeBg: "bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs", inactiveBg: "text-slate-600 hover:bg-slate-200/60 dark:text-slate-350 dark:hover:bg-slate-750", Icon: CheckCircle },
+                                  { value: "Towing", label: "견인 필요", activeBg: "bg-amber-500 hover:bg-amber-600 text-white shadow-xs", inactiveBg: "text-slate-600 hover:bg-slate-200/60 dark:text-slate-350 dark:hover:bg-slate-750", Icon: Truck },
+                                  { value: "Forklift", label: "지게차 필요", activeBg: "bg-rose-500 hover:bg-rose-600 text-white shadow-xs", inactiveBg: "text-slate-600 hover:bg-slate-200/60 dark:text-slate-350 dark:hover:bg-slate-750", Icon: AlertTriangle }
+                                ].map(({ value, label, activeBg, inactiveBg, Icon }) => {
+                                  const isSelected = v.drivability === value;
+                                  return (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      onClick={() => handleInputChange(v.id, "drivability", value)}
+                                      className={`flex-1 h-9 rounded-lg text-xs font-extrabold transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer ${
+                                        isSelected ? activeBg : inactiveBg
+                                      }`}
+                                    >
+                                      <Icon size={13} className={isSelected ? "text-white" : "text-slate-400 dark:text-slate-500"} />
+                                      <span>{label}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </td>
                           <td className={`p-3 align-top transition-all duration-150 block lg:table-cell w-full lg:w-[650px] mb-4 lg:mb-0 border-b border-slate-100 dark:border-slate-800 lg:border-none pb-3 lg:pb-3 ${isCurrentViewingRow ? 'border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
                             <div className="flex flex-col gap-4">
