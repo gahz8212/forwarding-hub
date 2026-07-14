@@ -1184,7 +1184,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
 
                             {/* Row 3: 구동 여부 (운행가능, 견인필요, 지게차필요) 세그먼트 버튼 group (Desktop view: hidden lg:flex) */}
                             <div className="mt-3 flex flex-col gap-1.5 hidden lg:flex">
-                              <div className="text-xs font-bold text-slate-500 dark:text-slate-400">구동상태:</div>
+                              {/* <div className="text-xs font-bold text-slate-500 dark:text-slate-400">구동상태:</div> */}
                               <div className="flex w-full bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
                                 {[
                                   { value: "Running", label: "운행 가능", activeBg: "bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs", inactiveBg: "text-slate-600 hover:bg-slate-200/60 dark:text-slate-350 dark:hover:bg-slate-750", Icon: CheckCircle },
@@ -1311,8 +1311,8 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                                 </div>
                               </div>
 
-                              {/* Row 3: 구동 여부 (운행가능, 견인필요, 지게차필요) 세그먼트 버튼 group */}
-                              <div className="flex flex-col gap-1.5">
+                              {/* Row 3: 구동 여부 (운행가능, 견인필요, 지게차필요) 세그먼트 버튼 group (Mobile view: lg:hidden) */}
+                              <div className="flex flex-col gap-1.5 lg:hidden">
                                 <div className="text-xs font-bold text-slate-500 dark:text-slate-400">구동상태:</div>
                                 <div className="flex w-full bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
                                   {[
