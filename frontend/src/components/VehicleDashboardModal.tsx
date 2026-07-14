@@ -877,7 +877,22 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 md:p-6">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-[95vw] h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 relative">
+      <style>{`
+        @keyframes modal-slide-up {
+          from {
+            transform: translateY(100vh);
+            opacity: 0.9;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+        .animate-modal-slide-up {
+          animation: modal-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+      `}</style>
+      <div className="bg-white dark:bg-slate-900 w-full max-w-[95vw] h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 relative animate-modal-slide-up">
         {/* Header */}
         <div className="flex flex-col p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 relative">
           <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors z-10">
