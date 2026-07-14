@@ -757,10 +757,10 @@ export default function InvoiceListPage() {
                             <div className="text-slate-500 text-[9.5px] font-extrabold mt-0.5">{item.cargo_type}</div>
                           </td>
                           <td className="p-1.5 text-right">
-                            <div className="text-slate-400 text-[10px]">-</div>
                             <div className="font-bold text-slate-800">
                               ${Number(item.applied_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                             </div>
+                            <div className="text-slate-400 text-[10px] mt-0.5">-</div>
                           </td>
                           <td className="p-1.5 text-right font-bold text-slate-700">
                             ₩{Number(item.applied_inland_krw || 0).toLocaleString()}
