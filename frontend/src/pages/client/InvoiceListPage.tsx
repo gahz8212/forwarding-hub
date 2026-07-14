@@ -67,6 +67,7 @@ export default function InvoiceListPage() {
   });
 
   const [selectedClientFilter, setSelectedClientFilter] = useState<string>("ALL");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   const fetchInvoices = async () => {
     setLoading(true);
@@ -87,9 +88,15 @@ export default function InvoiceListPage() {
 
   // Derive filtered invoices and stats dynamically
   const uniqueClients = Array.from(new Set(invoices.map((inv) => inv.client_name))).filter(Boolean);
-  const filteredInvoices = selectedClientFilter === "ALL" 
-    ? invoices 
-    : invoices.filter((inv) => inv.client_name === selectedClientFilter);
+  const filteredInvoices = invoices.filter((inv) => {
+    const matchesClient = selectedClientFilter === "ALL" || inv.client_name === selectedClientFilter;
+    const matchesQuery = !searchQuery || 
+      inv.invoice_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inv.bl_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inv.vessel_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inv.client_name?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesClient && matchesQuery;
+  });
 
   useEffect(() => {
     let total = 0;
@@ -310,25 +317,34 @@ export default function InvoiceListPage() {
           </div>
           {user?.role === "admin" && (
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-slate-600">화주 선택:</span>
-                <select
-                  className="border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={selectedClientFilter}
-                  onChange={(e) => setSelectedClientFilter(e.target.value)}
-                >
-                  <option value="ALL">전체 보기</option>
-                  {uniqueClients.map((client) => (
-                    <option key={client} value={client}>{client}</option>
-                  ))}
-                </select>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">화주 선택:</span>
+                  <select
+                    className="border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-[160px]"
+                    value={selectedClientFilter}
+                    onChange={(e) => setSelectedClientFilter(e.target.value)}
+                  >
+                    <option value="ALL">전체 보기</option>
+                    {uniqueClients.map((client) => (
+                      <option key={client} value={client}>{client}</option>
+                    ))}
+                  </select>
+                </div>
+                <input
+                  type="text"
+                  placeholder="검색어 입력 (B/L, 인보이스 등)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-[160px]"
+                />
               </div>
-              <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
-                <button onClick={handlePublishInvoices} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition">
-                  <Globe size={16} /> 선택 건 전송
+              <div className="flex items-center gap-2 border-l border-slate-200 pl-4 h-16">
+                <button onClick={handlePublishInvoices} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shrink-0 cursor-pointer">
+                  <Globe size={14} /> 건별 전송
                 </button>
-                <button onClick={handleMergeAndPublishInvoices} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition">
-                  <Calendar size={16} /> 월합계 병합 후 전송
+                <button onClick={handleMergeAndPublishInvoices} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shrink-0 cursor-pointer">
+                  <Calendar size={14} /> 월말 전송
                 </button>
               </div>
             </div>
