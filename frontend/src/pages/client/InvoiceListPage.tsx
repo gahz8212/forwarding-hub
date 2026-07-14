@@ -599,10 +599,22 @@ export default function InvoiceListPage() {
               }
               .print-summary-box > * + * {
                 margin-top: 4px !important;
+            }
+            @keyframes invoice-slide-up {
+              from {
+                transform: translateY(100vh);
+                opacity: 0.9;
+              }
+              to {
+                transform: translateY(0);
+                opacity: 1;
               }
             }
+            .animate-invoice-slide-up {
+              animation: invoice-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
           `}</style>
-          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-100 my-2 md:my-4 transform -translate-y-[50px] print:transform-none print:translate-y-0 print:my-0 print:h-auto print:w-full print:max-w-full print:shadow-none print:border-none print:rounded-none">
+          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-100 my-2 md:my-4 print:transform-none print:translate-y-0 print:my-0 print:h-auto print:w-full print:max-w-full print:shadow-none print:border-none print:rounded-none animate-invoice-slide-up">
             {/* Modal Header (Hidden on Print) */}
             <div className="px-4 py-2.5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0 print:hidden">
               <div className="flex items-center gap-2">
