@@ -80,59 +80,105 @@ export default function AdminDispatchPage() {
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">내륙 배차 관리</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-black text-slate-800 dark:text-white">내륙 배차 관리</h1>
+        <p className="text-xs font-bold text-slate-400 mt-1">탁송 차량들의 내륙 배차 상태와 요금을 관리합니다.</p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-3xs">
+        <div className="flex items-center gap-2">
+          <input 
+            type="checkbox" 
+            id="select-all-checkbox"
+            onChange={handleSelectAll} 
+            checked={vehicles.length > 0 && selectedVins.length === vehicles.length} 
+            className="h-4 w-4 rounded border-slate-350 dark:border-slate-700 text-blue-600 accent-blue-600 cursor-pointer"
+          />
+          <label htmlFor="select-all-checkbox" className="text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+            전체 선택 ({vehicles.length}대)
+          </label>
+        </div>
         <button 
           disabled={selectedVins.length === 0}
           onClick={() => setModalOpen(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded disabled:bg-gray-400"
+          className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs md:text-sm font-bold transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center cursor-pointer"
         >
           {selectedVins.length}대 일괄 배차 지정
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="p-4"><input type="checkbox" onChange={handleSelectAll} checked={selectedVins.length > 0 && selectedVins.length === vehicles.length} /></th>
-                <th className="p-4">차대번호(VIN)</th>
-                <th className="p-4">B/L 번호</th>
-                <th className="p-4">도착지(POD)</th>
-                <th className="p-4">탁송방식</th>
-                <th className="p-4">상태</th>
-                <th className="p-4">운송사</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} className="p-4 text-center">로딩 중...</td></tr>
-              ) : vehicles.map(v => (
-                <tr key={v.vin} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="p-4">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedVins.includes(v.vin)}
-                      onChange={() => toggleVin(v.vin)}
-                    />
-                  </td>
-                  <td className="p-4 font-medium">{v.vin}</td>
-                  <td className="p-4 text-gray-500">{v.bl_number}</td>
-                  <td className="p-4">{v.pod}</td>
-                  <td className="p-4">{v.dispatch_method || '-'}</td>
-                  <td className="p-4">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${v.dispatch_status === 'DISPATCHED' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                      {v.dispatch_status || 'PENDING'}
-                    </span>
-                  </td>
-                  <td className="p-4">{v.carrier_company || '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
-      </div>
+      ) : vehicles.length === 0 ? (
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-8 text-center border border-slate-200/80 dark:border-slate-800 text-sm font-bold text-slate-400">
+          등록된 차량이 없습니다.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {vehicles.map(v => (
+            <div 
+              key={v.vin} 
+              onClick={() => toggleVin(v.vin)}
+              className={`relative p-4 rounded-xl border transition-all duration-150 cursor-pointer select-none bg-white dark:bg-slate-900 ${
+                selectedVins.includes(v.vin)
+                  ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-950/10 shadow-sm ring-1 ring-blue-500/20'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-350 dark:hover:border-slate-700 shadow-3xs'
+              }`}
+            >
+              {/* Card Header */}
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedVins.includes(v.vin)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      toggleVin(v.vin);
+                    }}
+                    className="h-4 w-4 rounded text-blue-600 accent-blue-600 cursor-pointer"
+                  />
+                  <span className="font-mono font-bold text-slate-850 dark:text-slate-200 text-xs md:text-sm tracking-tight truncate max-w-[140px] sm:max-w-none" title={v.vin}>
+                    {v.vin}
+                  </span>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide shrink-0 ${
+                  v.dispatch_status === 'DISPATCHED' 
+                    ? 'bg-emerald-500 text-white dark:bg-emerald-950/30 dark:text-emerald-400' 
+                    : 'bg-slate-100 text-slate-650 dark:bg-slate-800 dark:text-slate-400'
+                }`}>
+                  {v.dispatch_status || 'PENDING'}
+                </span>
+              </div>
+
+              {/* Card Body */}
+              <div className="space-y-2 text-xs font-bold text-slate-600 dark:text-slate-400">
+                <div className="flex justify-between border-b border-slate-100 dark:border-slate-850 pb-1.5">
+                  <span className="text-slate-400 font-medium">B/L 번호:</span>
+                  <span className="font-mono text-slate-700 dark:text-slate-300">{v.bl_number || '-'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 dark:border-slate-850 pb-1.5">
+                  <span className="text-slate-400 font-medium">도착지(POD):</span>
+                  <span className="text-slate-700 dark:text-slate-300">{v.pod || '-'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-100 dark:border-slate-850 pb-1.5">
+                  <span className="text-slate-400 font-medium">탁송방식:</span>
+                  <span className="text-blue-600 dark:text-blue-400">
+                    {v.dispatch_method === 'CAR_CARRIER' ? '카캐리어' : v.dispatch_method === 'DRIVER_DISPATCH' ? '인탁송' : v.dispatch_method === 'SELF_LOADER' ? '셀프로더' : v.dispatch_method || '-'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-medium">운송사:</span>
+                  <span className="text-slate-700 dark:text-slate-300 truncate max-w-[120px]" title={v.carrier_company || ''}>
+                    {v.carrier_company || '-'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">

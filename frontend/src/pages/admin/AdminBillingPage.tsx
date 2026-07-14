@@ -264,64 +264,64 @@ export default function AdminBillingPage() {
             <span className="text-xs text-slate-400 font-medium">총 {clients.length}개 업체</span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50 text-slate-500 text-sm font-semibold tracking-wider border-b">
-                <tr>
-                  <th className="p-4 pl-6">화주 코드</th>
-                  <th className="p-4">화주명</th>
-                  <th className="p-4">마진 적용 방식</th>
-                  <th className="p-4 text-right">해상 운임 마진 (Ocean)</th>
-                  <th className="p-4 text-right">로컬 비용 마진 (Local)</th>
-                  <th className="p-4 text-right">대당 고정 마진 (Fixed)</th>
-                  <th className="p-4 text-center">관리</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {clients.map((c) => (
-                  <tr key={c.client_id} className="hover:bg-slate-50/80 transition">
-                    <td className="p-4 pl-6 font-bold text-slate-800">{c.client_id}</td>
-                    <td className="p-4 text-slate-800 font-medium">{c.client_name}</td>
-                    <td className="p-4">
+          {clients.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 font-bold text-sm bg-white dark:bg-slate-900 border-t">
+              등록된 화주 마진 설정이 없습니다.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6 bg-slate-50/30 dark:bg-slate-900/10 border-t">
+              {clients.map((c) => (
+                <div 
+                  key={c.client_id}
+                  className="p-5 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-3xs hover:shadow-2xs hover:border-slate-350 dark:hover:border-slate-700 transition flex flex-col justify-between"
+                >
+                  <div>
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-slate-100 dark:border-slate-850">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">{c.client_name}</h4>
+                        <span className="font-mono text-xs text-slate-400 dark:text-slate-500 font-bold">{c.client_id}</span>
+                      </div>
                       {c.margin_type === "PERCENTAGE" ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
-                          <Percent size={12} /> 정률 마진
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/50">
+                          <Percent size={11} /> 정률 마진
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                          <DollarSign size={12} /> 정액 마진
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/50">
+                          <DollarSign size={11} /> 정액 마진
                         </span>
                       )}
-                    </td>
-                    <td className="p-4 text-right font-semibold text-slate-700">
-                      {c.margin_type === "PERCENTAGE" ? `${c.ocean_margin_rate}%` : "-"}
-                    </td>
-                    <td className="p-4 text-right font-semibold text-slate-700">
-                      {c.margin_type === "PERCENTAGE" ? `${c.local_margin_rate}%` : "-"}
-                    </td>
-                    <td className="p-4 text-right font-semibold text-slate-700">
-                      {c.margin_type === "FIXED" ? `$${Number(c.fixed_margin_per_unit).toLocaleString()}` : "-"}
-                    </td>
-                    <td className="p-4 text-center">
-                      <button
-                        onClick={() => openEditClient(c)}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 hover:text-indigo-600 transition rounded-lg text-slate-600 font-bold text-xs"
-                      >
-                        수정
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {clients.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-400">
-                      등록된 화주 마진 설정이 없습니다.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+
+                    {/* Details */}
+                    <div className="space-y-2 text-xs font-bold text-slate-600 dark:text-slate-400 mb-4">
+                      <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
+                        <span className="text-slate-400 font-medium">해상 운임 마진 (Ocean):</span>
+                        <span className="text-slate-700 dark:text-slate-350">{c.margin_type === "PERCENTAGE" ? `${c.ocean_margin_rate}%` : "-"}</span>
+                      </div>
+                      <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
+                        <span className="text-slate-400 font-medium">로컬 비용 마진 (Local):</span>
+                        <span className="text-slate-700 dark:text-slate-350">{c.margin_type === "PERCENTAGE" ? `${c.local_margin_rate}%` : "-"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-medium">대당 고정 마진 (Fixed):</span>
+                        <span className="text-slate-750 dark:text-slate-300">{c.margin_type === "FIXED" ? `$${Number(c.fixed_margin_per_unit).toLocaleString()}` : "-"}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Edit Button */}
+                  <button
+                    type="button"
+                    onClick={() => openEditClient(c)}
+                    className="w-full h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition rounded-lg font-bold text-xs cursor-pointer mt-auto border border-slate-200 dark:border-slate-700/50"
+                  >
+                    마진 정보 수정
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden space-y-6 p-6">
