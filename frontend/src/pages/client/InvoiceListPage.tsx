@@ -726,8 +726,11 @@ export default function InvoiceListPage() {
                   <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
                     <tr>
                       <th className="p-1.5 pl-2.5 text-[10px] w-8">No.</th>
-                      <th className="p-1.5 text-[10px]">차대번호<br /><span className="text-slate-400">모델명</span></th>
-                      <th className="p-1.5 text-[10px] w-12">차종</th>
+                      <th className="p-1.5 text-[10px]">
+                        차대번호<br />
+                        <span className="text-slate-400">모델명</span><br />
+                        <span className="text-slate-400">차종</span>
+                      </th>
                       <th className="p-1.5 text-[10px] text-right">해상운임<br /><span className="text-slate-400">(USD)</span></th>
                       <th className="p-1.5 text-[10px] text-right">내륙탁송료</th>
                       <th className="p-1.5 pr-2.5 text-[10px] text-right">
@@ -740,7 +743,7 @@ export default function InvoiceListPage() {
                   <tbody className="divide-y divide-slate-100 font-medium text-[11px]">
                     {detailLoading ? (
                       <tr>
-                        <td colSpan={6} className="p-6 text-center">
+                        <td colSpan={5} className="p-6 text-center">
                           <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
                         </td>
                       </tr>
@@ -751,8 +754,8 @@ export default function InvoiceListPage() {
                           <td className="p-1.5">
                             <div className="font-bold text-slate-800 break-all">{item.vin}</div>
                             <div className="text-slate-400 text-[10px] font-normal mt-0.5">{item.model_name}</div>
+                            <div className="text-slate-500 text-[9.5px] font-extrabold mt-0.5">{item.cargo_type}</div>
                           </td>
-                          <td className="p-1.5 text-slate-700 font-bold">{item.cargo_type}</td>
                           <td className="p-1.5 text-right">
                             <div className="text-slate-400 text-[10px]">-</div>
                             <div className="font-bold text-slate-800">
