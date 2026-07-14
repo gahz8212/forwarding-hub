@@ -553,7 +553,7 @@ export default function InvoiceListPage() {
 
       {/* Invoice (Debit Note) Detail Viewer Modal */}
       {selectedInvoice && (
-        <div className="fixed inset-0 h-screen z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 md:p-4 overflow-hidden print:static print:block print:bg-white print:p-0 print:overflow-visible print:z-0">
+        <div className="fixed inset-0 h-[100dvh] z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 pb-6 md:p-4 overflow-hidden print:static print:block print:bg-white print:p-0 print:overflow-visible print:z-0">
           <style>{`
             @media print {
               @page {
@@ -614,7 +614,7 @@ export default function InvoiceListPage() {
               animation: invoice-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             }
           `}</style>
-          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[88dvh] lg:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-100 my-1 md:my-4 print:transform-none print:translate-y-0 print:my-0 print:h-auto print:w-full print:max-w-full print:shadow-none print:border-none print:rounded-none animate-invoice-slide-up">
+          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[82dvh] lg:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-100 my-1 md:my-4 print:transform-none print:translate-y-0 print:my-0 print:h-auto print:w-full print:max-w-full print:shadow-none print:border-none print:rounded-none animate-invoice-slide-up">
             {/* Modal Header (Hidden on Print) */}
             <div className="px-4 py-2.5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0 print:hidden">
               <div className="flex items-center gap-2">
