@@ -331,13 +331,7 @@ export default function InvoiceListPage() {
                     ))}
                   </select>
                 </div>
-                <input
-                  type="text"
-                  placeholder="검색어 입력 (B/L, 인보이스 등)..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-[160px]"
-                />
+               
               </div>
               <div className="flex items-center gap-2 border-l border-slate-200 pl-4 h-16">
                 <button onClick={handlePublishInvoices} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shrink-0 cursor-pointer">
@@ -350,119 +344,211 @@ export default function InvoiceListPage() {
             </div>
           )}
         </div>
-        {/* Invoice Cards Grid */}
+        {/* Invoice List (Desktop: Table, Mobile: Cards) */}
         {filteredInvoices.length === 0 ? (
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-12 text-center border border-slate-100 dark:border-slate-800 text-sm font-bold text-slate-400">
             발행된 정산서(인보이스) 내역이 없습니다.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6">
-            {filteredInvoices.map((inv: any) => (
-              <div 
-                key={inv.invoice_no}
-                className={`p-4 rounded-2xl border bg-white dark:bg-slate-900 transition duration-150 flex flex-col justify-between shadow-3xs hover:shadow-2xs hover:border-slate-350 dark:hover:border-slate-700 ${
-                  selectedInvoiceNos.includes(inv.invoice_no)
-                    ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/5 ring-1 ring-indigo-500/20'
-                    : 'border-slate-200 dark:border-slate-800'
-                }`}
-              >
-                <div>
-                  {/* Header: Checkbox & Invoice No */}
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2">
+          <>
+            {/* 모바일 카드 뷰 (lg 미만) */}
+            <div className="block lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-4 p-6">
+              {filteredInvoices.map((inv: any) => (
+                <div 
+                  key={inv.invoice_no}
+                  className={`p-4 rounded-2xl border bg-white dark:bg-slate-900 transition duration-150 flex flex-col justify-between shadow-3xs hover:shadow-2xs hover:border-slate-350 dark:hover:border-slate-700 ${
+                    selectedInvoiceNos.includes(inv.invoice_no)
+                      ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-950/5 ring-1 ring-indigo-500/20'
+                      : 'border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <div>
+                    {/* Header: Checkbox & Invoice No */}
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        {user?.role === "admin" && (
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 cursor-pointer rounded border-slate-300 dark:border-slate-700 text-indigo-600 accent-indigo-600"
+                            checked={selectedInvoiceNos.includes(inv.invoice_no)}
+                            onChange={() => toggleInvoiceSelection(inv.invoice_no)}
+                            disabled={inv.publish_status !== 'DRAFT'}
+                          />
+                        )}
+                        <span className="text-slate-800 dark:text-slate-200 font-extrabold text-sm tracking-tight">{inv.invoice_no}</span>
+                      </div>
                       {user?.role === "admin" && (
-                        <input 
-                          type="checkbox" 
-                          className="w-4 h-4 cursor-pointer rounded border-slate-300 dark:border-slate-700 text-indigo-600 accent-indigo-600"
-                          checked={selectedInvoiceNos.includes(inv.invoice_no)}
-                          onChange={() => toggleInvoiceSelection(inv.invoice_no)}
-                          disabled={inv.publish_status !== 'DRAFT'}
-                        />
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-105 dark:bg-slate-800 px-2 py-0.5 rounded">
+                          {inv.client_name}
+                        </span>
                       )}
-                      <span className="text-slate-800 dark:text-slate-200 font-extrabold text-sm tracking-tight">{inv.invoice_no}</span>
                     </div>
-                    {user?.role === "admin" && (
-                      <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-105 dark:bg-slate-800 px-2 py-0.5 rounded">
-                        {inv.client_name}
+
+                    {/* Status Badges */}
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide ${
+                        inv.publish_status === "DRAFT" 
+                          ? "bg-slate-100 text-slate-600 dark:bg-slate-850 dark:text-slate-400" 
+                          : "bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400"
+                      }`}>
+                        {inv.publish_status === "DRAFT" ? "임시(DRAFT)" : "전송완료"}
                       </span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide ${
+                        inv.payment_status === "PAID" 
+                          ? "bg-emerald-500 text-white dark:bg-emerald-950/30 dark:text-emerald-400" 
+                          : "bg-rose-50 text-rose-600 dark:bg-rose-955/20 dark:text-rose-450"
+                      }`}>
+                        {inv.payment_status === "PAID" ? "결제완료" : "미결제"}
+                      </span>
+                    </div>
+
+                    {/* Details */}
+                    <div className="space-y-2 text-xs font-bold text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-850 pt-3 mb-4">
+                      <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
+                        <span className="text-slate-400 font-medium">B/L 번호:</span>
+                        <span className="text-blue-650 dark:text-blue-400 font-mono">{inv.bl_number || "-"}</span>
+                      </div>
+                      <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
+                        <span className="text-slate-400 font-medium">선박명:</span>
+                        <span className="text-slate-700 dark:text-slate-350 max-w-[130px] truncate" title={inv.vessel_name}>{inv.vessel_name}</span>
+                      </div>
+                      <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
+                        <span className="text-slate-400 font-medium">적용 환율:</span>
+                        <span className="text-slate-700 dark:text-slate-350">₩{Number(inv.exchange_rate).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
+                        <span className="text-slate-400 font-medium">납기일:</span>
+                        <span className="text-slate-500 font-mono">{inv.due_date ? inv.due_date.split("T")[0] : "-"}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-1">
+                        <span className="text-indigo-600 dark:text-indigo-400">청구 금액:</span>
+                        <span className="text-base font-black text-slate-850 dark:text-slate-100">₩{Number(inv.final_amount_krw).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions row */}
+                  <div className="flex items-center gap-1.5 justify-end border-t border-slate-50 dark:border-slate-850/50 pt-3 mt-auto">
+                    <button 
+                      onClick={() => handleOpenDetail(inv)}
+                      className="text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 p-2 rounded-lg transition border border-indigo-100 dark:border-indigo-900/50 cursor-pointer"
+                      title="청구서 상세 보기"
+                    >
+                      <Eye size={14} />
+                    </button>
+                    {user?.role === "admin" && inv.payment_status !== "PAID" && (
+                      <button 
+                        onClick={() => handlePayInvoice(inv.invoice_no)}
+                        className="text-green-600 hover:bg-green-50 dark:hover:bg-green-950/20 p-2 rounded-lg transition border border-green-100 dark:border-green-900/50 cursor-pointer"
+                        title="결제 완료 처리"
+                      >
+                        <CheckCircle size={14} />
+                      </button>
+                    )}
+                    {user?.role === "admin" && inv.payment_status !== "PAID" && (
+                      <button 
+                        onClick={() => handleDeleteInvoice(inv.invoice_no)}
+                        className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 p-2 rounded-lg transition border border-red-100 dark:border-red-900/50 cursor-pointer"
+                        title="정산서 발행 취소(삭제)"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     )}
                   </div>
-
-                  {/* Status Badges */}
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide ${
-                      inv.publish_status === "DRAFT" 
-                        ? "bg-slate-100 text-slate-600 dark:bg-slate-850 dark:text-slate-400" 
-                        : "bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400"
-                    }`}>
-                      {inv.publish_status === "DRAFT" ? "임시(DRAFT)" : "전송완료"}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide ${
-                      inv.payment_status === "PAID" 
-                        ? "bg-emerald-500 text-white dark:bg-emerald-950/30 dark:text-emerald-400" 
-                        : "bg-rose-50 text-rose-600 dark:bg-rose-955/20 dark:text-rose-450"
-                    }`}>
-                      {inv.payment_status === "PAID" ? "결제완료" : "미결제"}
-                    </span>
-                  </div>
-
-                  {/* Details */}
-                  <div className="space-y-2 text-xs font-bold text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-850 pt-3 mb-4">
-                    <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
-                      <span className="text-slate-400 font-medium">B/L 번호:</span>
-                      <span className="text-blue-650 dark:text-blue-400 font-mono">{inv.bl_number || "-"}</span>
-                    </div>
-                    <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
-                      <span className="text-slate-400 font-medium">선박명:</span>
-                      <span className="text-slate-700 dark:text-slate-350 max-w-[130px] truncate" title={inv.vessel_name}>{inv.vessel_name}</span>
-                    </div>
-                    <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
-                      <span className="text-slate-400 font-medium">적용 환율:</span>
-                      <span className="text-slate-700 dark:text-slate-350">₩{Number(inv.exchange_rate).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
-                      <span className="text-slate-400 font-medium">납기일:</span>
-                      <span className="text-slate-500 font-mono">{inv.due_date ? inv.due_date.split("T")[0] : "-"}</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-1">
-                      <span className="text-indigo-600 dark:text-indigo-400">청구 금액:</span>
-                      <span className="text-base font-black text-slate-850 dark:text-slate-100">₩{Number(inv.final_amount_krw).toLocaleString()}</span>
-                    </div>
-                  </div>
                 </div>
+              ))}
+            </div>
 
-                {/* Actions row */}
-                <div className="flex items-center gap-1.5 justify-end border-t border-slate-50 dark:border-slate-850/50 pt-3 mt-auto">
-                  <button 
-                    onClick={() => handleOpenDetail(inv)}
-                    className="text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 p-2 rounded-lg transition border border-indigo-100 dark:border-indigo-900/50 cursor-pointer"
-                    title="청구서 상세 보기"
-                  >
-                    <Eye size={14} />
-                  </button>
-                  {user?.role === "admin" && inv.payment_status !== "PAID" && (
-                    <button 
-                      onClick={() => handlePayInvoice(inv.invoice_no)}
-                      className="text-green-600 hover:bg-green-50 dark:hover:bg-green-950/20 p-2 rounded-lg transition border border-green-100 dark:border-green-900/50 cursor-pointer"
-                      title="결제 완료 처리"
-                    >
-                      <CheckCircle size={14} />
-                    </button>
-                  )}
-                  {user?.role === "admin" && inv.payment_status !== "PAID" && (
-                    <button 
-                      onClick={() => handleDeleteInvoice(inv.invoice_no)}
-                      className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 p-2 rounded-lg transition border border-red-100 dark:border-red-900/50 cursor-pointer"
-                      title="정산서 발행 취소(삭제)"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+            {/* 데스크탑 테이블 뷰 (큰화면: lg 이상) */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[11px] border-b">
+                  <tr>
+                    {user?.role === "admin" && <th className="p-4 w-12 text-center">선택</th>}
+                    <th className="p-4 pl-6">인보이스 번호</th>
+                    {user?.role === "admin" && <th className="p-4">화주명</th>}
+                    <th className="p-4">B/L 번호</th>
+                    <th className="p-4">선박명</th>
+                    <th className="p-4 text-right">청구 금액</th>
+                    <th className="p-4">적용 환율</th>
+                    <th className="p-4">납기일</th>
+                    <th className="p-4 text-center">전송 상태</th>
+                    <th className="p-4 text-center">결제 상태</th>
+                    <th className="p-4 text-center">작업</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs font-bold">
+                  {filteredInvoices.map((inv: any) => (
+                    <tr key={inv.invoice_no} className="hover:bg-slate-50/50 transition">
+                      {user?.role === "admin" && (
+                        <td className="p-4 text-center">
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 cursor-pointer rounded text-indigo-650 accent-indigo-650 border-slate-350"
+                            checked={selectedInvoiceNos.includes(inv.invoice_no)}
+                            onChange={() => toggleInvoiceSelection(inv.invoice_no)}
+                            disabled={inv.publish_status !== 'DRAFT'}
+                          />
+                        </td>
+                      )}
+                      <td className="p-4 pl-6 text-slate-800 font-extrabold">{inv.invoice_no}</td>
+                      {user?.role === "admin" && <td className="p-4 text-slate-600 font-extrabold">{inv.client_name}</td>}
+                      <td className="p-4 text-blue-600 font-mono">{inv.bl_number || "-"}</td>
+                      <td className="p-4 text-slate-700 truncate max-w-[140px]" title={inv.vessel_name}>{inv.vessel_name}</td>
+                      <td className="p-4 text-right font-black text-slate-800">₩{Number(inv.final_amount_krw).toLocaleString()}</td>
+                      <td className="p-4 text-slate-500 font-medium">₩{Number(inv.exchange_rate).toLocaleString()}</td>
+                      <td className="p-4 text-slate-400 font-mono">{inv.due_date ? inv.due_date.split("T")[0] : "-"}</td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${
+                          inv.publish_status === "DRAFT" ? "bg-slate-100 text-slate-600" : "bg-blue-100 text-blue-700"
+                        }`}>
+                          {inv.publish_status === "DRAFT" ? "임시(DRAFT)" : "전송완료"}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${
+                          inv.payment_status === "PAID" ? "bg-emerald-500 text-white dark:bg-emerald-950/30 dark:text-emerald-400" : "bg-rose-50 text-rose-600"
+                        }`}>
+                          {inv.payment_status === "PAID" ? "완료" : "미결제"}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button 
+                            onClick={() => handleOpenDetail(inv)}
+                            className="text-indigo-650 hover:bg-indigo-50 p-1.5 rounded transition border border-indigo-100 cursor-pointer"
+                            title="청구서 상세 보기"
+                          >
+                            <Eye size={13} />
+                          </button>
+                          {user?.role === "admin" && inv.payment_status !== "PAID" && (
+                            <button 
+                              onClick={() => handlePayInvoice(inv.invoice_no)}
+                              className="text-green-600 hover:bg-green-50 p-1.5 rounded transition border border-green-100 cursor-pointer"
+                              title="결제 완료 처리"
+                            >
+                              <CheckCircle size={13} />
+                            </button>
+                          )}
+                          {user?.role === "admin" && inv.payment_status !== "PAID" && (
+                            <button 
+                              onClick={() => handleDeleteInvoice(inv.invoice_no)}
+                              className="text-red-650 hover:bg-red-50 p-1.5 rounded transition border border-red-100 cursor-pointer"
+                              title="정산서 발행 취소(삭제)"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
+      </div>
       </div>
       </div>
 
