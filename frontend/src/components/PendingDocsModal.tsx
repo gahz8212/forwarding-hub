@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../api/axios';
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle, Image as ImageIcon, Loader2 } from 'lucide-react';
 
@@ -12,7 +13,7 @@ interface PendingDocsModalProps {
 function normalizeUrl(url: string): string {
   if (!url) return url;
   if (url.startsWith('/uploads/')) {
-    return `http://localhost:5000${url}`;
+    return `${API_BASE_URL}${url}`;
   }
   return url;
 }

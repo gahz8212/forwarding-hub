@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-dotenv.config();
+dotenv.config({ override: true });
 
 import express from 'express';
 import cors from 'cors';
@@ -15,6 +15,29 @@ import fileRoutes from './routes/fileRoutes';
 import billingRoutes from './routes/billingRoutes';
 import dispatchRoutes from './routes/dispatchRoutes';
 import { initScheduler } from './services/scheduler';
+import MySQLStoreFactory from 'express-mysql-session';
+import mysql from 'mysql2/promise';
+
+// 1. MySQL 커넥션 풀 설정 (로컬 TCP 및 GCP UNIX 소켓 대응)
+const dbOptions: mysql.PoolOptions = {
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  host: process.env.DB_HOST,//INSTANCE_UNIX_SOCKET ? undefined : (process.env.DB_HOST || 'localhost'),
+  port: Number(process.env.DB_PORT)||3306,//INSTANCE_UNIX_SOCKET ? undefined : (process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 3307),
+  socketPath: process.env.INSTANCE_UNIX_SOCKET || undefined,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+};
+
+const dbPool = mysql.createPool(dbOptions);
+
+// 2. 세션 스토어 초기화 및 만료 설정 추가
+const MySQLStore = MySQLStoreFactory(session);
+const sessionStore = new MySQLStore({
+  clearExpired: true,
+  checkExpirationInterval: 900000, // 15분마다 만료 세션 정리
+  expiration: 86400000, // 세션 유지 기간 (1일)
+}, dbPool.pool as ConstructorParameters<typeof MySQLStore>[1]);
 
 // 백그라운드 크론 스케줄러 가동
 initScheduler();
@@ -22,10 +45,15 @@ initScheduler();
 const app = express();
 const server = http.createServer(app);
 
+// 허용할 CORS 오리진 동적으로 수집
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map(o => o.trim())
+  : ['http://localhost:5173', 'http://127.0.0.1:5173'];
+
 // Socket.io 초기화
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], // 다중 오리진 허용
+    origin: allowedOrigins,
     credentials: true
   }
 });
@@ -34,8 +62,12 @@ const io = new Server(server, {
 app.set('io', io);
 
 app.use(cors({
-  origin: 'http://localhost:5173',
-  credentials: true
+  origin: [
+    'http://localhost:5173', // 기존에 있던 로컬 프론트엔드 주소 (개발용)
+    'http://localhost:3000', // (필요시 추가)
+    'https://forwarding-hub-frontend-269919807885.asia-northeast3.run.app' // 🚀 새롭게 추가된 GCP 프론트엔드 주소!
+  ],
+  credentials: true // 예전에 고치셨던 withCredentials와 짝꿍입니다. 로그인(쿠키/인증) 시 필수!
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -46,8 +78,9 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'fallback_secret',
   resave: false,
   saveUninitialized: false,
+  store: sessionStore,
   cookie: {
-    secure: false, // 개발 환경에서는 false
+    secure: process.env.NODE_ENV === 'production', // 개발 환경에서는 false
     httpOnly: true,
     maxAge: 1000 * 60 * 60 * 24 // 1일
   }

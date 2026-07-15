@@ -1,3 +1,4 @@
+import api from '../api/axios';
 import { create } from 'zustand';
 import axios from 'axios';
 
@@ -21,7 +22,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setUser: (user) => set({ user, isAuthenticated: !!user }),
   checkAuth: async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/auth/check', { withCredentials: true });
+      const response = await api.get('/api/auth/check', { withCredentials: true });
       if (response.data.success) {
         set({ user: response.data.user, isAuthenticated: true });
       }

@@ -6,11 +6,17 @@ import pool from '../config/db';
 import ExcelJS from 'exceljs';
 import AdmZip from 'adm-zip';
 import sharp from 'sharp';
+import { Storage } from '@google-cloud/storage';
 import { parseExcelToGridData, parsePdfToGridData } from '../services/fileParser';
 import { analyzeVehiclePhoto } from '../services/ocrService';
 import { decodeVin, VehicleSpecs } from '../services/vinService';
 // import { saveVehiclePhotoAndDeduplicate } from '../utils/photoHelper'; // 전체저장 시 사용 (미사용 제거)
 // import { getVehicleInfoFromPublicData } from '../services/publicDataService';
+
+// GCS 클라이언트 인스턴스화
+const storage = new Storage();
+const bucketName = process.env.GCS_BUCKET_NAME || 'forwarding-hub-assets';
+const bucket = storage.bucket(bucketName);
 
 function normalizeBrandName(brand: string | null): string | null {
   if (!brand) return null;
@@ -23,25 +29,23 @@ function normalizeBrandName(brand: string | null): string | null {
   return brand.trim();
 }
 
-// 파일 업로드 및 분석 컨트롤러
+// 파일 업로드 및 분석 컨트롤러 (메모리 버퍼 지원 및 디스크 정리 불필요 처리)
 export const uploadFile = async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: '업로드된 파일이 없습니다.' });
     }
 
-    const { originalname, path: filePath, mimetype } = req.file;
+    const { originalname, buffer, mimetype } = req.file;
     const ext = path.extname(originalname).toLowerCase();
     let gridData: any[][] = [];
 
     // 파일 타입 분기 처리
     if (ext === '.xlsx' || ext === '.xls' || mimetype.includes('spreadsheet') || mimetype.includes('excel')) {
-      gridData = await parseExcelToGridData(filePath);
+      gridData = await parseExcelToGridData(buffer);
     } else if (ext === '.pdf' || mimetype === 'application/pdf') {
-      gridData = await parsePdfToGridData(filePath);
+      gridData = await parsePdfToGridData(buffer);
     } else {
-      // 업로드 임시 파일 삭제
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       return res.status(400).json({ success: false, message: '지원하지 않는 파일 형식입니다. (Excel, PDF만 지원)' });
     }
 
@@ -53,11 +57,6 @@ export const uploadFile = async (req: Request, res: Response) => {
       'INSERT INTO temp_file_grids (id, file_name, file_type, grid_data) VALUES (?, ?, ?, ?)',
       [fileKey, originalname, ext.replace('.', ''), JSON.stringify(gridData)]
     );
-
-    // 업로드 임시 파일 삭제 (DB 저장했으므로 서버 디스크에서는 즉시 삭제)
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
 
     res.json({
       success: true,
@@ -71,11 +70,53 @@ export const uploadFile = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('파일 업로드/파싱 에러:', error);
-    // 임시 파일 업로드 성공했으나 파싱에서 에러난 경우 파일 삭제
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({ success: false, message: '파일 파싱 중 에러가 발생했습니다: ' + error.message });
+  }
+};
+
+// GCS 파일 업로드 컨트롤러
+export const uploadFileToGCS = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: '업로드할 파일이 존재하지 않습니다.' });
+    }
+
+    // 파일명 중복을 피하기 위해 타임스탬프 추가
+    const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    const uniqueFileName = `${Date.now()}-${originalName.replace(/\s+/g, '_')}`;
+    const blob = bucket.file(`uploads/${uniqueFileName}`);
+
+    // GCS 버킷으로 스트림 쓰기 생성
+    const blobStream = blob.createWriteStream({
+      resumable: false,
+      metadata: {
+        contentType: req.file.mimetype,
+      },
+    });
+
+    blobStream.on('error', (err) => {
+      console.error('GCS Upload Error:', err);
+      res.status(500).json({ message: '파일 업로드 중 서버 오류가 발생했습니다.' });
+    });
+
+    blobStream.on('finish', () => {
+      // 업로드 성공 시 공개적으로 접근 가능한 URL 생성
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
+      
+      // TODO: 데이터베이스(Cloud SQL)에 publicUrl 정보 저장하는 비즈니스 로직 추가
+
+      res.status(200).json({
+        message: '파일 업로드가 완료되었습니다.',
+        url: publicUrl,
+      });
+    });
+
+    // 버퍼 데이터를 스트림으로 전송
+    blobStream.end(req.file.buffer);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: '업로드 처리 중 예외가 발생했습니다.' });
   }
 };
 
@@ -114,7 +155,9 @@ export const getFileGrid = async (req: Request, res: Response) => {
 
 // shipper_mappings 테이블 자동 생성 및 초기화
 const initShipperMappingsTable = async () => {
+
   try {
+    
     await pool.query(`
       CREATE TABLE IF NOT EXISTS shipper_mappings (
         shipper_name VARCHAR(100) PRIMARY KEY,

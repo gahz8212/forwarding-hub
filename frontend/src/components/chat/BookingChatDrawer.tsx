@@ -1,3 +1,4 @@
+import api, { API_BASE_URL } from '../../api/axios';
 import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import axios from "axios";
@@ -35,8 +36,7 @@ export default function BookingChatDrawer({
   // 대화 목록 가져오기
   const fetchMessages = () => {
     setLoading(true);
-    axios
-      .get(`http://localhost:5000/api/schedules/bookings/${bookingId}/messages`, {
+    api.get(`/api/schedules/bookings/${bookingId}/messages`, {
         withCredentials: true
       })
       .then((res) => {
@@ -54,7 +54,7 @@ export default function BookingChatDrawer({
     fetchMessages();
 
     // 소켓 실시간 연동
-    const socket = io("http://localhost:5000");
+    const socket = io(API_BASE_URL);
     socketRef.current = socket;
 
     socket.on("connect", () => {
@@ -95,8 +95,7 @@ export default function BookingChatDrawer({
     };
 
     try {
-      const res = await axios.post(
-        `http://localhost:5000/api/schedules/bookings/${bookingId}/messages`,
+      const res = await api.post(`/api/schedules/bookings/${bookingId}/messages`,
         payload,
         { withCredentials: true }
       );

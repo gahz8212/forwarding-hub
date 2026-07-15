@@ -1,3 +1,4 @@
+import api, { API_BASE_URL } from '../../api/axios';
 import React, { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
@@ -181,7 +182,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!trackingData?.bl_number) return;
 
-    const socket = io("http://localhost:5000");
+    const socket = io(API_BASE_URL);
     socketRef.current = socket;
 
     socket.on("connect", () => {
@@ -449,7 +450,7 @@ export default function DashboardPage() {
     formData.append("packingList", packingFile);
 
     try {
-      const res = await axios.post("http://localhost:5000/api/tracking/upload-docs", formData, {
+      const res = await api.post("/api/tracking/upload-docs", formData, {
         headers: { "Content-Type": "multipart/form-data" },
         withCredentials: true
       });
@@ -483,7 +484,7 @@ export default function DashboardPage() {
     });
 
     try {
-      const response = await fetch("http://localhost:5000/api/files/upload-vehicle-photos", {
+      const response = await fetch(`${API_BASE_URL}` + "/api/files/upload-vehicle-photos", {
         method: "POST",
         body: formData,
       });
@@ -527,7 +528,7 @@ export default function DashboardPage() {
     });
 
     try {
-      const response = await fetch("http://localhost:5000/api/files/upload-vehicle-photos", {
+      const response = await fetch(`${API_BASE_URL}` + "/api/files/upload-vehicle-photos", {
         method: "POST",
         body: formData,
       });
@@ -1065,7 +1066,7 @@ export default function DashboardPage() {
                     <p className="text-slate-700 text-xs font-semibold mt-0.5">상업 송장</p>
                   </div>
                   <a
-                    href={`http://localhost:5000${trackingData.invoice_file_path}`}
+                    href={`${API_BASE_URL}${trackingData.invoice_file_path}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
@@ -1080,7 +1081,7 @@ export default function DashboardPage() {
                     <p className="text-slate-700 text-xs font-semibold mt-0.5">포장 명세서</p>
                   </div>
                   <a
-                    href={`http://localhost:5000${trackingData.packing_list_file_path}`}
+                    href={`${API_BASE_URL}${trackingData.packing_list_file_path}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"

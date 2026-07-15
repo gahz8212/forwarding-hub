@@ -1,3 +1,4 @@
+import api from '../../api/axios';
 import React, { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
@@ -72,7 +73,7 @@ export default function InvoiceListPage() {
   const fetchInvoices = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:5000/api/billing/invoices", { withCredentials: true });
+      const res = await api.get("/api/billing/invoices", { withCredentials: true });
       if (res.data.success) {
         const list = res.data.invoices;
         setInvoices(list);
@@ -170,7 +171,7 @@ export default function InvoiceListPage() {
     if (!window.confirm(`선택한 ${selectedInvoiceNos.length}건의 정산서를 화주에게 전송하시겠습니까?`)) return;
 
     try {
-      const res = await axios.put("http://localhost:5000/api/billing/invoices/publish", { invoiceNos: selectedInvoiceNos }, { withCredentials: true });
+      const res = await api.put("/api/billing/invoices/publish", { invoiceNos: selectedInvoiceNos }, { withCredentials: true });
       if (res.data.success) {
         alert(res.data.message);
         setSelectedInvoiceNos([]);
@@ -201,7 +202,7 @@ export default function InvoiceListPage() {
     if (!window.confirm(`선택한 ${selectedInvoiceNos.length}건을 [${newInvoiceNo}] 번호로 합쳐서 화주에게 전송하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return;
 
     try {
-      const res = await axios.post("http://localhost:5000/api/billing/invoices/merge", { 
+      const res = await api.post("/api/billing/invoices/merge", { 
         invoiceNos: selectedInvoiceNos,
         newInvoiceNo,
         dueDate
@@ -220,7 +221,7 @@ export default function InvoiceListPage() {
     setSelectedInvoice(invoice);
     setDetailLoading(true);
     try {
-      const res = await axios.get(`http://localhost:5000/api/billing/invoices/${invoice.invoice_no}`, { withCredentials: true });
+      const res = await api.get(`/api/billing/invoices/${invoice.invoice_no}`, { withCredentials: true });
       if (res.data.success) {
         setInvoiceItems(res.data.items);
       }
@@ -235,7 +236,7 @@ export default function InvoiceListPage() {
     if (!window.confirm("이 청구서를 결제 완료 상태로 변경하시겠습니까?")) return;
 
     try {
-      const res = await axios.post(`http://localhost:5000/api/billing/invoices/${invoiceNo}/pay`, {}, { withCredentials: true });
+      const res = await api.post(`/api/billing/invoices/${invoiceNo}/pay`, {}, { withCredentials: true });
       if (res.data.success) {
         alert("결제 완료 처리되었습니다.");
         fetchInvoices();
@@ -256,7 +257,7 @@ export default function InvoiceListPage() {
     if (!window.confirm("정말로 이 정산서를 삭제(발행 취소)하시겠습니까?\n\n삭제 시 해당 선적건은 다시 미청구 상태로 돌아갑니다.")) return;
 
     try {
-      const res = await axios.delete(`http://localhost:5000/api/billing/invoices/${invoiceNo}`, { withCredentials: true });
+      const res = await api.delete(`/api/billing/invoices/${invoiceNo}`, { withCredentials: true });
       if (res.data.success) {
         alert("정산서가 성공적으로 삭제되었습니다.");
         fetchInvoices();

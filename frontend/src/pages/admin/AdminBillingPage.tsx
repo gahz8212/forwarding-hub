@@ -1,3 +1,4 @@
+import api, { API_BASE_URL } from '../../api/axios';
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
@@ -57,8 +58,8 @@ export default function AdminBillingPage() {
     setLoading(true);
     try {
       const [clientsRes, costsRes] = await Promise.all([
-        axios.get("http://localhost:5000/api/billing/clients", { withCredentials: true }),
-        axios.get("http://localhost:5000/api/billing/costs", { withCredentials: true })
+        api.get("/api/billing/clients", { withCredentials: true }),
+        api.get("/api/billing/costs", { withCredentials: true })
       ]);
       if (clientsRes.data.success) setClients(clientsRes.data.clients);
       if (costsRes.data.success) setCostRates(costsRes.data.costRates);
@@ -72,7 +73,7 @@ export default function AdminBillingPage() {
 
   useEffect(() => {
     // 1. 실시간 소켓 업데이트 연동 (관리자 채널)
-    const socket = io("http://localhost:5000");
+    const socket = io(API_BASE_URL);
     socket.emit("join", { role: "admin" });
 
     // 소켓이 연결되거나 재연결(connect)될 때 최신 데이터 자동 동기화
@@ -115,8 +116,7 @@ export default function AdminBillingPage() {
     }
 
     try {
-      const res = await axios.post(
-        "http://localhost:5000/api/billing/clients",
+      const res = await api.post("/api/billing/clients",
         clientForm,
         { withCredentials: true }
       );
@@ -178,8 +178,7 @@ export default function AdminBillingPage() {
   const handleSaveCosts = async () => {
     try {
       setLoading(true);
-      const res = await axios.post(
-        "http://localhost:5000/api/billing/costs",
+      const res = await api.post("/api/billing/costs",
         { rates: costRates },
         { withCredentials: true }
       );

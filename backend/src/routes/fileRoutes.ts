@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { 
   uploadFile, 
+  uploadFileToGCS,
   getFileGrid, 
   saveShipperMapping, 
   getShipperMapping, 
@@ -18,7 +19,8 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // 파일 업로드 및 분석 엔드포인트
-router.post('/upload', upload.single('file'), uploadFile);
+router.post('/upload', upload.single('file'), uploadFileToGCS);
+router.post('/upload-parse', upload.single('file'), uploadFile);
 
 // 로로선 중고차 여러 장의 사진 동시 업로드 엔드포인트 (최대 50장)
 router.post('/upload-vehicle-photos', upload.array('photos', 50), uploadVehiclePhotos);

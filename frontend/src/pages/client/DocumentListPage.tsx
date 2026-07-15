@@ -1,3 +1,4 @@
+import api, { API_BASE_URL } from '../../api/axios';
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { 
@@ -40,7 +41,7 @@ export default function DocumentListPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await axios.get("http://localhost:5000/api/tracking/all", {
+      const res = await api.get("/api/tracking/all", {
         withCredentials: true
       });
       if (res.data.success) {
@@ -116,7 +117,7 @@ export default function DocumentListPage() {
 
   const handleApproveDocument = async (blNumber: string, docType: 'invoice' | 'packing') => {
     try {
-      const res = await axios.post("http://localhost:5000/api/tracking/approve-doc", {
+      const res = await api.post("/api/tracking/approve-doc", {
         blNumber,
         docType
       }, { withCredentials: true });
@@ -135,7 +136,7 @@ export default function DocumentListPage() {
       return;
     }
     try {
-      const res = await axios.post("http://localhost:5000/api/tracking/delete-doc", {
+      const res = await api.post("/api/tracking/delete-doc", {
         blNumber,
         docType
       }, { withCredentials: true });
@@ -245,7 +246,7 @@ export default function DocumentListPage() {
 
                             <div className="flex flex-wrap gap-2 pt-1 justify-end">
                               <a
-                                href={`http://localhost:5000/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
+                                href={`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={() => setDownloadedDocs(prev => ({ ...prev, [doc.id]: true }))}
@@ -320,7 +321,7 @@ export default function DocumentListPage() {
                                 <td className="p-4 text-center">
                                   <div className="flex gap-2 justify-center items-center">
                                     <a
-                                      href={`http://localhost:5000/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
+                                      href={`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(doc.filePath)}&name=${encodeURIComponent(doc.fileName)}`}
                                       target="_blank"
                                       rel="noreferrer"
                                       onClick={() => setDownloadedDocs(prev => ({ ...prev, [doc.id]: true }))}

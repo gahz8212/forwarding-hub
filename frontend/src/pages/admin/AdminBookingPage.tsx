@@ -1,3 +1,4 @@
+import api, { API_BASE_URL } from '../../api/axios';
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { Check, X, Clock, AlertCircle, Share2, MessageSquare } from "lucide-react";
@@ -25,8 +26,7 @@ export default function AdminBookingPage() {
 
   const fetchBookings = () => {
     setLoading(true);
-    axios
-      .get("http://localhost:5000/api/schedules/admin/bookings", { withCredentials: true })
+    api.get("/api/schedules/admin/bookings", { withCredentials: true })
       .then((res) => {
         if (res.data.success) {
           setBookings(res.data.data);
@@ -45,7 +45,7 @@ export default function AdminBookingPage() {
     fetchBookings();
 
     // 실시간 소켓 연결 (신규 부킹 발생 시 목록 자동 갱신용)
-    const socket = io("http://localhost:5000");
+    const socket = io(API_BASE_URL);
     socket.on("connect", () => {
       console.log("AdminBookingPage socket connected");
       socket.emit("join", { role: "admin" });
@@ -79,8 +79,7 @@ export default function AdminBookingPage() {
   const handleApprove = async (bk: any) => {
     setProcessingId(bk.id);
     try {
-      const res = await axios.post(
-        "http://localhost:5000/api/schedules/approve",
+      const res = await api.post("/api/schedules/approve",
         { bookingDetails: bk },
         { withCredentials: true }
       );
@@ -116,8 +115,7 @@ export default function AdminBookingPage() {
 
     setProcessingId(id);
     try {
-      const res = await axios.post(
-        "http://localhost:5000/api/schedules/reject",
+      const res = await api.post("/api/schedules/reject",
         {
           bookingId: id,
           reason: reason.trim(),

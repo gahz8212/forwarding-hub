@@ -1,9 +1,9 @@
+import api, { API_BASE_URL } from '../../api/axios';
 import React, { useEffect, useState, useRef } from "react";
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useTrackingStore } from "../../store/useTrackingStore";
 import { useNotificationStore } from "../../store/useNotificationStore";
-import axios from "axios";
 import { io } from "socket.io-client";
 import {
   LayoutDashboard, Calendar, FileText,
@@ -30,10 +30,10 @@ export default function Layout() {
   const handleHeaderChatClick = async () => {
     if (!user) return;
     try {
-      const url = user.role === "admin" 
-        ? "http://localhost:5000/api/schedules/admin/bookings"
-        : "http://localhost:5000/api/schedules/bookings";
-      const res = await axios.get(url, { withCredentials: true });
+      const path = user.role === "admin" 
+        ? "/api/schedules/admin/bookings"
+        : "/api/schedules/bookings";
+      const res = await api.get(path);
       if (res.data.success && res.data.data && res.data.data.length > 0) {
         setLatestBooking(res.data.data[0]); // get the latest booking
         setIsHeaderChatOpen(true);
@@ -59,7 +59,7 @@ export default function Layout() {
 
   useEffect(() => {
     if (!user) return;
-    const socket = io("http://localhost:5000");
+    const socket = io(API_BASE_URL);
 
     socket.on("connect", () => {
       console.log(`Socket connected in layout for user: ${user.username} (${user.role})`);
@@ -172,7 +172,7 @@ export default function Layout() {
 
   const handleLogout = async () => {
     try {
-      await axios.post("http://localhost:5000/api/auth/logout", {}, { withCredentials: true });
+      await api.post("/api/auth/logout", {}, { withCredentials: true });
       setUser(null);
       clearData();
       navigate("/login");

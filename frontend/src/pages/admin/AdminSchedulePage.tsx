@@ -1,3 +1,4 @@
+import api from '../../api/axios';
 import React, { useEffect } from "react";
 import axios from "axios";
 import { Ship, Globe, Clock } from "lucide-react";
@@ -14,7 +15,7 @@ export default function AdminSchedulePage() {
 
   const fetchPodsList = async () => {
     try {
-      const res = await axios.get("http://localhost:5000/api/schedules/pods", {
+      const res = await api.get("/api/schedules/pods", {
         withCredentials: true,
       });
       if (res.data.success) {
@@ -36,8 +37,7 @@ export default function AdminSchedulePage() {
     e.preventDefault();
     setScheduleLoading(true);
     try {
-      const res = await axios.get(
-        "http://localhost:5000/api/schedules/search",
+      const res = await api.get("/api/schedules/search",
         {
           params: { pol: scheduleQuery.pol, pod: scheduleQuery.pod },
           withCredentials: true,

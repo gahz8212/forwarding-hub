@@ -1,3 +1,4 @@
+import api, { API_BASE_URL } from '../../api/axios';
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { Clock, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react";
@@ -24,8 +25,7 @@ export default function BookingListPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    axios
-      .get("http://localhost:5000/api/schedules/bookings", { withCredentials: true })
+    api.get("/api/schedules/bookings", { withCredentials: true })
       .then((res) => {
         if (res.data.success) {
           setBookings(res.data.data);
@@ -42,7 +42,7 @@ export default function BookingListPage() {
 
   // 실시간 부킹 반려(삭제) 소켓 수신 처리
   useEffect(() => {
-    const socket = io("http://localhost:5000");
+    const socket = io(API_BASE_URL);
 
     socket.on("connect", () => {
       console.log("BookingListPage socket connected");

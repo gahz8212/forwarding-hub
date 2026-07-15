@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../api/axios';
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { X, Camera, Search, CheckCircle, Truck, Ship, AlertTriangle, Upload, FileImage, Loader2, Send, GripHorizontal, ChevronLeft, ChevronRight, Save, Trash2, BellRing, CreditCard, Clock, Warehouse } from "lucide-react";
@@ -175,7 +176,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
     });
 
     try {
-      const response = await fetch("http://localhost:5000/api/files/upload-vehicle-photos", {
+      const response = await fetch(`${API_BASE_URL}` + "/api/files/upload-vehicle-photos", {
         method: "POST",
         body: formData,
       });
@@ -333,7 +334,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
   const handleGeneratePDF = async () => {
     setIsSending(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/tracking/shipments/${shipmentId}/send-pdf`, {
+      const response = await fetch(`${API_BASE_URL}/api/tracking/shipments/${shipmentId}/send-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ blNumber }),
@@ -375,7 +376,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
 
   const autoVinLookup = async (id: number, vin: string) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/vin/${encodeURIComponent(vin)}`);
+      const response = await fetch(`${API_BASE_URL}/api/tracking/vehicles/vin/${encodeURIComponent(vin)}`);
       const res = await response.json();
       if (res.success) {
         const { data } = res;
@@ -393,7 +394,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
         } : v));
 
         // DB에도 즉시 저장 (새로고침 없이 데이터 유지)
-        await fetch(`http://localhost:5000/api/tracking/vehicles/${id}`, {
+        await fetch(`${API_BASE_URL}/api/tracking/vehicles/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -421,7 +422,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
     }
     setVinLoadingId(id);
     try {
-      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/vin/${encodeURIComponent(vin)}`);
+      const response = await fetch(`${API_BASE_URL}/api/tracking/vehicles/vin/${encodeURIComponent(vin)}`);
       const res = await response.json();
       if (res.success) {
         const { data } = res;
@@ -458,7 +459,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${vehicleId}/status`, {
+      const response = await fetch(`${API_BASE_URL}/api/tracking/vehicles/${vehicleId}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus })
@@ -477,7 +478,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
 
   const handlePendingDocsConfirm = async (selectedUrls: string[]) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/files/analyze-pending-photos`, {
+      const response = await fetch(`${API_BASE_URL}/api/files/analyze-pending-photos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -504,7 +505,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
   const handleSaveAll = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}/save-all`, {
+      const response = await fetch(`${API_BASE_URL}/api/tracking/vehicles/${shipmentId}/save-all`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -564,7 +565,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
         const rel = addedUrl.replace(/^https?:\/\/[^\/]+/, '');
         const fileName = rel.split('/').pop() || '';
         const linkedRel = rel.replace(`/${fileName}`, `/linked_${fileName}`);
-        return url === addedUrl || url === `http://localhost:5000${rel}` || url === `http://localhost:5000${linkedRel}`;
+        return url === addedUrl || url === `${API_BASE_URL}${rel}` || url === `${API_BASE_URL}${linkedRel}`;
       });
     });
 
@@ -586,7 +587,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
     }));
 
     try {
-      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${vehicleId}/photos`, {
+      const response = await fetch(`${API_BASE_URL}/api/tracking/vehicles/${vehicleId}/photos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -596,7 +597,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
       });
       const data = await response.json();
       if (data.success) {
-        const updatedUrls = data.data.map((u: string) => u.startsWith('http') ? u : `http://localhost:5000${u}`);
+        const updatedUrls = data.data.map((u: string) => u.startsWith('http') ? u : `${API_BASE_URL}${u}`);
         setVehicles(prev => prev.map(v => v.id === vehicleId ? { ...v, [photoField]: updatedUrls } : v));
 
         // Update floating viewer photos if open for this vehicle
@@ -705,7 +706,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
     }
 
     try {
-      const res = await fetch(`http://localhost:5000/api/tracking/vehicles/${vehicleId}/photos/remove`, {
+      const res = await fetch(`${API_BASE_URL}/api/tracking/vehicles/${vehicleId}/photos/remove`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -716,7 +717,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
       const data = await res.json();
       // 백엔드에서 실제로 복원된 URL이 다른 경우 교체
       if (data.restoredUrl) {
-        const restoredFull = `http://localhost:5000${data.restoredUrl}`;
+        const restoredFull = `${API_BASE_URL}${data.restoredUrl}`;
         if (restoredFull !== optimisticRestoredUrl) {
           const replaceFn = (prev: string[]) => prev.map(u => u === optimisticRestoredUrl ? restoredFull : u);
           if (globalPhotoTab === 'document') {
@@ -734,7 +735,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
   const fetchVehicles = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}`);
+      const res = await fetch(`${API_BASE_URL}/api/tracking/vehicles/${shipmentId}`);
       const data = await res.json();
       if (data.success) {
         const list = data.data || [];
@@ -789,7 +790,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
 
   const fetchUnclassifiedPhotos = async () => {
     try {
-      const res = await fetch(`http://localhost:5000/api/files/unclassified-photos/${blNumber}`);
+      const res = await fetch(`${API_BASE_URL}/api/files/unclassified-photos/${blNumber}`);
       const data = await res.json();
       if (data.success) {
         const isArr = Array.isArray(data.data);
@@ -808,7 +809,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
     fetchVehicles();
     fetchUnclassifiedPhotos();
 
-    const socket = io("http://localhost:5000");
+    const socket = io(API_BASE_URL);
     socket.emit("join", { role: "admin" });
 
     socket.on("new_shipper_docs_alert", (data) => {
@@ -837,7 +838,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
 
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/tracking/vehicles/${shipmentId}/reset?blNumber=${encodeURIComponent(blNumber)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/tracking/vehicles/${shipmentId}/reset?blNumber=${encodeURIComponent(blNumber)}`, {
         method: 'DELETE'
       });
       const data = await response.json();
@@ -1685,7 +1686,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                               ? 'vin'
                               : 'condition';
                           
-                          fetch(`http://localhost:5000/api/files/remove-vehicle-photo`, {
+                          fetch(`${API_BASE_URL}/api/files/remove-vehicle-photo`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({

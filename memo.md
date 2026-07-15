@@ -152,3 +152,18 @@
 - 화주 메뉴의 스케줄/부킹 탭(`SchedulePage.tsx`)에서 구축된 반응형 4열 테이블 및 모바일 2열 마감 일정 카드 디자인 시스템을 어드민 스케줄 관리에도 동일하게 이식했습니다.
 - **예약 기능 배제**: 행 클릭 시 부킹 요청 팝업이 뜨는 동작(`handleRowClick`)을 어드민에서는 제거하여 스케줄 조회 본연의 기능에 집중하도록 수정했습니다.
 - **스페이스 표기 유지**: 어드민 정보에 필수적인 '잔여 스페이스(CBM/kg)' 열을 우측에 추가하여, 일치된 디자인 속에서도 핵심 정보는 보존하도록 구현했습니다.
+## 📅 오늘 완료한 작업 (2026-07-15)
+
+### 1. GCP Cloud SQL(MySQL) SSL 접속 거부 문제 해결
+- **SSL 옵션 강제 설정**: GCP Cloud SQL의 외부 접속 보안 요구 사항에 대응하기 위해 백엔드 DB 풀 설정([db.ts](file:///home/gahz8212/forwarding-hub/backend/src/config/db.ts), [app.ts](file:///home/gahz8212/forwarding-hub/backend/src/app.ts))에 `ssl: { rejectUnauthorized: false }` 파라미터를 추가하고 `.env` 상에서 `DB_SSL=true`로 제어할 수 있도록 보완했습니다.
+- **DB 설정 오타 교정**: 데이터베이스 명을 실제 GCP 내 DB명인 `forwarding-hub`(하이픈)로 교정하고, 패스워드 로드 실패의 원인이었던 쌍따옴표(`"`)를 제거하여 접속 인증 거부(Access Denied) 이슈를 근본적으로 해결했습니다.
+- **스크립트 동기화**: DB 관련 전체 테스트/마이그레이션 스크립트([test-query.js](file:///home/gahz8212/forwarding-hub/test-query.js), [db-migrate-make-model.js](file:///home/gahz8212/forwarding-hub/backend/db-migrate-make-model.js))도 함께 업데이트했습니다.
+
+### 2. 프론트엔드 Axios API 클라이언트 중앙화
+- **중앙 인스턴스 구축 (`axios.ts`)**: [axios.ts](file:///home/gahz8212/forwarding-hub/frontend/src/api/axios.ts)를 생성하고 `import.meta.env.VITE_API_URL`을 주입받아 동적으로 엔드포인트를 바인딩하는 구조를 만들었습니다.
+- **하드코딩 제거 (17개 파일)**: 프론트엔드 전반의 17개 파일에서 하드코딩되었던 `"http://localhost:5000"`을 모두 추출하여 `api` 인스턴스(`/api/` 경로 사용) 및 `API_BASE_URL` 상수(소켓 및 fetch용)로 교체했습니다.
+- **빌드 검증**: 리팩토링 후 프론트엔드 코드의 타임스펙 컴파일(`tsc`) 및 프로덕션 빌드(`npm run build`) 결과, 경고나 빌드 크래시 없이 번들링이 완료됨을 검증했습니다.
+
+### 3. GCP 배포용 Docker 빌드 인자 최적화
+- **도커 빌드 아규먼트 추가 (`dockerfile`)**: 프론트엔드의 [dockerfile](file:///home/gahz8212/forwarding-hub/frontend/dockerfile) 빌드 스테이지에 `ARG VITE_API_URL`을 삽입하여 빌드 환경에서 정적 자바스크립트 내로 GCP 백엔드 URL이 주입될 수 있도록 뼈대를 잡았습니다.
+- **로컬 테스트 연동**: 로컬 프론트엔드 구동 시에도 GCP 백엔드(`https://forwarding-hub-backend-269919807885.asia-northeast3.run.app`)를 직접 바로 통신해 테스트할 수 있도록 [frontend/.env](file:///home/gahz8212/forwarding-hub/frontend/.env) 설정을 수정했습니다.

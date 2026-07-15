@@ -1,0 +1,28 @@
+# 1. 빌드 스테이지
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# 패키지 파일 복사 및 의존성 설치
+COPY package*.json ./
+RUN npm ci
+
+# 전체 소스 코드 복사 후 빌드 (dist 폴더 생성)
+COPY . .
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+RUN npm run build
+
+# 2. 실행 스테이지 (Nginx)
+FROM nginx:alpine
+
+# 앞서 작성한 커스텀 Nginx 설정 적용
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# 빌드 스테이지에서 생성된 정적 파일들을 Nginx 웹 디렉토리로 복사
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Cloud Run에서 사용할 포트 개방
+EXPOSE 8080
+
+# Nginx 실행 (백그라운드가 아닌 포그라운드로 실행하여 컨테이너 유지)
+CMD ["nginx", "-g", "daemon off;"]

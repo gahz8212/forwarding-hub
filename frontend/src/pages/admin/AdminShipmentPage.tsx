@@ -1,3 +1,4 @@
+import api, { API_BASE_URL } from '../../api/axios';
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
@@ -139,8 +140,8 @@ export default function AdminShipmentPage() {
 
     try {
       const [clientsRes, rateRes] = await Promise.all([
-        axios.get("http://localhost:5000/api/billing/clients", { withCredentials: true }),
-        axios.get("http://localhost:5000/api/billing/exchange-rate", { withCredentials: true }).catch(err => {
+        api.get("/api/billing/clients", { withCredentials: true }),
+        api.get("/api/billing/exchange-rate", { withCredentials: true }).catch(err => {
           console.warn("Failed to fetch real-time exchange rate:", err);
           return { data: { success: false } };
         })
@@ -178,7 +179,7 @@ export default function AdminShipmentPage() {
     setCalculating(true);
     setBillingError("");
     try {
-      const res = await axios.post("http://localhost:5000/api/billing/invoices/calculate", {
+      const res = await api.post("/api/billing/invoices/calculate", {
         shipmentIds: [billingShipment.id],
         clientId: selectedBillingClientId,
         exchangeRate: parseFloat(exchangeRateInput)
@@ -232,7 +233,7 @@ export default function AdminShipmentPage() {
         shipmentIds: [billingShipment.id]
       };
 
-      const res = await axios.post("http://localhost:5000/api/billing/invoices", payload, { withCredentials: true });
+      const res = await api.post("/api/billing/invoices", payload, { withCredentials: true });
       if (res.data.success) {
         alert("정산서(가승인)가 성공적으로 임시 발행되었습니다!\n\n발행된 데빗노트 메뉴에서 화주에게 전송할 수 있습니다.");
         setIsBillingModalOpen(false);
@@ -250,8 +251,7 @@ export default function AdminShipmentPage() {
     if (!silent) {
       setLoading(true);
     }
-    axios
-      .get("http://localhost:5000/api/tracking/all", { withCredentials: true })
+    api.get("/api/tracking/all", { withCredentials: true })
       .then((res) => {
         if (res.data.success) {
           setShipments(res.data.data);
@@ -272,7 +272,7 @@ export default function AdminShipmentPage() {
     fetchShipments();
 
     // 실시간 소켓 업데이트 연동 (어드민 채널)
-    const socket = io("http://localhost:5000");
+    const socket = io(API_BASE_URL);
 
     socket.emit("join", { role: "admin" });
 
@@ -335,7 +335,7 @@ export default function AdminShipmentPage() {
   const fetchVerifierGrid = async (key: string) => {
     setVerifierLoading(true);
     try {
-      const res = await axios.get(`http://localhost:5000/api/files/view/${key}`, {
+      const res = await api.get(`/api/files/view/${key}`, {
         withCredentials: true
       });
       if (res.data.success) {
@@ -344,7 +344,7 @@ export default function AdminShipmentPage() {
 
         // 화주별 매핑 설정을 로드합니다.
         try {
-          const mappingRes = await axios.get(`http://localhost:5000/api/files/mapping/${encodeURIComponent(verifierShipperName)}`, {
+          const mappingRes = await api.get(`/api/files/mapping/${encodeURIComponent(verifierShipperName)}`, {
             withCredentials: true
           });
           if (mappingRes.data.success && mappingRes.data.exists && mappingRes.data.data) {
@@ -371,7 +371,7 @@ export default function AdminShipmentPage() {
   const saveCurrentShipperMapping = async () => {
     if (!verifierShipperName || Object.keys(mappedColumns).length === 0) return;
     try {
-      await axios.post("http://localhost:5000/api/files/mapping", {
+      await api.post("/api/files/mapping", {
         shipperName: verifierShipperName,
         mapping: mappedColumns
       }, {
@@ -386,8 +386,7 @@ export default function AdminShipmentPage() {
   // 1. 서류 승인 처리
   const handleVerifyDocs = async (blNumber: string) => {
     try {
-      const res = await axios.post(
-        "http://localhost:5000/api/tracking/verify-docs",
+      const res = await api.post("/api/tracking/verify-docs",
         { blNumber },
         { withCredentials: true }
       );
@@ -412,8 +411,7 @@ export default function AdminShipmentPage() {
       return;
     }
     try {
-      const res = await axios.post(
-        "http://localhost:5000/api/tracking/re-request-docs",
+      const res = await api.post("/api/tracking/re-request-docs",
         { blNumber },
         { withCredentials: true }
       );
@@ -437,8 +435,7 @@ export default function AdminShipmentPage() {
 
     setAssigning(true);
     try {
-      const res = await axios.post(
-        "http://localhost:5000/api/tracking/assign-truck",
+      const res = await api.post("/api/tracking/assign-truck",
         {
           blNumber,
           truckDate,
@@ -474,8 +471,7 @@ export default function AdminShipmentPage() {
       );
 
       // 2. 서버 업데이트 요청
-      const res = await axios.post(
-        "http://localhost:5000/api/tracking/update-status",
+      const res = await api.post("/api/tracking/update-status",
         { blNumber, status: nextStatus },
         { withCredentials: true }
       );
@@ -867,7 +863,7 @@ export default function AdminShipmentPage() {
 
   const handleDownloadJson = async () => {
     try {
-      const response = await axios.post("http://localhost:5000/api/files/export-customs-excel", {
+      const response = await api.post("/api/files/export-customs-excel", {
         verifierFileName,
         extractedRows
       }, {
@@ -1810,7 +1806,7 @@ export default function AdminShipmentPage() {
                             onClick={async () => {
                               try {
                                 setBillingError("");
-                                const res = await axios.get("http://localhost:5000/api/billing/exchange-rate", { withCredentials: true });
+                                const res = await api.get("/api/billing/exchange-rate", { withCredentials: true });
                                 if (res.data.success) {
                                   setExchangeRateInput(String(res.data.rate));
                                 }

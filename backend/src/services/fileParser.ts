@@ -3,9 +3,13 @@ import pdfParse = require('pdf-parse');
 import fs from 'fs';
 
 // Excel 파일 파싱 헬퍼
-export async function parseExcelToGridData(filePath: string): Promise<any[][]> {
+export async function parseExcelToGridData(source: string | Buffer): Promise<any[][]> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(filePath);
+  if (typeof source === 'string') {
+    await workbook.xlsx.readFile(source);
+  } else {
+    await workbook.xlsx.load(source.buffer as ArrayBuffer);
+  }
   const worksheet = workbook.getWorksheet(1) || workbook.worksheets[0];
 
   if (!worksheet) {
@@ -55,8 +59,8 @@ export async function parseExcelToGridData(filePath: string): Promise<any[][]> {
 }
 
 // PDF 파일 파싱 헬퍼 (텍스트 추출 후 라인 및 멀티 스페이스 기준 열 분할)
-export async function parsePdfToGridData(filePath: string): Promise<any[][]> {
-  const dataBuffer = fs.readFileSync(filePath);
+export async function parsePdfToGridData(source: string | Buffer): Promise<any[][]> {
+  const dataBuffer = typeof source === 'string' ? fs.readFileSync(source) : source;
   const data = await (pdfParse as any)(dataBuffer);
   
   const lines = data.text.split('\n');

@@ -1,3 +1,4 @@
+import api from '../../api/axios';
 import React, { useEffect, useState } from 'react';
 import { useDispatchStore } from '../../store/useDispatchStore';
 import axios from 'axios';
@@ -36,7 +37,7 @@ export default function AdminDispatchPage() {
 
   const fetchVehicles = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/dispatch/vehicles', { withCredentials: true });
+      const res = await api.get('/api/dispatch/vehicles', { withCredentials: true });
       setVehicles(res.data);
     } catch (e) {
       alert('차량 목록을 불러오지 못했습니다.');
@@ -65,7 +66,7 @@ export default function AdminDispatchPage() {
     }
 
     try {
-      await axios.post('http://localhost:5000/api/dispatch/assign', {
+      await api.post('/api/dispatch/assign', {
         vins: selectedVins,
         ...formData
       }, { withCredentials: true });

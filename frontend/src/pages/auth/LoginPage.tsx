@@ -1,3 +1,4 @@
+import api from '../../api/axios';
 import React from "react";
 import axios from "axios";
 import { useAuthStore } from "../../store/useAuthStore";
@@ -18,8 +19,7 @@ export default function LoginPage() {
     setSuccessMsg("");
     try {
       if (isLogin) {
-        const response = await axios.post(
-          "http://localhost:5000/api/auth/login",
+        const response = await api.post("/api/auth/login",
           {
             username,
             password,
@@ -31,8 +31,7 @@ export default function LoginPage() {
           setUser(response.data.user);
         }
       } else {
-        const response = await axios.post(
-          "http://localhost:5000/api/auth/register",
+        const response = await api.post("/api/auth/register",
           {
             username,
             password,
