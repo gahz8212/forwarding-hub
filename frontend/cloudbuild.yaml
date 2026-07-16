@@ -1,0 +1,13 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: [
+    'build',
+    '--build-arg', 'VITE_API_URL=https://forwarding-hub-backend-269919807885.asia-northeast3.run.app',
+    '--build-arg', 'VITE_KAKAO_REST_API_KEY=7a6dcc4ac0f82a1c7f84c4f0506c7312',
+    '-t', 'asia-northeast3-docker.pkg.dev/forwarding-hub-502407/forwarding-hub-repo/frontend:v15',
+    '-t', 'asia-northeast3-docker.pkg.dev/forwarding-hub-502407/forwarding-hub-repo/frontend:latest',
+    '.'
+  ]
+images:
+- 'asia-northeast3-docker.pkg.dev/forwarding-hub-502407/forwarding-hub-repo/frontend:v15'
+- 'asia-northeast3-docker.pkg.dev/forwarding-hub-502407/forwarding-hub-repo/frontend:latest'

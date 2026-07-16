@@ -87,8 +87,8 @@ export const kakaoCallback = async (req: Request, res: Response) => {
   const REDIRECT_URI = `${protocol}://${host}/api/auth/kakao/callback`;
 
   const frontendUrl = process.env.FRONTEND_URL || 
-    (host && host.includes('run.app') 
-      ? 'https://forwarding-hub-frontend-269919807885.asia-northeast3.run.app' 
+    (host && (host.includes('run.app') || host.includes('memyself.shop'))
+      ? 'https://forwarding.memyself.shop'
       : 'http://localhost:5173');
 
   if (!code || !REST_API_KEY) {
@@ -129,7 +129,14 @@ export const kakaoCallback = async (req: Request, res: Response) => {
     const user = rows[0];
     (req.session as any).user = { ...user, kakaoToken: accessToken };
 
-    res.redirect(`${frontendUrl}/`);
+    // 세션이 DB에 완전히 저장된 후 리다이렉트 (race condition 방지)
+    req.session.save((err) => {
+      if (err) {
+        console.error('세션 저장 실패:', err);
+        return res.redirect(`${frontendUrl}/login?error=session_save_failed`);
+      }
+      res.redirect(`${frontendUrl}/`);
+    });
   } catch (error: any) {
     console.error('카카오 로그인 에러 상세:', error.response?.data || error.message);
     res.redirect(`${frontendUrl}/login?error=kakao`);

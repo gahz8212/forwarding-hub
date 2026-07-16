@@ -190,3 +190,21 @@
 - **"검증 대기" 주황색 깜빡임**: 화주가 서류를 업로드하고 아직 승인되지 않았을 때(`Documents Uploaded`), 다음 단계인 `"내륙 운송"` 스텝이 주황색으로 반짝이며 `"검증 대기"` 텍스트가 표시되도록 보완했습니다.
 - **"도착항 도착" 명칭 정정**: 마지막 단계를 일반 택배 뉘앙스의 `"배송 완료"` 대신 해상 물류 특성에 부합하는 `"도착항 도착"`으로 변경했습니다.
 - **ETA 상시 노출 배지 추가**: Stepper의 마지막 도착 단계 아이콘 상단에 실시간 ETA 날짜 배지(예: `ETA: 07/25`)가 상시 표기되도록 CSS 레이아웃을 고도화했습니다.
+
+### 5. 카카오 로그인 KOE101 에러 해결 및 예비(Fallback) REST API 키 적용
+- **원인 해결**: Docker 빌드 시 `.env` 파일이 제외되는 설정으로 인해 빌드 타임에 `VITE_KAKAO_REST_API_KEY`가 `undefined`로 치환되어 카카오 인가 요청 시 `client_id=undefined`로 넘어가던 KOE101 오류를 분석/해결했습니다.
+- **예비값(Fallback) 추가**: [LoginPage.tsx](file:///home/gahz/forwarding-hub/frontend/src/pages/auth/LoginPage.tsx) 내에 카카오 REST API 키(`7a6dcc4ac0f82a1c7f84c4f0506c7312`)를 예비 값으로 직접 적어 환경 변수가 유실되더라도 동작이 가능하도록 방어 코드를 심었습니다.
+- **배포 및 검증**: 로컬 Docker 환경을 이용해 환경 변수가 완벽히 주입된 frontend 번들을 새로 빌드하여 이미지(`v15` 및 `latest`)를 생성한 뒤, 구글 아티팩트 레지스트리에 푸시하고 서울(`asia-northeast3`) 및 도쿄(`asia-northeast1`) 리전의 Cloud Run 서비스로 연속 배포를 마쳤습니다.
+
+### 6. 타 PC 개발 환경 이전 및 환경 변수 가이드 템플릿 도입
+- **환경 변수 양식화**: 민감한 실제 데이터베이스 암호 및 보안 키가 깃에 노출되는 문제를 우회하고, 다른 PC로 개발 환경을 쉽게 옮겨 실행할 수 있도록 [backend/.env.example](file:///home/gahz/forwarding-hub/backend/.env.example) 및 [frontend/.env.example](file:///home/gahz/forwarding-hub/frontend/.env.example) 템플릿 가이드라인을 도입했습니다.
+- **환경 복원 편의성 개선**: 새 PC에서 `cp .env.example .env` 형태로 복제해 최소한의 설정(예: KMTC 쿠키, 로컬 DB 패스워드 등)만 대조/기입하여 즉시 실행이 가능하도록 구조화했습니다.
+
+### 7. 다중 PC 환경의 도메인/쿠키 불일치 해결 및 채팅방 에러 수정 (Same-Origin & Vite Proxy 적용)
+- **도메인 불일치 및 로그인 루프 해결**: 이전에는 프론트엔드가 백엔드 API 주소(`...run.app`)로 직접 Cross-Origin 요청을 보냈기 때문에, 세션 쿠키가 `forwarding.memyself.shop` 도메인과 일치하지 않아 로그인이 계속 튕기는 현상이 발생했습니다. 프론트엔드 빌드 시 `VITE_API_URL` 하드코딩을 제거하여, 모든 API 요청이 현재 도메인(`window.location.origin`)의 Nginx 프록시를 타고 흘러가도록 수정(Same-Origin)하였습니다.
+- **채팅방/소켓 연결 에러 해결**: 도메인이 단일화됨에 따라 브라우저 보안 정책을 정상 통과하여 로그인 세션 쿠키가 백엔드에 안전하게 실려 갑니다. 이를 통해 포워더와 화주가 각각의 PC로 로그인했을 때, 백엔드에서 정상적으로 권한 인증을 마쳐 채팅방 로딩 및 소켓 룸(`booking_chat_번호`) 참가가 차단 없이 물 흐르듯 작동하도록 개선했습니다.
+- **Vite 로컬 프록시 연동**: 로컬 개발 서버 환경에서도 Nginx가 프록시해 주는 구조를 그대로 유지하기 위해, [vite.config.ts](file:///home/gahz/forwarding-hub/frontend/vite.config.ts)에 `/api` 및 `/socket.io`를 `http://localhost:5000`으로 우회하는 프록시 룰을 추가했습니다. 로컬 개발 시에도 로그인 루프 없이 백엔드와 세션 쿠키를 안정적으로 교환합니다.
+
+### 8. 타 PC DB 백업 및 복원 편의를 위한 덤프 파일(db_dump.sql) 제공
+- **데이터베이스 이식성 극대화**: 새로운 PC 환경을 구성할 때 기존 PC의 테이블 구조(스키마)와 초기 데이터를 복사해 갈 수 있도록 프로젝트 루트에 [db_dump.sql](file:///home/gahz/forwarding-hub/db_dump.sql) 덤프 파일을 추출했습니다.
+- **복원 가이드**: 새 PC에서 Docker를 통해 MySQL 컨테이너를 올린 후 `docker exec -i forwarding_mysql mysql -u devuser -pdevpassword forwarding_hub < db_dump.sql` 명령어로 전체 데이터베이스 상태를 손쉽게 100% 복제할 수 있습니다.

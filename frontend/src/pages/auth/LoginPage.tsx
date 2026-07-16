@@ -50,8 +50,10 @@ export default function LoginPage() {
   };
 
   const handleKakaoLogin = () => {
-    const redirectUri = `${API_BASE_URL}/api/auth/kakao/callback`;
-    const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${import.meta.env.VITE_KAKAO_REST_API_KEY}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=talk_message,profile_nickname`;
+    const kakaoKey = import.meta.env.VITE_KAKAO_REST_API_KEY || "7a6dcc4ac0f82a1c7f84c4f0506c7312";
+    // 반드시 현재 도메인(Nginx 프록시)을 통해 콜백을 받아야 세션 쿠키 도메인이 일치
+    const redirectUri = `${window.location.origin}/api/auth/kakao/callback`;
+    const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${kakaoKey}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=talk_message,profile_nickname`;
     window.location.href = KAKAO_AUTH_URL;
   };
 
