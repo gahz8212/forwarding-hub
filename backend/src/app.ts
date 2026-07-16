@@ -43,12 +43,23 @@ const sessionStore = new MySQLStore({
 initScheduler();
 
 const app = express();
+app.set('trust proxy', 1); // GCP Cloud Run (프록시) 환경에서 HTTPS 세션 쿠키 정상 작동을 위해 프록시 신뢰 설정 추가
+
 const server = http.createServer(app);
 
 // 허용할 CORS 오리진 동적으로 수집
-const allowedOrigins = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(',').map(o => o.trim())
-  : ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'https://forwarding-hub-frontend-269919807885.asia-northeast3.run.app',
+  'https://forwarding.memyself.shop' // 🚀 새롭게 추가된 GCP 커스텀 도메인!
+];
+
+if (process.env.FRONTEND_URL) {
+  const envOrigins = process.env.FRONTEND_URL.split(',').map(o => o.trim());
+  allowedOrigins.push(...envOrigins);
+}
 
 // Socket.io 초기화
 const io = new Server(server, {
@@ -60,18 +71,18 @@ const io = new Server(server, {
 
 // io 객체를 Express app에 바인딩하여 라우터/컨트롤러에서 쓸 수 있게 함
 app.set('io', io);
+(global as any).io = io; // 🚀 백그라운드 서비스용 글로벌 바인딩 추가!
 
 app.use(cors({
-  origin: [
-    'http://localhost:5173', // 기존에 있던 로컬 프론트엔드 주소 (개발용)
-    'http://localhost:3000', // (필요시 추가)
-    'https://forwarding-hub-frontend-269919807885.asia-northeast3.run.app' // 🚀 새롭게 추가된 GCP 프론트엔드 주소!
-  ],
-  credentials: true // 예전에 고치셨던 withCredentials와 짝꿍입니다. 로그인(쿠키/인증) 시 필수!
+  origin: allowedOrigins,
+  credentials: true // 로그인(쿠키/인증) 시 필수!
 }));
 app.use(express.json());
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// GCP 환경 판별 (GCP 배포 시 세션 쿠키 공유 대응)
+const isProduction = process.env.NODE_ENV === 'production' || (process.env.DB_HOST && process.env.DB_HOST !== 'localhost');
 
 // 세션 설정
 app.use(session({
@@ -80,8 +91,9 @@ app.use(session({
   saveUninitialized: false,
   store: sessionStore,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // 개발 환경에서는 false
+    secure: !!isProduction, // HTTPS 환경(GCP)에서만 전송
     httpOnly: true,
+    sameSite: isProduction ? 'none' : 'lax', // 프론트와 백엔드가 다를 때(GCP) 크로스 도메인 쿠키 전송 허용
     maxAge: 1000 * 60 * 60 * 24 // 1일
   }
 }));

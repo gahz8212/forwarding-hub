@@ -20,26 +20,25 @@ import {
 
 const STEPS = [
   { key: "Pending Documents", label: "서류 업로드" },
-  { key: "Documents Verified", label: "서류 검증" },
-  { key: "Trucking", label: "운송" },
+  { key: "Trucking", label: "내륙 운송" },
   { key: "Gate In", label: "CY 입고" },
   { key: "Loaded on Vessel", label: "선적 완료" },
   { key: "Departed", label: "출항" },
   { key: "In Transit", label: "해상 운송" },
-  { key: "Delivered", label: "배송 완료" }
+  { key: "Delivered", label: "도착항 도착" }
 ];
 
 const getStepIndex = (status: string) => {
   switch (status) {
     case "Pending Documents": return 0;
-    case "Documents Uploaded": return 1; // 화주가 업로드 완료하여 서류 검증 단계(1) 대기 중
-    case "Documents Verified": return 2; // 서류 검증 완료, 운송 단계(2) 대기 중
-    case "Trucking": return 3;           // 운송 중, CY 입고 단계(3) 대기 중
-    case "Gate In": return 4;            // 입고 완료, 선적 완료 단계(4) 대기 중
-    case "Loaded on Vessel": return 5;   // 선적 완료, 출항 단계(5) 대기 중
-    case "Departed": return 6;           // 출항, 해상 운송 단계(6) 대기 중
-    case "In Transit": return 7;         // 해상 운송 중, 배송 완료 단계(7) 대기 중
-    case "Delivered": return 8;          // 완료
+    case "Documents Uploaded": return 1; // 승인 대기 ➔ 내륙 운송 단계에서 대기
+    case "Documents Verified": return 1; // 승인 완료 ➔ 내륙 운송 활성화
+    case "Trucking": return 1;           // 내륙 운송 중
+    case "Gate In": return 2;            // CY 입고 완료
+    case "Loaded on Vessel": return 3;   // 선적 완료
+    case "Departed": return 4;           // 출항
+    case "In Transit": return 5;         // 해상 운송 중
+    case "Delivered": return 6;          // 도착항 도착
     default: return -1;
   }
 };
@@ -245,30 +244,40 @@ export default function DashboardPage() {
   const mapInstanceRef = React.useRef<any>(null);
   const shipMarkerRef = React.useRef<any>(null);
 
-  // 1. 진행률 가상 애니메이션 제어 (최초 40%~80% 랜덤, 5초마다 0.1%~0.5%씩 증가)
+  // 1. 실제 스케줄 날짜(ETD~ETA) 대비 경과 시간 진행률 계산 훅
   useEffect(() => {
     if (!isMapOpen || !trackingData) {
       setAnimatedProgress(null);
       return;
     }
 
-    // 초기 값 설정
-    const startVal = 40 + Math.random() * 40; // 40% ~ 80%
-    setAnimatedProgress(startVal);
+    const updateProgress = () => {
+      if (!trackingData.etd || !trackingData.eta) {
+        setAnimatedProgress(50); // 날짜 정보가 없으면 중앙에 임시 배치
+        return;
+      }
+      const etd = new Date(trackingData.etd).getTime();
+      const eta = new Date(trackingData.eta).getTime();
+      const now = Date.now();
 
-    const interval = setInterval(() => {
-      setAnimatedProgress((prev) => {
-        if (prev === null) return null;
-        if (prev >= 100) return 100;
-        const increment = 0.1 + Math.random() * 0.4; // 0.1% ~ 0.5%
-        return Math.min(100, prev + increment);
-      });
-    }, 5000);
+      if (now <= etd) {
+        setAnimatedProgress(0);
+      } else if (now >= eta) {
+        setAnimatedProgress(100);
+      } else {
+        const progress = ((now - etd) / (eta - etd)) * 100;
+        setAnimatedProgress(Math.min(100, Math.max(0, progress)));
+      }
+    };
+
+    updateProgress();
+    // 10초마다 갱신하여 진척도 유지
+    const interval = setInterval(updateProgress, 10000);
 
     return () => {
       clearInterval(interval);
     };
-  }, [isMapOpen, trackingData?.bl_number]);
+  }, [isMapOpen, trackingData?.bl_number, trackingData?.etd, trackingData?.eta]);
 
   // 2. Leaflet 라이브러리 CDN 로딩
   React.useEffect(() => {
@@ -362,7 +371,16 @@ export default function DashboardPage() {
     const bounds = L.latLngBounds([polCoord, podCoord]);
     map.fitBounds(bounds, { padding: [50, 50] });
 
+    // 창 크기 변경 시 Leaflet 지도 크기 무효화(invalidateSize) 처리하여 반응형으로 레이아웃 자동 리핏
+    const handleResize = () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    };
+    window.addEventListener("resize", handleResize);
+
     return () => {
+      window.removeEventListener("resize", handleResize);
       // 맵 정리
       if (mapInstanceRef.current) {
         try {
@@ -390,10 +408,43 @@ export default function DashboardPage() {
     const currentLat = polCoord[0] + (podCoord[0] - polCoord[0]) * (animatedProgress / 100);
     const currentLng = polCoord[1] + (podCoord[1] - polCoord[1]) * (animatedProgress / 100);
 
+    // 평균 속도 계산 (출발항과 도착항 사이의 거리 및 총 항해 시간 활용)
+    let speedText = "16.5 Knots (예상)";
+    if (trackingData.etd && trackingData.eta) {
+      const etd = new Date(trackingData.etd).getTime();
+      const eta = new Date(trackingData.eta).getTime();
+      const durationHours = (eta - etd) / (1000 * 60 * 60);
+
+      // 경위도 거리 계산 (Haversine 공식)
+      const lat1 = polCoord[0];
+      const lon1 = polCoord[1];
+      const lat2 = podCoord[0];
+      const lon2 = podCoord[1];
+      
+      const R = 6371; // 지구 반지름 (km)
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLon = ((lon2 - lon1) * Math.PI) / 180;
+      const a = 
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) *
+          Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distanceKm = R * c;
+      const distanceNauticalMiles = distanceKm * 0.539957; // km to 해리
+
+      if (durationHours > 0 && distanceNauticalMiles > 100) {
+        const calculatedSpeed = distanceNauticalMiles / durationHours;
+        const safeSpeed = calculatedSpeed > 5 && calculatedSpeed < 40 ? calculatedSpeed : 16.5;
+        speedText = `${safeSpeed.toFixed(1)} Knots (평균)`;
+      }
+    }
+
     const popupHtml = `
       <div style="font-size:11px; font-family:sans-serif; padding:2px; line-height:1.6;">
         <strong style="color:#2563eb; font-size:12px;">🚢 ${trackingData.vessel_name}</strong><br/>
-        <b>현재 속도:</b> 16.2 Knots<br/>
+        <b>속도:</b> ${speedText}<br/>
         <b>항해 진행률:</b> ${animatedProgress.toFixed(1)}%<br/>
         <b>상태:</b> ${animatedProgress >= 100 ? "입항 완료" : "운항 중"}
       </div>
@@ -689,7 +740,7 @@ export default function DashboardPage() {
                 {STEPS.map((step, idx) => {
                   const isCompleted = activeIdx > idx;
                   const isActive = idx === currentIdx;
-                  const isWaitingVerify = activeIdx === 1 && idx === 1;
+                  const isWaitingVerify = trackingData?.status === "Documents Uploaded" && idx === 1;
 
                   return (
                     <React.Fragment key={step.key}>
@@ -727,12 +778,17 @@ export default function DashboardPage() {
                                   </span>
                                 );
                               })()}
-                              {step.key === "Departed" && trackingData?.etd && (
-                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto">
-                                  <span>ETD: {trackingData.etd.substring(5, 10).replace('-', '/')}</span>
-                                </span>
-                              )}
                             </>
+                          )}
+                          {step.key === "Departed" && trackingData?.etd && (
+                            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto">
+                              <span>ETD: {trackingData.etd.substring(5, 10).replace('-', '/')}</span>
+                            </span>
+                          )}
+                          {step.key === "Delivered" && trackingData?.eta && (
+                            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto">
+                              <span>ETA: {trackingData.eta.substring(5, 10).replace('-', '/')}</span>
+                            </span>
                           )}
                         </div>
 
@@ -793,7 +849,7 @@ export default function DashboardPage() {
             {STEPS.map((step, idx) => {
               const isCompleted = activeIdx > idx;
               const isActive = idx === currentIdx;
-              const isWaitingVerify = activeIdx === 1 && idx === 1;
+              const isWaitingVerify = trackingData?.status === "Documents Uploaded" && idx === 1;
 
               return (
                 <React.Fragment key={step.key}>
@@ -831,6 +887,11 @@ export default function DashboardPage() {
                       {step.key === "Departed" && trackingData?.etd && (
                         <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto">
                           <span>ETD: {trackingData.etd.substring(5, 10).replace('-', '/')}</span>
+                        </span>
+                      )}
+                      {step.key === "Delivered" && trackingData?.eta && (
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap flex flex-row items-center gap-0.5 justify-center mx-auto">
+                          <span>ETA: {trackingData.eta.substring(5, 10).replace('-', '/')}</span>
                         </span>
                       )}
                     </div>

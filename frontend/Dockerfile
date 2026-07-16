@@ -9,7 +9,9 @@ RUN npm ci
 # 전체 소스 코드 복사 후 빌드 (dist 폴더 생성)
 COPY . .
 ARG VITE_API_URL
+ARG VITE_KAKAO_REST_API_KEY
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_KAKAO_REST_API_KEY=$VITE_KAKAO_REST_API_KEY
 RUN npm run build
 
 # 2. 실행 스테이지 (Nginx)

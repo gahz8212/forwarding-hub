@@ -1,4 +1,4 @@
-import api from '../../api/axios';
+import api, { API_BASE_URL } from '../../api/axios';
 import React from "react";
 import axios from "axios";
 import { useAuthStore } from "../../store/useAuthStore";
@@ -50,7 +50,8 @@ export default function LoginPage() {
   };
 
   const handleKakaoLogin = () => {
-    const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${import.meta.env.VITE_KAKAO_REST_API_KEY}&redirect_uri=http://localhost:5000/api/auth/kakao/callback&response_type=code&scope=talk_message,profile_nickname`;
+    const redirectUri = `${API_BASE_URL}/api/auth/kakao/callback`;
+    const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${import.meta.env.VITE_KAKAO_REST_API_KEY}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=talk_message,profile_nickname`;
     window.location.href = KAKAO_AUTH_URL;
   };
 

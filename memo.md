@@ -165,5 +165,28 @@
 - **빌드 검증**: 리팩토링 후 프론트엔드 코드의 타임스펙 컴파일(`tsc`) 및 프로덕션 빌드(`npm run build`) 결과, 경고나 빌드 크래시 없이 번들링이 완료됨을 검증했습니다.
 
 ### 3. GCP 배포용 Docker 빌드 인자 최적화
-- **도커 빌드 아규먼트 추가 (`dockerfile`)**: 프론트엔드의 [dockerfile](file:///home/gahz8212/forwarding-hub/frontend/dockerfile) 빌드 스테이지에 `ARG VITE_API_URL`을 삽입하여 빌드 환경에서 정적 자바스크립트 내로 GCP 백엔드 URL이 주입될 수 있도록 뼈대를 잡았습니다.
+- **도커 빌드 아규먼트 최적화**: 프론트엔드의 [dockerfile](file:///home/gahz8212/forwarding-hub/frontend/dockerfile) 빌드 스테이지에 `ARG VITE_API_URL`을 삽입하여 빌드 환경에서 정적 자바스크립트 내로 GCP 백엔드 URL이 주입될 수 있도록 뼈대를 잡았습니다.
 - **로컬 테스트 연동**: 로컬 프론트엔드 구동 시에도 GCP 백엔드(`https://forwarding-hub-backend-269919807885.asia-northeast3.run.app`)를 직접 바로 통신해 테스트할 수 있도록 [frontend/.env](file:///home/gahz8212/forwarding-hub/frontend/.env) 설정을 수정했습니다.
+
+## 📅 오늘 완료한 작업 (2026-07-16)
+
+### 1. GCP 멀티 리전 프론트엔드 정합성 해결 (도쿄/서울)
+- **도쿄 리전 추가 배포**: 커스텀 도메인(`https://forwarding.memyself.shop`)이 매핑된 도쿄 리전(`asia-northeast1`)의 프론트엔드 서비스에 최신 `v10` 번들을 수동 동기화 배포하여, 401 권한 차단 에러를 완벽히 해결했습니다.
+- **배포 트러블슈팅 문서화**: [gcp_deployment_troubleshooting.md](file:///home/gahz8212/.gemini/antigravity-cli/brain/68a6e58a-322b-4586-859e-c7bb49465b3d/gcp_deployment_troubleshooting.md)에 멀티 리전 불일치 사례 및 해결 방안을 상세 기록했습니다.
+
+### 2. MSC 화물 트래킹 엔진 및 새벽 스케줄러 탑재 (`mscTrackerService.ts`)
+- **실시간 데이터 동기화**: DB의 활성 B/L 번호들의 노선을 추출, MSC 사이트에서 실시간 선박 스케줄을 긁어와 `shipments` 테이블의 `etd`, `eta`, 마감일자 데이터를 최신화하는 자동화 엔진을 신규 개발했습니다.
+- **스마트 상태 자동 전환**: 동기화된 실제 일정을 기준으로 날짜가 경과함에 따라 화물의 상태 단계(출항, 도착항 도착 등)를 자동으로 갱신합니다.
+- **새벽 배치 스크래러 연동**: 매일 새벽 5시에 트래킹 엔진이 실행되도록 [scheduler.ts](file:///home/gahz8212/forwarding-hub/backend/src/services/scheduler.ts)에 탑재했습니다.
+- **수동 강제 트리거 API**: `POST /api/tracking/test-daily-run`을 추가하여 새벽을 기다리지 않고도 언제든지 동기화를 테스트해 볼 수 있도록 우회 수단을 구축했습니다.
+
+### 3. 실시간 위치 지도 반응형 리핏 및 수학적 속도 계산
+- **가상 랜덤 코드 제거**: `DashboardPage.tsx`에서 최초 지도를 열 때 40~80% 사이의 랜덤값으로 선박 위치를 찍던 가상 코드를 제거하고, 실제 ETD와 ETA 기준 현재 날짜 대비 비율(`((now - etd)/(eta - etd)) * 100`)을 실시간 계산해 100% 매칭하는 수식으로 대체했습니다.
+- **구면 삼각법(Haversine) 기반 평균 속도 계산**: 출발항과 도착항의 실제 경위도 좌표를 바탕으로 대권거리(해리)를 계산하고, 운항 소요 시간으로 나누어 **물리적 평균 속도(Knots)**를 동적으로 도출해 팝업에 표시합니다.
+- **Leaflet 반응형 리핏 버그 해결**: 창 크기를 늘리거나 줄일 때 지도가 깨지는 Leaflet의 버그를 방지하기 위해 window `resize` 리스너를 바인딩하고 `invalidateSize()`를 실행하여 완벽히 반응형 지도가 되도록 구현했습니다.
+
+### 4. 물류 프로세스 단계(Stepper) 단일화 및 배지 보완
+- **"서류 검증" 단계 제거**: 화주용/어드민용 Stepper에서 불필요한 "서류 검증" 스텝을 제거하여 전체 7단계 구조로 통일했습니다. 
+- **"검증 대기" 주황색 깜빡임**: 화주가 서류를 업로드하고 아직 승인되지 않았을 때(`Documents Uploaded`), 다음 단계인 `"내륙 운송"` 스텝이 주황색으로 반짝이며 `"검증 대기"` 텍스트가 표시되도록 보완했습니다.
+- **"도착항 도착" 명칭 정정**: 마지막 단계를 일반 택배 뉘앙스의 `"배송 완료"` 대신 해상 물류 특성에 부합하는 `"도착항 도착"`으로 변경했습니다.
+- **ETA 상시 노출 배지 추가**: Stepper의 마지막 도착 단계 아이콘 상단에 실시간 ETA 날짜 배지(예: `ETA: 07/25`)가 상시 표기되도록 CSS 레이아웃을 고도화했습니다.

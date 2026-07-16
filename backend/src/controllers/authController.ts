@@ -80,10 +80,19 @@ export const checkAuth = (req: Request, res: Response) => {
 export const kakaoCallback = async (req: Request, res: Response) => {
   const code = req.query.code;
   const REST_API_KEY = process.env.KAKAO_REST_API_KEY;
-  const REDIRECT_URI = "http://localhost:5000/api/auth/kakao/callback";
+
+  // X-Forwarded-Proto, X-Forwarded-Host 헤더를 활용해 동적으로 리다이렉트 URI 및 프론트엔드 주소 계산
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const REDIRECT_URI = `${protocol}://${host}/api/auth/kakao/callback`;
+
+  const frontendUrl = process.env.FRONTEND_URL || 
+    (host && host.includes('run.app') 
+      ? 'https://forwarding-hub-frontend-269919807885.asia-northeast3.run.app' 
+      : 'http://localhost:5173');
 
   if (!code || !REST_API_KEY) {
-    return res.redirect("http://localhost:5173/login?error=kakao_config_missing");
+    return res.redirect(`${frontendUrl}/login?error=kakao_config_missing`);
   }
 
   try {
@@ -120,9 +129,9 @@ export const kakaoCallback = async (req: Request, res: Response) => {
     const user = rows[0];
     (req.session as any).user = { ...user, kakaoToken: accessToken };
 
-    res.redirect("http://localhost:5173/");
+    res.redirect(`${frontendUrl}/`);
   } catch (error: any) {
     console.error('카카오 로그인 에러 상세:', error.response?.data || error.message);
-    res.redirect("http://localhost:5173/login?error=kakao");
+    res.redirect(`${frontendUrl}/login?error=kakao`);
   }
 };

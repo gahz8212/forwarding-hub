@@ -53,13 +53,12 @@ const EXTRACTION_KEYS: ExtractionKey[] = [
 ];
 
 const STAGES = [
-  { value: "Documents Verified", label: "서류 검증 완료", icon: FileText, activeColor: "text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-800" },
   { value: "Trucking", label: "내륙 운송 중", icon: Truck, activeColor: "text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800" },
   { value: "Gate In", label: "CY 입고 완료", icon: Warehouse, activeColor: "text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800" },
   { value: "Loaded on Vessel", label: "선적 완료", icon: Ship, activeColor: "text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800" },
   { value: "Departed", label: "출항 완료", icon: Compass, activeColor: "text-pink-600 bg-pink-50 border-pink-200 dark:bg-pink-950/40 dark:border-pink-800" },
   { value: "In Transit", label: "해상 운송 중", icon: Globe, activeColor: "text-purple-600 bg-purple-50 border-purple-200 dark:bg-purple-950/40 dark:border-purple-800" },
-  { value: "Delivered", label: "배달 완료", icon: Check, activeColor: "text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-950/40 dark:border-teal-800" }
+  { value: "Delivered", label: "도착항 도착", icon: Check, activeColor: "text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-950/40 dark:border-teal-800" }
 ];
 
 export default function AdminShipmentPage() {
@@ -988,7 +987,7 @@ export default function AdminShipmentPage() {
                           {["Documents Verified", "Trucking", "Gate In", "Loaded on Vessel", "Departed", "In Transit", "Delivered"].includes(s.status) && (
                             <div className="space-y-3">
                               {(() => {
-                                const currentIdx = STAGES.findIndex(stage => stage.value === s.status);
+                                const currentIdx = STAGES.findIndex(stage => stage.value === (s.status === "Documents Verified" ? "Trucking" : s.status));
                                 if (currentIdx === -1) return null;
 
                                 const cardStepWidth = 120; // 110px card width + 10px gap (approx 50% larger than 74px + 8px gap)
@@ -1140,7 +1139,7 @@ export default function AdminShipmentPage() {
                         {["Documents Verified", "Trucking", "Gate In", "Loaded on Vessel", "Departed", "In Transit", "Delivered"].includes(s.status) && (
                           <div className="w-full overflow-hidden select-none">
                             {(() => {
-                              const currentIdx = STAGES.findIndex(stage => stage.value === s.status);
+                              const currentIdx = STAGES.findIndex(stage => stage.value === (s.status === "Documents Verified" ? "Trucking" : s.status));
                               if (currentIdx === -1) return null;
 
                               const cardStepWidth = 120;

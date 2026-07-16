@@ -19,6 +19,7 @@ import {
   getVehicleSpecByVIN,
   updateVehicleSpecs
 } from '../controllers/trackingController';
+import { runDailyMscTracking } from '../services/mscTrackerService';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -120,5 +121,15 @@ router.get('/vehicles/vin/:vin', getVehicleSpecByVIN);
 
 // PUT /api/tracking/vehicles/:id (개별 차량 제원 저장)
 router.put('/vehicles/:id', updateVehicleSpecs);
+
+// POST /api/tracking/test-daily-run (일일 MSC 트래킹 수동 테스트 트리거)
+router.post('/test-daily-run', async (req, res) => {
+  try {
+    await runDailyMscTracking();
+    res.json({ success: true, message: '일일 MSC 스케줄 및 트래킹 업데이트가 백그라운드에서 완료되었습니다.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 export default router;

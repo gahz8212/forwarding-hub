@@ -2,6 +2,7 @@ import cron from "node-cron";
 import pool from "../config/db";
 import fs from "fs";
 import path from "path";
+import { runDailyMscTracking } from "./mscTrackerService";
 
 // 날짜 포맷팅 함수 (YYYY-MM-DD)
 const formatDate = (date: Date) => {
@@ -11,8 +12,10 @@ const formatDate = (date: Date) => {
 export const initScheduler = () => {
   console.log("⏰ 백엔드 백그라운드 크론 스케줄러가 활성화되었습니다.");
 
-  // 매일 오전 9시에 실행 (0 9 * * *)
-  cron.schedule("0 9 * * *", async () => {
+  // 매일 오전 5시(새벽 시간대)에 실행 (0 5 * * *)
+  cron.schedule("0 5 * * *", async () => {
+    console.log("🔍 [BATCH] 일일 MSC 스케줄 스크래핑 및 화물 트래킹 자동 업데이트 시작...");
+    await runDailyMscTracking();
     console.log("🔍 [BATCH] 일일 마감 및 알림 대상 선적 조회 시작...");
     await checkAndSendAlerts();
     console.log("🔍 [BATCH] 24시간이 경과한 임시 파일 그리드 데이터 정리 시작...");
