@@ -217,7 +217,16 @@
 - **백엔드 Dockerfile 최적화**: Puppeteer와 알파인 리눅스 충돌을 해결하기 위해, `node:20-alpine`에 크롬 브라우저를 직접 설치하고 `PUPPETEER_SKIP_DOWNLOAD=true`를 적용하는 방식으로 `Dockerfile`을 전면 개편했습니다.
 
 ### 2. 현재 발생한 이슈 및 다음 진행 스텝
-- **이슈**: Cloud Shell에서 `gcloud run deploy` 수동 배포를 실행했으나, 구글 클라우드 빌드(Cloud Build)의 컨테이너 생성 단계(Building Container)에서 에러가 발생하여 실패했습니다. (터미널에서 `gcloud builds log` 확인 시 에러 로그가 정상 출력되지 않는 현상 발생)
+- **이슈**: Cloud Shell에서 `gcloud run deploy` 수동 배포를 실행했으나, 구글 클라우드 빌드(Cloud Build)가 로그를 기록할 권한(`roles/logging.logWriter`)이 없어 컨테이너 생성 단계에서 실패했습니다.
 - **Next Step**:
-  1. 다음번 작업 재개 시, 이전 에러 메시지에 남겨진 **파란색 웹사이트 링크**(예: `https://console.cloud.google.com/cloud-build/builds...`)를 클릭해 브라우저로 접속합니다.
-  2. 빨간 느낌표나 Error가 표시된 실패 단계(Step)의 상세 로그를 확인하여 복사해 주시면, 도커 빌드 실패 원인을 분석하여 최종 배포를 마무리할 예정입니다.
+  1. 다음번 작업 재개 시, 터미널에서 아래 명령어를 순서대로 실행하여 로그 작성 권한을 부여하고 최종 배포를 마무리합니다.
+  ```bash
+  git pull origin main
+  bash fix-perms.sh
+  gcloud run deploy forwarding-hub-backend \
+    --source ./backend \
+    --region asia-northeast3 \
+    --project forwarding-hub-502407 \
+    --allow-unauthenticated
+  ```
+  2. 배포 완료 후 `forwarding.memyself.shop`에 접속하여 카카오 로그인 정상 작동을 테스트합니다.
