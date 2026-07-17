@@ -12,6 +12,13 @@ MAP="${M1},${M2},${M3}"
 
 URI="https://token.actions.githubusercontent.com"
 
+echo "0. Workload Identity Pool을 생성합니다 (이미 존재하면 넘어갑니다)..."
+POOL_CMD=(gcloud iam workload-identity-pools create "$POOL")
+POOL_CMD+=(--project="$PROJ")
+POOL_CMD+=(--location="$LOC")
+POOL_CMD+=(--display-name="GitHub Actions Pool")
+"${POOL_CMD[@]}"
+
 echo "1. GitHub Provider(OIDC)를 생성합니다..."
 CMD=(gcloud iam workload-identity-pools providers create-oidc "$PROV")
 CMD+=(--project="$PROJ")
