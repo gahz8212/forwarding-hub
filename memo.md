@@ -208,3 +208,16 @@
 ### 8. 타 PC DB 백업 및 복원 편의를 위한 덤프 파일(db_dump.sql) 제공
 - **데이터베이스 이식성 극대화**: 새로운 PC 환경을 구성할 때 기존 PC의 테이블 구조(스키마)와 초기 데이터를 복사해 갈 수 있도록 프로젝트 루트에 [db_dump.sql](file:///home/gahz/forwarding-hub/db_dump.sql) 덤프 파일을 추출했습니다.
 - **복원 가이드**: 새 PC에서 Docker를 통해 MySQL 컨테이너를 올린 후 `docker exec -i forwarding_mysql mysql -u devuser -pdevpassword forwarding_hub < db_dump.sql` 명령어로 전체 데이터베이스 상태를 손쉽게 100% 복제할 수 있습니다.
+
+## 📅 오늘 진행 및 보류한 작업 (2026-07-17)
+
+### 1. GCP 백엔드 배포 및 CI/CD 인프라 구축 (진행 중)
+- **Workload Identity Federation (WIF) 세팅**: 깃허브 액션에서 GCP 자원에 접근할 수 있도록 WIF Pool과 Provider를 생성하고, 서비스 계정(`github-actions-deploy`)에 바인딩하는 등 까다로운 보안 권한 설정을 완료했습니다.
+- **배포 스크립트화**: WIF 생성 및 IAM 권한 할당 과정에서 발생하는 터미널 복사/붙여넣기 오류를 방지하기 위해 `setup-wif.sh`, `bind-iam.sh`, `fix-perms.sh` 등의 쉘 스크립트를 생성하여 안정적으로 권한 부여를 마쳤습니다.
+- **백엔드 Dockerfile 최적화**: Puppeteer와 알파인 리눅스 충돌을 해결하기 위해, `node:20-alpine`에 크롬 브라우저를 직접 설치하고 `PUPPETEER_SKIP_DOWNLOAD=true`를 적용하는 방식으로 `Dockerfile`을 전면 개편했습니다.
+
+### 2. 현재 발생한 이슈 및 다음 진행 스텝
+- **이슈**: Cloud Shell에서 `gcloud run deploy` 수동 배포를 실행했으나, 구글 클라우드 빌드(Cloud Build)의 컨테이너 생성 단계(Building Container)에서 에러가 발생하여 실패했습니다. (터미널에서 `gcloud builds log` 확인 시 에러 로그가 정상 출력되지 않는 현상 발생)
+- **Next Step**:
+  1. 다음번 작업 재개 시, 이전 에러 메시지에 남겨진 **파란색 웹사이트 링크**(예: `https://console.cloud.google.com/cloud-build/builds...`)를 클릭해 브라우저로 접속합니다.
+  2. 빨간 느낌표나 Error가 표시된 실패 단계(Step)의 상세 로그를 확인하여 복사해 주시면, 도커 빌드 실패 원인을 분석하여 최종 배포를 마무리할 예정입니다.
