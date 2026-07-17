@@ -27,44 +27,8 @@ import pool from '../config/db';
 
 const router = Router();
 
-// Multer 업로드 저장소 설정
-const uploadDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    try {
-      const blNumber = req.body.blNumber || 'unknown';
-      const [rows]: any = await pool.query('SELECT shipper FROM shipments WHERE bl_number = ?', [blNumber]);
-      const shipperName = rows.length > 0 ? rows[0].shipper : 'unknown';
-      
-      // 폴더명 생성 시 특수문자 제거 및 공백 트림 처리
-      const safeShipperName = shipperName.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || 'unknown';
-
-      const now = new Date();
-      const year = now.getFullYear().toString();
-      const month = (now.getMonth() + 1).toString().padStart(2, '0');
-
-      const targetDir = path.join(uploadDir, safeShipperName, year, month);
-      
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      
-      cb(null, targetDir);
-    } catch (err) {
-      cb(err as Error, uploadDir);
-    }
-  },
-  filename: (req, file, cb) => {
-    const blNumber = req.body.blNumber || 'unknown';
-    const ext = path.extname(file.originalname);
-    cb(null, `${blNumber}_${file.fieldname}_${Date.now()}${ext}`);
-  }
-});
-
+// Multer 업로드 저장소 설정 (GCP Cloud Run 휘발성 환경을 위해 memoryStorage 사용)
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 // GET /api/tracking/all

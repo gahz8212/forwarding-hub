@@ -1026,19 +1026,9 @@ export const downloadFile = async (req: Request, res: Response) => {
     return res.status(403).json({ success: false, message: '허용되지 않는 파일 접근입니다.' });
   }
 
-  const absolutePath = path.join(__dirname, '../../', filePath);
-
-  if (!fs.existsSync(absolutePath)) {
-    return res.status(404).json({ success: false, message: '파일을 찾을 수 없습니다.' });
-  }
-
-  const ext = path.extname(absolutePath);
-  const downloadName = friendlyName ? `${friendlyName}${ext}` : path.basename(absolutePath);
-
-  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
-  res.download(absolutePath, downloadName, (err) => {
-    if (err) {
-      console.error('Download error:', err);
-    }
-  });
+  // GCP GCS 퍼블릭 URL로 리다이렉트
+  const gcsPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
+  const publicUrl = `https://storage.googleapis.com/${bucketName}/${gcsPath}`;
+  
+  res.redirect(publicUrl);
 };

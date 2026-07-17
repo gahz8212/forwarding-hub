@@ -1126,14 +1126,17 @@ export default function DashboardPage() {
                     <p className="text-xs text-slate-400 font-bold uppercase">Commercial Invoice</p>
                     <p className="text-slate-700 text-xs font-semibold mt-0.5">상업 송장</p>
                   </div>
-                  <a
-                    href={`${API_BASE_URL}${trackingData.invoice_file_path}`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.invoice_file_path)}&name=${encodeURIComponent('상업송장')}`, '_blank');
+                    }}
                     className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
                   >
                     서류 보기
-                  </a>
+                  </button>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border flex justify-between items-center">
@@ -1141,14 +1144,17 @@ export default function DashboardPage() {
                     <p className="text-xs text-slate-400 font-bold uppercase">Packing List</p>
                     <p className="text-slate-700 text-xs font-semibold mt-0.5">포장 명세서</p>
                   </div>
-                  <a
-                    href={`${API_BASE_URL}${trackingData.packing_list_file_path}`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.packing_list_file_path)}&name=${encodeURIComponent('포장명세서')}`, '_blank');
+                    }}
                     className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
                   >
                     서류 보기
-                  </a>
+                  </button>
                 </div>
               </div>
             </div>

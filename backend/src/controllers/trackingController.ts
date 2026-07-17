@@ -7,6 +7,11 @@ import path from 'path';
 import crypto from 'crypto';
 import { parseExcelToGridData, parsePdfToGridData } from '../services/fileParser';
 import { saveVehiclePhotoAndDeduplicate } from '../utils/photoHelper';
+import { Storage } from '@google-cloud/storage';
+
+const storageClient = new Storage();
+const bucketName = process.env.GCS_BUCKET_NAME || 'forwarding-hub-assets';
+const bucket = storageClient.bucket(bucketName);
 
 function parseDateForDb(dateStr: any): string | null {
   if (!dateStr) return null;
@@ -142,23 +147,33 @@ export const uploadDocs = async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, message: '상업송장(Invoice)과 패킹리스트(Packing List) 파일을 모두 업로드해야 합니다.' });
   }
 
-  const rootUploadsDir = path.join(__dirname, '../../uploads');
-  const getRelativeUrlPath = (file: Express.Multer.File) => {
-    const relPath = path.relative(rootUploadsDir, file.destination);
-    return `/uploads/${relPath}/${file.filename}`.replace(/\\/g, '/');
+  // GCS 업로드 유틸리티 함수
+  const uploadBufferToGCS = async (file: Express.Multer.File, type: string) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    const fileName = `${blNumber}_${type}_${uniqueSuffix}${ext}`;
+    const gcsPath = `uploads/docs/${fileName}`;
+    const blob = bucket.file(gcsPath);
+
+    await blob.save(file.buffer, {
+      contentType: file.mimetype,
+      resumable: false
+    });
+
+    return `/${gcsPath}`;
   };
 
-  const invoicePath = getRelativeUrlPath(invoiceFile);
-  const packingPath = getRelativeUrlPath(packingFile);
-
   try {
+    const invoicePath = await uploadBufferToGCS(invoiceFile, 'invoice');
+    const packingPath = await uploadBufferToGCS(packingFile, 'packingList');
+
     // 파일 분석 및 격자 데이터 추출 진행
     const parseFileToGrid = async (file: Express.Multer.File) => {
       const ext = path.extname(file.originalname).toLowerCase();
       if (ext === '.xlsx' || ext === '.xls' || file.mimetype.includes('spreadsheet') || file.mimetype.includes('excel')) {
-        return await parseExcelToGridData(file.path);
+        return await parseExcelToGridData(file.buffer); // buffer 기반 파싱
       } else if (ext === '.pdf' || file.mimetype === 'application/pdf') {
-        return await parsePdfToGridData(file.path);
+        return await parsePdfToGridData(file.buffer); // buffer 기반 파싱
       } else {
         throw new Error('지원하지 않는 파일 형식입니다. (Excel, PDF만 지원)');
       }
