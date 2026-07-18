@@ -417,7 +417,6 @@ export const reRequestDocs = async (req: Request, res: Response) => {
 
     // 2. 물리 파일 삭제
     if (shipment.invoice_file_path) {
-    if (shipment.invoice_file_path) {
       let gcsPath = shipment.invoice_file_path.replace(`https://storage.googleapis.com/${bucketName}/`, '').replace(`http://localhost:5000/`, '');
       gcsPath = gcsPath.replace(/^\//, '');
       try { await bucket.file(gcsPath).delete(); } catch(e) {}
@@ -690,15 +689,19 @@ export const resetDashboardData = async (req: Request, res: Response) => {
         const month = String(uploadDate.getMonth() + 1).padStart(2, '0');
         const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
 
+        const deletedDocs: string[] = [];
         for (const sub of ['docs', 'exterior'] as const) {
           const gcsPrefix = `uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${sub}/`;
+          console.log(`[resetDashboardData] Scanning GCS prefix: ${gcsPrefix}`);
           try {
             const [files] = await bucket.getFiles({ prefix: gcsPrefix });
+            console.log(`[resetDashboardData] Found ${files.length} files in ${sub}`);
             for (const file of files) {
               if (sub === 'docs') {
-                // 서류 사진(docs)은 미분류로 돌리지 않고 완전 삭제
                 try {
                   await file.delete();
+                  console.log(`[resetDashboardData] Deleted: ${file.name}`);
+                  deletedDocs.push(file.name);
                 } catch (e) {
                   console.error(`[resetDashboardData] delete failed for ${file.name}:`, e);
                 }
@@ -717,8 +720,20 @@ export const resetDashboardData = async (req: Request, res: Response) => {
                 }
               }
             }
-          } catch(e) { console.error(e); }
+          } catch(e) { console.error(`[resetDashboardData] GCS getFiles Error for ${sub}:`, e); }
         }
+        
+        return res.json({ 
+          success: true, 
+          message: '대시보드 데이터 및 미분류 사진이 모두 초기화되었습니다.',
+          debug: {
+            gcsPrefixDocs: `uploads/${shipperName}/${year}/${month}/${safeBlNumber}/docs/`,
+            deletedDocsCount: deletedDocs.length,
+            deletedDocsFiles: deletedDocs
+          }
+        });
+      } else {
+        return res.status(404).json({ success: false, message: '선적 정보를 찾을 수 없습니다.' });
       }
     }
 
