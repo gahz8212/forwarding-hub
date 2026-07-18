@@ -49,13 +49,11 @@ function getVisionClient(): ImageAnnotatorClient | null {
       const clientOptions: any = {};
       let isLoadedFromObject = false;
 
-      // JSON 파일인지 파싱 시도 (사용자 계정 인증 키 대응)
       try {
         const fileContent = fs.readFileSync(credentialsPath, 'utf8');
         const parsedCreds = JSON.parse(fileContent);
 
         if (parsedCreds && (parsedCreds.type === 'authorized_user' || parsedCreds.refresh_token)) {
-          // 사용자 인증(OAuth) 키 형식인 경우, quota_project_id 설정 주입
           if (process.env.GOOGLE_CLOUD_PROJECT) {
             parsedCreds.quota_project_id = process.env.GOOGLE_CLOUD_PROJECT;
             clientOptions.projectId = process.env.GOOGLE_CLOUD_PROJECT;
@@ -64,9 +62,7 @@ function getVisionClient(): ImageAnnotatorClient | null {
           isLoadedFromObject = true;
           console.log(`[OCR] Google Vision API가 사용자 OAuth 인증 키(ADC)를 메모리에 로드했습니다.`);
         }
-      } catch (parseErr) {
-        // 일반 JSON 파싱 실패 시 keyFilename을 사용하는 기본 흐름으로 진행
-      }
+      } catch (parseErr) {}
 
       if (!isLoadedFromObject) {
         clientOptions.keyFilename = credentialsPath;
@@ -86,8 +82,17 @@ function getVisionClient(): ImageAnnotatorClient | null {
     }
   } else {
     console.warn('\n⚠️  [OCR WARNING] 구글 비전 API 인증 키(google-credentials.json)를 찾을 수 없습니다.');
-    console.warn('   - Vision API를 사용하려면 backend 폴더에 google-credentials.json 키 파일을 배치하거나,');
-    console.warn('   - .env 파일에 GOOGLE_APPLICATION_CREDENTIALS="키_경로"를 설정해 주세요.\n');
+    console.warn('   - 로컬 인증 키가 없으므로 Cloud Run/GCE 환경의 ADC(Application Default Credentials)를 사용합니다.\n');
+    try {
+      const clientOptions: any = {};
+      if (process.env.GOOGLE_CLOUD_PROJECT) {
+        clientOptions.projectId = process.env.GOOGLE_CLOUD_PROJECT;
+      }
+      client = new vision.ImageAnnotatorClient(clientOptions);
+      console.log(`[OCR] Google Vision API 클라이언트가 ADC 기반으로 정상 초기화되었습니다.`);
+    } catch (err: any) {
+      console.error(`[OCR] ADC 기반 클라이언트 초기화 중 에러 발생: ${err.message}`);
+    }
   }
 
   return client;
