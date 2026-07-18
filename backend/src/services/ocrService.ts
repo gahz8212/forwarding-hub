@@ -109,6 +109,7 @@ export interface OcrResult {
   modelYear: number | null;
   initialRegistrationDate: string | null;
   type: 'document' | 'plate' | 'vin' | 'unknown';
+  apiError?: string;
 }
 
 /**
@@ -325,7 +326,12 @@ export async function analyzeVehiclePhoto(imageBuffer: Buffer): Promise<OcrResul
     return extractVehicleInfo(rawText);
   } catch (error: any) {
     console.error('Google Vision API Error:', error.message);
-    // 에러 발생 시에도 시스템이 멈추지 않도록(Graceful Failure) unknown 리턴
-    return { rawText: '', plateNumber: null, vin: null, vehicleType: null, mileage: null, make: null, makeModel: null, modelYear: null, initialRegistrationDate: null, type: 'unknown' };
+    // 에러 발생 시에도 시스템이 멈추지 않도록(Graceful Failure) unknown 리턴 + 구체적 에러 메시지 포함
+    return { 
+      rawText: '', plateNumber: null, vin: null, vehicleType: null, 
+      mileage: null, make: null, makeModel: null, modelYear: null, 
+      initialRegistrationDate: null, type: 'unknown',
+      apiError: error.message 
+    };
   }
 }

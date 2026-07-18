@@ -689,10 +689,14 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
             }
           }
         } else {
+          const reasonMsg = ocrResult.apiError 
+            ? `OCR API 에러 발생: ${ocrResult.apiError}`
+            : '차대번호 또는 차량번호를 식별하지 못했습니다.';
+            
           processedResults.push({
             fileName: image.originalname,
             status: 'manual_review',
-            reason: '차대번호 또는 차량번호를 식별하지 못했습니다.',
+            reason: reasonMsg,
             extracted: ocrResult
           });
           continue;
