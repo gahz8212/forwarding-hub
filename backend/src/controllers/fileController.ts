@@ -551,6 +551,10 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         const targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${subFolder}/${fileName}`;
         const gcsPath = targetRelativeUrl.replace(/^\//, '');
         await bucket.file(gcsPath).save(optimizedBuffer, { resumable: false, contentType: 'image/jpeg' });
+        if (image.rawBuffer) {
+          const originalGcsPath = gcsPath.replace(fileName, `original_${fileName}`);
+          await bucket.file(originalGcsPath).save(image.rawBuffer, { resumable: false, contentType: 'image/jpeg' });
+        }
         ocrResult.serverUrl = `https://storage.googleapis.com/${bucketName}/${gcsPath}`;
 
         // 3. 사진 타입이 확인된 경우 DB에 매핑 및 파일 물리적 이동
@@ -830,7 +834,22 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
           continue;
         }
         
-        const [buffer] = await file.download();
+        let buffer;
+        const originalFileName = `original_${gcsPath.split('/').pop()}`;
+        const partsOrig = gcsPath.split('/');
+        partsOrig.pop();
+        const originalGcsPath = [...partsOrig, originalFileName].join('/');
+        const originalFile = bucket.file(originalGcsPath);
+        
+        const [originalExists] = await originalFile.exists();
+        if (originalExists) {
+          [buffer] = await originalFile.download();
+          // 읽은 후 원본 백업 파일은 삭제 (용량 확보)
+          await originalFile.delete().catch(() => {});
+        } else {
+          [buffer] = await file.download();
+        }
+
         const ocrResult: any = await analyzeVehiclePhoto(buffer);
 
         // OCR 식별 여부와 상관없이 일단 차대번호가 없다면 UNKNOWN_VIN으로 규정하고 차량 등록을 보장
