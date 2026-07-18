@@ -735,24 +735,25 @@ export const resetDashboardData = async (req: Request, res: Response) => {
         const month = String(uploadDate.getMonth() + 1).padStart(2, '0');
         const safeBlNumber = String(blNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
 
-        const realFolder = path.join(__dirname, '../../uploads', shipperName, year, month, safeBlNumber);
         for (const sub of ['docs', 'exterior'] as const) {
-          const subDir = path.join(realFolder, sub);
-          if (fs.existsSync(subDir)) {
-            for (const file of fs.readdirSync(subDir)) {
-              // linked_로 시작하는 파일인 경우 복원
-              if (file.startsWith('linked_')) {
-                const originalFileName = file.replace(/^linked_/, '');
-                const oldPath = path.join(subDir, file);
-                const newPath = path.join(subDir, originalFileName);
+          const gcsPrefix = `uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${sub}/`;
+          try {
+            const [files] = await bucket.getFiles({ prefix: gcsPrefix });
+            for (const file of files) {
+              const fileName = file.name.split('/').pop() || '';
+              if (fileName.startsWith('linked_')) {
+                const originalFileName = fileName.replace(/^linked_/, '');
+                const parts = file.name.split('/');
+                parts.pop();
+                const newGcsPath = [...parts, originalFileName].join('/');
                 try {
-                  fs.renameSync(oldPath, newPath);
+                  await file.move(newGcsPath);
                 } catch (e) {
-                  console.error(`[resetDashboardData] rename failed for ${file}:`, e);
+                  console.error(`[resetDashboardData] rename failed for ${file.name}:`, e);
                 }
               }
             }
-          }
+          } catch(e) { console.error(e); }
         }
       }
     }
@@ -807,53 +808,39 @@ export const saveAllVehicles = async (req: Request, res: Response) => {
 
     const safeBlNumber = String(finalBlNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    // 3. 최종 저장 목적지: uploads/화주명/연/월/BL/
-    const blTargetDir = path.join(__dirname, '../../uploads', shipperName, year, month, safeBlNumber);
-    if (!fs.existsSync(blTargetDir)) {
-      fs.mkdirSync(blTargetDir, { recursive: true });
-    }
-
     // URL 변경 맵 (old relative url -> new relative url)
     const urlRemap = new Map<string, string>();
 
     // 파일을 BL 폴더의 하위 폴더(docs 또는 exterior)로 이동하는 헬퍼
-    const moveFileToBL = (srcPath: string, originalRelUrl: string, sub: 'docs' | 'exterior') => {
-      if (!fs.existsSync(srcPath)) return;
-      const fileName = path.basename(srcPath);
-      const subTargetDir = path.join(blTargetDir, sub);
-      if (!fs.existsSync(subTargetDir)) {
-        fs.mkdirSync(subTargetDir, { recursive: true });
+    const moveFileToBL = async (gcsPath: string, originalRelUrl: string, sub: 'docs' | 'exterior') => {
+      try {
+        const fileName = gcsPath.split('/').pop() || '';
+        const newGcsPath = `uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${sub}/${fileName}`;
+        const file = bucket.file(gcsPath);
+        
+        const [exists] = await file.exists();
+        if (exists && gcsPath !== newGcsPath) {
+          await file.move(newGcsPath);
+        }
+        urlRemap.set(originalRelUrl, `https://storage.googleapis.com/${bucketName}/${newGcsPath}`);
+      } catch (e) {
+        console.error('moveFileToBL Error:', e);
       }
-
-      const destPath = path.join(subTargetDir, fileName);
-      // 중복 파일명 방지
-      if (!fs.existsSync(destPath)) {
-        fs.renameSync(srcPath, destPath);
-      } else {
-        fs.unlinkSync(srcPath); // 이미 동일 파일 있으면 삭제
-      }
-      const newRelUrl = `/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${sub}/${fileName}`;
-      urlRemap.set(originalRelUrl, newRelUrl);
     };
 
     // 4. temp/BL/docs/ 및 temp/BL/exterior/ 파일을 BL/docs/ 및 BL/exterior/ 폴더로 그대로 이동
-    const tempRoot = path.join(__dirname, '../../uploads', 'temp', safeBlNumber);
     for (const sub of ['docs', 'exterior'] as const) {
-      const subDir = path.join(tempRoot, sub);
-      if (fs.existsSync(subDir)) {
-        for (const file of fs.readdirSync(subDir)) {
-          const filePath = path.join(subDir, file);
-          if (fs.statSync(filePath).isFile() && file.match(/\.(jpg|jpeg|png)$/i)) {
-            const oldRelUrl = `/uploads/temp/${safeBlNumber}/${sub}/${file}`;
-            moveFileToBL(filePath, oldRelUrl, sub);
+      const gcsPrefix = `uploads/temp/${safeBlNumber}/${sub}/`;
+      try {
+        const [files] = await bucket.getFiles({ prefix: gcsPrefix });
+        for (const file of files) {
+          if (file.name.match(/\.(jpg|jpeg|png)$/i)) {
+            const oldRelUrl = `https://storage.googleapis.com/${bucketName}/${file.name}`;
+            await moveFileToBL(file.name, oldRelUrl, sub);
           }
         }
-        // 빈 하위 폴더 제거
-        try { fs.rmdirSync(subDir); } catch (e) {}
-      }
+      } catch(e) {}
     }
-    // temp/BL 루트 폴더 제거
-    try { fs.rmdirSync(tempRoot); } catch (e) {}
 
     // 5. uploads/화주명/연/월/VIN/ 폴더의 파일도 BL/exterior/ 폴더로 이동 (차량 관련 사진이므로 exterior)
     const [allVehicles]: any = await pool.query(
@@ -864,18 +851,16 @@ export const saveAllVehicles = async (req: Request, res: Response) => {
     for (const veh of allVehicles) {
       const vin = veh.vin;
       if (!vin) continue;
-      const vinDir = path.join(__dirname, '../../uploads', shipperName, year, month, vin);
-      if (fs.existsSync(vinDir)) {
-        for (const file of fs.readdirSync(vinDir)) {
-          const filePath = path.join(vinDir, file);
-          if (fs.statSync(filePath).isFile() && file.match(/\.(jpg|jpeg|png)$/i)) {
-            const oldRelUrl = `/uploads/${shipperName}/${year}/${month}/${vin}/${file}`;
-            moveFileToBL(filePath, oldRelUrl, 'exterior');
+      const vinPrefix = `uploads/${shipperName}/${year}/${month}/${vin}/`;
+      try {
+        const [files] = await bucket.getFiles({ prefix: vinPrefix });
+        for (const file of files) {
+          if (file.name.match(/\.(jpg|jpeg|png)$/i)) {
+            const oldRelUrl = `https://storage.googleapis.com/${bucketName}/${file.name}`;
+            await moveFileToBL(file.name, oldRelUrl, 'exterior');
           }
         }
-        // 빈 VIN 폴더 제거
-        try { fs.rmdirSync(vinDir); } catch (e) {}
-      }
+      } catch(e) {}
 
       // 6. DB의 각 사진 컬럼(condition, deregistration, vin) URL 경로 업데이트
       for (const col of ['condition_photo_url', 'deregistration_photo_url', 'vin_photo_url'] as const) {
