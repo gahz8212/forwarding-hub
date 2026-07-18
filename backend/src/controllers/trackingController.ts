@@ -695,16 +695,25 @@ export const resetDashboardData = async (req: Request, res: Response) => {
           try {
             const [files] = await bucket.getFiles({ prefix: gcsPrefix });
             for (const file of files) {
-              const fileName = file.name.split('/').pop() || '';
-              if (fileName.startsWith('linked_')) {
-                const originalFileName = fileName.replace(/^linked_/, '');
-                const parts = file.name.split('/');
-                parts.pop();
-                const newGcsPath = [...parts, originalFileName].join('/');
+              if (sub === 'docs') {
+                // 서류 사진(docs)은 미분류로 돌리지 않고 완전 삭제
                 try {
-                  await file.move(newGcsPath);
+                  await file.delete();
                 } catch (e) {
-                  console.error(`[resetDashboardData] rename failed for ${file.name}:`, e);
+                  console.error(`[resetDashboardData] delete failed for ${file.name}:`, e);
+                }
+              } else {
+                const fileName = file.name.split('/').pop() || '';
+                if (fileName.startsWith('linked_')) {
+                  const originalFileName = fileName.replace(/^linked_/, '');
+                  const parts = file.name.split('/');
+                  parts.pop();
+                  const newGcsPath = [...parts, originalFileName].join('/');
+                  try {
+                    await file.move(newGcsPath);
+                  } catch (e) {
+                    console.error(`[resetDashboardData] rename failed for ${file.name}:`, e);
+                  }
                 }
               }
             }
