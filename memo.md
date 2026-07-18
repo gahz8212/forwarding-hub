@@ -230,3 +230,19 @@
     --allow-unauthenticated
   ```
   2. 배포 완료 후 `forwarding.memyself.shop`에 접속하여 카카오 로그인 정상 작동을 테스트합니다.
+
+---
+
+### [2026-07-18] 백엔드 및 프론트엔드 연동 배포 완료
+
+**1. 백엔드 배포 및 권한 문제 해결**
+- `bash fix-perms.sh`를 실행하여 권한 설정을 최신화함.
+- `gcloud run deploy` 실행 시 Compute Engine 기본 서비스 계정이 Artifact Registry에 이미지를 푸시하지 못하는 이슈(권한 부족) 발견.
+- 해당 서비스 계정(`269919807885-compute@developer.gserviceaccount.com`)에 `roles/artifactregistry.admin` 권한을 수동으로 부여하여 백엔드 배포 성공.
+
+**2. 프론트엔드 환경변수 연동 및 타입스크립트 에러 수정**
+- 백엔드가 배포된 URL(`https://forwarding-hub-backend-269919807885.asia-northeast3.run.app`)을 프론트엔드 로컬 `.env` 파일에 연동.
+- 기존 배포된 프론트엔드(Cloud Run)를 업데이트하기 위해 빌드(`cloudbuild.yaml`) 진행.
+- 빌드 도중 `src/pages/client/DashboardPage.tsx` 내 `encodeURIComponent`에 `undefined` 타입이 전달될 수 있는 타입스크립트 오류(`TS2345`) 발생.
+- `trackingData.invoice_file_path || ''` 등 기본값 할당 처리를 통해 타입 에러 수정 완료.
+- 프론트엔드를 Cloud Run에 성공적으로 재배포 및 `forwarding.memyself.shop` 주소에 연동 반영 완료.

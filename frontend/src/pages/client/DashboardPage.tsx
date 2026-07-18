@@ -1131,7 +1131,7 @@ export default function DashboardPage() {
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.invoice_file_path)}&name=${encodeURIComponent('상업송장')}`, '_blank');
+                      window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.invoice_file_path || '')}&name=${encodeURIComponent('상업송장')}`, '_blank');
                     }}
                     className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
                   >
@@ -1149,7 +1149,7 @@ export default function DashboardPage() {
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.packing_list_file_path)}&name=${encodeURIComponent('포장명세서')}`, '_blank');
+                      window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.packing_list_file_path || '')}&name=${encodeURIComponent('포장명세서')}`, '_blank');
                     }}
                     className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
                   >
