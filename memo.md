@@ -246,3 +246,21 @@
 - 빌드 도중 `src/pages/client/DashboardPage.tsx` 내 `encodeURIComponent`에 `undefined` 타입이 전달될 수 있는 타입스크립트 오류(`TS2345`) 발생.
 - `trackingData.invoice_file_path || ''` 등 기본값 할당 처리를 통해 타입 에러 수정 완료.
 - 프론트엔드를 Cloud Run에 성공적으로 재배포 및 `forwarding.memyself.shop` 주소에 연동 반영 완료.
+
+---
+
+### [2026-07-18] GCS 스토리지 마이그레이션 및 OCR 연동 완벽 해결
+
+**1. 로컬 파일 시스템(`fs`)에서 구글 클라우드 스토리지(GCS)로 전면 마이그레이션**
+- 기존 로컬 디스크(`fs.writeFileSync` 등)에 의존하던 파일 업로드 및 관리 로직을 모두 `@google-cloud/storage` 기반으로 리팩토링.
+- 파일 중복 검사 로직(MD5 Hash)을 GCS 메타데이터를 활용하는 방식으로 안전하게 전환.
+- 전체 삭제 버튼(`resetDashboardData`) 클릭 시 로컬 폴더 대신 GCS 버킷 내의 `docs`, `exterior` 경로 파일을 영구 삭제(`file.delete()`)하도록 수정.
+
+**2. Cloud Run 환경에서의 OCR (Google Vision API) 권한 문제 해결**
+- 로컬 `google-credentials.json`에 의존하던 기존 OCR 인증 로직을, 파일이 없을 경우 Cloud Run의 자체 권한(Application Default Credentials, ADC)을 강제로 사용하도록 수정(`ocrService.ts`).
+- 구글 클라우드 프로젝트(GCP)에서 `Cloud Vision API`가 비활성화되어 생기는 빈 텍스트 무음 에러(Silent Error) 현상 해결을 위해, 에러 발생 시 프론트엔드 UI 화면에 명확한 구글 API 에러 메시지가 표출되도록 디버그 로직을 보강(`fileController.ts`).
+- 개발자가 직접 GCP 콘솔에서 Cloud Vision API를 수동으로 활성화(`Enable`)하여 최종적으로 OCR 인식 기능 정상화 확인.
+
+**3. 배포 트러블슈팅 및 터미널 빌드 안내**
+- `trackingController.ts` 리팩토링 중 발생한 괄호 중복(`if`문) 구문 오류(Syntax Error)를 `npm run build`로 로컬에서 사전 검증하여 해결.
+- 구글 클라우드 웹 콘솔의 "새 버전 배포" 버튼이 소스 코드 빌드를 갱신하지 않는다는 점을 확인하고, 터미널 CLI(`gcloud run deploy --source .`)를 통한 직접 소스 배포(Source Deploy) 방식으로 프로세스를 수정하여 최신 코드를 완벽히 반영.
