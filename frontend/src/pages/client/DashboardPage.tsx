@@ -520,7 +520,7 @@ export default function DashboardPage() {
 
   const handleExteriorUploadSubmit = async () => {
     if (!trackingData || !exteriorFiles || exteriorFiles.length === 0) {
-      alert("업로드할 차량 외관 사진을 선택해주세요.");
+      alert("업로드할 차량사진을 선택해주세요.");
       return;
     }
     setUploadingExterior(true);
@@ -549,7 +549,7 @@ export default function DashboardPage() {
 
         const successCount = data.data.filter((res: any) => res.status !== 'duplicate').length;
         if (successCount > 0) {
-          alert(`차량 외관 사진 전송 완료! 총 ${successCount}장의 사진이 처리되었습니다.`);
+          alert(`차량사진 전송 완료! 총 ${successCount}장의 사진이 처리되었습니다.`);
         }
         setExteriorFiles(null);
       } else {
@@ -564,7 +564,7 @@ export default function DashboardPage() {
 
   const handleDocUploadSubmit = async () => {
     if (!trackingData || !docFiles || docFiles.length === 0) {
-      alert("업로드할 차대번호/말소증 사진을 선택해주세요.");
+      alert("업로드할 서류사진을 선택해주세요.");
       return;
     }
     setUploadingDocs(true);
@@ -593,7 +593,7 @@ export default function DashboardPage() {
 
         const successCount = data.data.filter((res: any) => res.status !== 'duplicate').length;
         if (successCount > 0) {
-          alert(`차대번호/말소증 서류 전송 완료! 총 ${successCount}장의 사진이 AI 분석 처리되었습니다.`);
+          alert(`서류사진 전송 완료! 총 ${successCount}장의 사진이 AI 분석 처리되었습니다.`);
         }
         setDocFiles(null);
       } else {
@@ -1082,7 +1082,7 @@ export default function DashboardPage() {
                     disabled={uploadingExterior || !exteriorFiles || exteriorFiles.length === 0}
                     className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded-lg text-xs transition shadow-sm disabled:opacity-50 whitespace-nowrap"
                   >
-                    {uploadingExterior ? "업로드 중..." : "외관 사진 전송"}
+                    {uploadingExterior ? "업로드 중..." : "차량 사진"}
                   </button>
                 </div>
               </div>
@@ -1107,7 +1107,7 @@ export default function DashboardPage() {
                     disabled={uploadingDocs || !docFiles || docFiles.length === 0}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg text-xs transition shadow-sm disabled:opacity-50 whitespace-nowrap"
                   >
-                    {uploadingDocs ? "분석 및 전송 중..." : "서류/차대 사진 전송"}
+                    {uploadingDocs ? "분석 및 전송 중..." : "서류 사진"}
                   </button>
                 </div>
               </div>

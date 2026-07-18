@@ -551,7 +551,7 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         const targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${subFolder}/${fileName}`;
         const gcsPath = targetRelativeUrl.replace(/^\//, '');
         await bucket.file(gcsPath).save(optimizedBuffer, { resumable: false, contentType: 'image/jpeg' });
-        if (image.rawBuffer) {
+        if (image.rawBuffer && photoType === 'docs') {
           const originalGcsPath = gcsPath.replace(fileName, `original_${fileName}`);
           await bucket.file(originalGcsPath).save(image.rawBuffer, { resumable: false, contentType: 'image/jpeg' });
         }
@@ -787,6 +787,7 @@ export const getUnclassifiedPhotos = async (req: Request, res: Response) => {
         const fileName = file.name.split('/').pop() || '';
         if (fileName.startsWith('linked_')) continue;
         if (fileName.startsWith('analyzed_')) continue;
+        if (fileName.startsWith('original_')) continue;
         
         const fileHash = file.metadata?.md5Hash || file.name;
         if (!seenHashes.has(fileHash)) {
