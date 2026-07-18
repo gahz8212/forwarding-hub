@@ -921,7 +921,7 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
           }
           
           const photos = parsePhotos(currVeh[0]?.[targetColumn]);
-          if (!photos.includes(newRelativeUrl)) photos.push(newRelativeUrl);
+          if (!photos.includes("/" + newGcsPath)) photos.push("/" + newGcsPath);
           await pool.query(`UPDATE vehicles SET ${targetColumn} = ? WHERE id = ?`, [JSON.stringify(photos), updateId]);
         } else {
            newVehiclesCount++;
@@ -937,9 +937,9 @@ export const analyzePendingPhotos = async (req: Request, res: Response) => {
                ocrResult.plateNumber || null,
                ocrResult.plateNumber || null,
                'Pending',
-               (!isDoc && !isVin) ? JSON.stringify([newRelativeUrl]) : null,
-               isDoc ? JSON.stringify([newRelativeUrl]) : null,
-               isVin ? JSON.stringify([newRelativeUrl]) : null,
+               (!isDoc && !isVin) ? JSON.stringify(["/" + newGcsPath]) : null,
+               isDoc ? JSON.stringify(["/" + newGcsPath]) : null,
+               isVin ? JSON.stringify(["/" + newGcsPath]) : null,
                null,
                decodedSpecs?.make || null,
                decodedSpecs?.modelName || null,
