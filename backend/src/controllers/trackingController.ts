@@ -10,7 +10,7 @@ import { saveVehiclePhotoAndDeduplicate } from '../utils/photoHelper';
 import { Storage } from '@google-cloud/storage';
 
 const storageClient = new Storage();
-const bucketName = process.env.GCS_BUCKET_NAME || 'forwarding-hub-assets';
+const bucketName = process.env.GCS_BUCKET_NAME || 'forwarding-bucket';
 const bucket = storageClient.bucket(bucketName);
 
 function parseDateForDb(dateStr: any): string | null {
@@ -592,9 +592,9 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
         year: v.year || new Date().getFullYear(),
         drivability: v.drivability || "", // 빈 값(null)으로 전달하여 대기 중 분석 시에도 구동여부 미선택 상태 유지
         status: v.status || "Pending",
-        condition_photo_urls: urls.map(url => url.startsWith('http') ? url : `http://localhost:5000${url}`),
-        deregistration_photo_urls: dUrls.map((url: string) => url.startsWith('http') ? url : `http://localhost:5000${url}`),
-        vin_photo_urls: vUrls.map((url: string) => url.startsWith('http') ? url : `http://localhost:5000${url}`),
+        condition_photo_urls: urls.map(url => url.startsWith('http') ? url : `https://storage.googleapis.com/${bucketName}${url}`),
+        deregistration_photo_urls: dUrls.map((url: string) => url.startsWith('http') ? url : `https://storage.googleapis.com/${bucketName}${url}`),
+        vin_photo_urls: vUrls.map((url: string) => url.startsWith('http') ? url : `https://storage.googleapis.com/${bucketName}${url}`),
         customs_cleared: !!v.customs_cleared,
         buyer: "",
         price: v.price || 0,
@@ -620,7 +620,7 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
 export const assignPhotosToVehicle = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { photoUrls, type } = req.body; // 배열 ["http://localhost:5000/uploads/...", ...], type: 'document' | 'vin' | 'plate'
+    const { photoUrls, type } = req.body; // 배열 ["https://storage.googleapis.com/.../uploads/...", ...], type: 'document' | 'vin' | 'plate'
 
     if (!Array.isArray(photoUrls)) {
       return res.status(400).json({ success: false, message: 'photoUrls는 배열이어야 합니다.' });
@@ -1158,8 +1158,8 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
 
     const invoiceRelativeUrl = `/uploads/pdf/${blNumber}_invoice.pdf`;
     const packingRelativeUrl = `/uploads/pdf/${blNumber}_packing.pdf`;
-    const invoiceAbsoluteUrl = `http://localhost:5000${invoiceRelativeUrl}`;
-    const packingAbsoluteUrl = `http://localhost:5000${packingRelativeUrl}`;
+    const invoiceAbsoluteUrl = `https://storage.googleapis.com/${bucketName}${invoiceRelativeUrl}`;
+    const packingAbsoluteUrl = `https://storage.googleapis.com/${bucketName}${packingRelativeUrl}`;
 
     // 5. Kakao Talk 나에게 보내기 API를 사용하여 알림톡 발송
     const messageText = `[선적 서류 및 PDF 통지]\nB/L: ${blNumber}\n화주명: ${shipment.shipper || '일반화주'}\n차량 대수: ${vehicles.length}대\n\n상업송장(Invoice) 및 패킹리스트(Packing List) PDF 생성이 완료되었습니다. 아래 버튼 또는 서류보관함에서 각각 확인해 주세요.`;
@@ -1357,7 +1357,7 @@ export const updateVehicleStatus = async (req: Request, res: Response) => {
         if (userSession && userSession.kakaoToken) {
           const messageText = `[야드 반입 완료 통지]\nB/L: ${blNumber}\n선박명: ${vehicle.vessel_name || ''}\n\n마지막 차량 [${vehicleModel}]을 포함한 전체 차량 ${totalCount}대가 야드 반입(CY반입) 완료되었습니다.`;
           const relativeUrl = `/`; // Link to dashboard
-          const absoluteUrl = `http://localhost:5000${relativeUrl}`;
+          const absoluteUrl = `https://storage.googleapis.com/${bucketName}${relativeUrl}`;
 
           try {
             await axios.post(

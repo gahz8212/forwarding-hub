@@ -1,2 +1,2 @@
 #!/bin/bash
-gcloud builds log d1ea4927-38f0-4b13-a3e3-15425d9f401a --project="forwarding-hub-502407" --region="asia-northeast3"
+gcloud builds log aad1fef6-da9d-46f7-90a4-64c1fde09454 --project="forwarding-hub-502407" --region="asia-northeast3" | tail -n 50
