@@ -417,27 +417,16 @@ export const reRequestDocs = async (req: Request, res: Response) => {
 
     // 2. 물리 파일 삭제
     if (shipment.invoice_file_path) {
-      const relPath = shipment.invoice_file_path.replace(/^\/uploads\//, '');
-      const invoiceAbsPath = path.join(uploadDir, relPath);
-      if (fs.existsSync(invoiceAbsPath)) {
-        try {
-          fs.unlinkSync(invoiceAbsPath);
-        } catch (err) {
-          console.error('인보이스 파일 삭제 에러:', err);
-        }
-      }
+    if (shipment.invoice_file_path) {
+      let gcsPath = shipment.invoice_file_path.replace(`https://storage.googleapis.com/${bucketName}/`, '').replace(`http://localhost:5000/`, '');
+      gcsPath = gcsPath.replace(/^\//, '');
+      try { await bucket.file(gcsPath).delete(); } catch(e) {}
     }
 
     if (shipment.packing_list_file_path) {
-      const relPath = shipment.packing_list_file_path.replace(/^\/uploads\//, '');
-      const packingAbsPath = path.join(uploadDir, relPath);
-      if (fs.existsSync(packingAbsPath)) {
-        try {
-          fs.unlinkSync(packingAbsPath);
-        } catch (err) {
-          console.error('패킹리스트 파일 삭제 에러:', err);
-        }
-      }
+      let gcsPath = shipment.packing_list_file_path.replace(`https://storage.googleapis.com/${bucketName}/`, '').replace(`http://localhost:5000/`, '');
+      gcsPath = gcsPath.replace(/^\//, '');
+      try { await bucket.file(gcsPath).delete(); } catch(e) {}
     }
 
     // 3. DB 상태 및 서류 경로 초기화
@@ -481,55 +470,25 @@ export const getVehiclesByShipment = async (req: Request, res: Response) => {
       const safeBlNumber = bl_number ? bl_number.replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown_bl';
       const shipperName = shipper ? shipper.replace(/[^a-zA-Z0-9가-힣\s_-]/g, '').trim() || '일반화주' : '일반화주';
 
-      // Scan temporary docs directory: uploads/temp/[bl_number]/docs
-      const tempDocsDir = path.join(__dirname, '../../uploads', 'temp', safeBlNumber, 'docs');
-      if (fs.existsSync(tempDocsDir)) {
-        try {
-          const files = fs.readdirSync(tempDocsDir);
-          files.forEach(file => {
-            if (file.match(/\.(jpg|jpeg|png)$/i)) {
-              allDocsFiles.push(`/uploads/temp/${safeBlNumber}/docs/${file}`);
-            }
-          });
-        } catch (e) {
-          console.error('Error scanning temp docs dir:', e);
-        }
-      }
-
-      // Scan permanent docs directory: uploads/[shipperName]/[YYYY]/[MM]/[bl_number]/docs
-      // Search recursively under uploads/[shipperName] for [bl_number]/docs
-      const shipperDir = path.join(__dirname, '../../uploads', shipperName);
-      if (fs.existsSync(shipperDir)) {
-        try {
-          const findDocsFolder = (dir: string): string | null => {
-            const files = fs.readdirSync(dir);
-            for (const file of files) {
-              const filePath = path.join(dir, file);
-              if (fs.statSync(filePath).isDirectory()) {
-                if (file === safeBlNumber) {
-                  const docsPath = path.join(filePath, 'docs');
-                  if (fs.existsSync(docsPath)) return docsPath;
-                }
-                const found = findDocsFolder(filePath);
-                if (found) return found;
-              }
-            }
-            return null;
-          };
-          const docsFolderPath = findDocsFolder(shipperDir);
-          if (docsFolderPath) {
-            const files = fs.readdirSync(docsFolderPath);
-            files.forEach(file => {
-              if (file.match(/\.(jpg|jpeg|png)$/i)) {
-                const rel = path.relative(path.join(__dirname, '../../'), docsFolderPath);
-                allDocsFiles.push(`/${rel}/${file}`.replace(/\\/g, '/'));
-              }
-            });
+      // Scan temporary docs directory in GCS
+      try {
+        const [tempFiles] = await bucket.getFiles({ prefix: `uploads/temp/${safeBlNumber}/docs/` });
+        tempFiles.forEach(file => {
+          if (file.name.match(/\.(jpg|jpeg|png)$/i)) {
+            allDocsFiles.push(`https://storage.googleapis.com/${bucketName}/${file.name}`);
           }
-        } catch (e) {
-          console.error('Error scanning permanent docs dir:', e);
-        }
-      }
+        });
+      } catch (e) {}
+
+      // Scan permanent docs directory in GCS
+      try {
+        const [shipperFiles] = await bucket.getFiles({ prefix: `uploads/${shipperName}/` });
+        shipperFiles.forEach(file => {
+          if (file.name.includes(`/${safeBlNumber}/docs/`) && file.name.match(/\.(jpg|jpeg|png)$/i)) {
+            allDocsFiles.push(`https://storage.googleapis.com/${bucketName}/${file.name}`);
+          }
+        });
+      } catch (e) {}
     }
 
     const [vehicles]: any = await pool.query('SELECT * FROM vehicles WHERE shipment_id = ? ORDER BY id ASC', [shipmentId]);
@@ -667,33 +626,29 @@ export const assignPhotosToVehicle = async (req: Request, res: Response) => {
     // 파일 정규 폴더 내에서 그대로 유지하되, linked_ 접두사를 붙여 미분류 사진함에서 숨김
     for (const fullUrl of photoUrls) {
       if (!fullUrl) continue;
-      const relativeUrl = fullUrl.replace(/^https?:\/\/[^\/]+/, '');
+      let gcsPath = fullUrl.replace(`https://storage.googleapis.com/${bucketName}/`, '').replace(`http://localhost:5000/`, '');
+      gcsPath = gcsPath.replace(/^\//, ''); // 앞에 슬래시 제거
 
-      if (relativeUrl.startsWith('/uploads/')) {
-        const absolutePath = path.join(__dirname, '../../', relativeUrl);
-        if (fs.existsSync(absolutePath)) {
-          const dir = path.dirname(absolutePath);
-          const fileName = path.basename(absolutePath);
-          // 이미 linked_ 접두사가 없는 경우에만 추가
+      if (gcsPath.startsWith('uploads/')) {
+        const file = bucket.file(gcsPath);
+        const [exists] = await file.exists();
+        if (exists) {
+          const parts = gcsPath.split('/');
+          const fileName = parts.pop() || '';
           if (!fileName.startsWith('linked_')) {
             const newFileName = `linked_${fileName}`;
-            const newAbsolutePath = path.join(dir, newFileName);
+            const newGcsPath = [...parts, newFileName].join('/');
             try {
-              fs.renameSync(absolutePath, newAbsolutePath);
-              const newRelativeUrl = relativeUrl.replace(`/${fileName}`, `/${newFileName}`);
-              newSavedUrls.push(newRelativeUrl);
+              await file.move(newGcsPath);
+              newSavedUrls.push(`https://storage.googleapis.com/${bucketName}/${newGcsPath}`);
               continue;
-            } catch (renameErr) {
-              console.error('[assignPhotos] rename to linked_ failed:', renameErr);
+            } catch (e) {
+              console.error(`[assignPhotos] move to linked_ failed:`, e);
             }
-          } else {
-            // 이미 linked_ 접두사가 있는 경우 그대로 사용
-            newSavedUrls.push(relativeUrl);
-            continue;
           }
         }
       }
-      newSavedUrls.push(relativeUrl);
+      newSavedUrls.push(fullUrl);
     }
 
     // 중복 제거 후 병합
@@ -921,11 +876,15 @@ export const removePhotoFromVehicle = async (req: Request, res: Response) => {
     await pool.query(`UPDATE vehicles SET ${targetColumn} = ? WHERE id = ?`, [JSON.stringify(updatedUrls), id]);
 
     // 정규 폴더 내 파일인 경우 linked_ 및 analyzed_ 접두사를 모두 제거하여 미분류 사진함에 다시 노출
-    if (relativeUrl.startsWith('/uploads/')) {
-      const absolutePath = path.join(__dirname, '../../', relativeUrl);
-      if (fs.existsSync(absolutePath)) {
-        const dir = path.dirname(absolutePath);
-        const fileName = path.basename(absolutePath);
+    let gcsPath = relativeUrl.replace(`https://storage.googleapis.com/${bucketName}/`, '').replace(`http://localhost:5000/`, '');
+    gcsPath = gcsPath.replace(/^\//, '');
+
+    if (gcsPath.startsWith('uploads/')) {
+      const file = bucket.file(gcsPath);
+      const [exists] = await file.exists();
+      if (exists) {
+        const parts = gcsPath.split('/');
+        const fileName = parts.pop() || '';
         
         let cleanFileName = fileName;
         if (cleanFileName.startsWith('linked_')) {
@@ -936,14 +895,14 @@ export const removePhotoFromVehicle = async (req: Request, res: Response) => {
         }
         
         if (cleanFileName !== fileName) {
-          const originalAbsolutePath = path.join(dir, cleanFileName);
+          const newGcsPath = [...parts, cleanFileName].join('/');
           try {
-            fs.renameSync(absolutePath, originalAbsolutePath);
+            await file.move(newGcsPath);
             // 프론트엔드에 원래 URL로 복원 전달
-            const restoredUrl = relativeUrl.replace(`/${fileName}`, `/${cleanFileName}`);
+            const restoredUrl = `https://storage.googleapis.com/${bucketName}/${newGcsPath}`;
             return res.json({ success: true, message: '제거 완료', data: updatedUrls, restoredUrl });
-          } catch (renameErr) {
-            console.error('[removePhoto] rename from linked/analyzed failed:', renameErr);
+          } catch (e) {
+            console.error('[removePhoto] move from linked/analyzed failed:', e);
           }
         }
       }
@@ -1117,14 +1076,7 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
       </html>
     `;
 
-    // 4. Puppeteer를 이용한 두 개의 PDF 파일 생성
-    const pdfDir = path.join(__dirname, '../../uploads/pdf');
-    if (!fs.existsSync(pdfDir)) {
-      fs.mkdirSync(pdfDir, { recursive: true });
-    }
-    const invoicePdfPath = path.join(pdfDir, `${blNumber}_invoice.pdf`);
-    const packingPdfPath = path.join(pdfDir, `${blNumber}_packing.pdf`);
-
+    // 4. Puppeteer를 이용한 두 개의 PDF 파일 생성 (메모리상에서 바로 GCS로 업로드)
     const browser = await puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
@@ -1132,17 +1084,21 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
     // Generate Invoice PDF
     const pageInvoice = await browser.newPage();
     await pageInvoice.setContent(invoiceHtml);
-    await pageInvoice.pdf({ path: invoicePdfPath, format: 'A4', printBackground: true });
+    const invoiceBuffer = await pageInvoice.pdf({ format: 'A4', printBackground: true });
     
     // Generate Packing PDF
     const pagePacking = await browser.newPage();
     await pagePacking.setContent(packingHtml);
-    await pagePacking.pdf({ path: packingPdfPath, format: 'A4', printBackground: true });
+    const packingBuffer = await pagePacking.pdf({ format: 'A4', printBackground: true });
 
     await browser.close();
 
     const invoiceRelativeUrl = `/uploads/pdf/${blNumber}_invoice.pdf`;
     const packingRelativeUrl = `/uploads/pdf/${blNumber}_packing.pdf`;
+    
+    await bucket.file(`uploads/pdf/${blNumber}_invoice.pdf`).save(invoiceBuffer, { contentType: 'application/pdf' });
+    await bucket.file(`uploads/pdf/${blNumber}_packing.pdf`).save(packingBuffer, { contentType: 'application/pdf' });
+
     const invoiceAbsoluteUrl = `https://storage.googleapis.com/${bucketName}${invoiceRelativeUrl}`;
     const packingAbsoluteUrl = `https://storage.googleapis.com/${bucketName}${packingRelativeUrl}`;
 

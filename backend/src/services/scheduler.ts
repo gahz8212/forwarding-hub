@@ -2,6 +2,11 @@ import cron from "node-cron";
 import pool from "../config/db";
 import fs from "fs";
 import path from "path";
+import { Storage } from '@google-cloud/storage';
+
+const storage = new Storage();
+const bucketName = process.env.GCS_BUCKET_NAME || 'forwarding-bucket';
+const bucket = storage.bucket(bucketName);
 import { runDailyMscTracking } from "./mscTrackerService";
 
 // 날짜 포맷팅 함수 (YYYY-MM-DD)
@@ -25,31 +30,29 @@ export const initScheduler = () => {
   });
 };
 
-export const cleanupTempPhotos = () => {
+export const cleanupTempPhotos = async () => {
   try {
-    const tempFolder = path.join(__dirname, '../../uploads', 'temp');
-    if (!fs.existsSync(tempFolder)) return;
-
-    const files = fs.readdirSync(tempFolder);
-    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const [files] = await bucket.getFiles({ prefix: 'uploads/temp/' });
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     
     let deletedCount = 0;
 
-    files.forEach(file => {
-      const filePath = path.join(tempFolder, file);
-      const stat = fs.statSync(filePath);
-      
-      if (stat.mtimeMs < oneWeekAgo) {
-        try {
-          fs.unlinkSync(filePath);
-          deletedCount++;
-        } catch (err) {
-          console.error(`파일 삭제 실패: ${filePath}`, err);
+    for (const file of files) {
+      const created = file.metadata.timeCreated;
+      if (created) {
+        const fileDate = new Date(created);
+        if (fileDate < oneWeekAgo) {
+          try {
+            await file.delete();
+            deletedCount++;
+          } catch (err) {
+            console.error(`파일 삭제 실패: ${file.name}`, err);
+          }
         }
       }
-    });
+    }
 
-    console.log(`[BATCH] 임시 사진 파일 정리 완료: ${deletedCount}개 삭제됨`);
+    console.log(`[BATCH] 임시 사진 파일 정리 완료: ${deletedCount}개 삭제됨 (GCS)`);
   } catch (error) {
     console.error("[BATCH ERROR] 임시 사진 정리 중 에러 발생:", error);
   }
