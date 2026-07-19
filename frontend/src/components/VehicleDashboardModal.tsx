@@ -908,7 +908,10 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                 className="w-fit mt-1 sm:mt-0 sm:ml-4 flex items-center gap-1.5 bg-rose-50 border border-rose-200 text-rose-600 px-4 py-2 rounded-full text-xs md:text-sm font-bold hover:bg-rose-100 transition-colors animate-pulse shadow-sm"
               >
                 <BellRing size={16} className="animate-bounce" />
-                화주 대기 서류 {pendingPhotos.length}장 확인
+                {`화주 대기 서류 ${pendingPhotos.filter(url => url.split('/').pop()?.startsWith('shipper_')).length}장 확인`}
+                {pendingPhotos.length - pendingPhotos.filter(url => url.split('/').pop()?.startsWith('shipper_')).length > 0 && 
+                  ` (추가 미분류: ${pendingPhotos.length - pendingPhotos.filter(url => url.split('/').pop()?.startsWith('shipper_')).length}장)`
+                }
               </button>
             )}
           </h2>
