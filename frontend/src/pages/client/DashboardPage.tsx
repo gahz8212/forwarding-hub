@@ -1115,47 +1115,51 @@ export default function DashboardPage() {
           )}
 
           {/* 제출된 서류 보기 다운로드 패널 */}
-          {trackingData.invoice_file_path && (
+          {(trackingData.invoice_file_path || trackingData.packing_list_file_path) && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-6">
               <h4 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
                 <FileText className="text-slate-500" size={18} /> 제출된 선적 서류 내역
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-xl border flex justify-between items-center">
-                  <div>
-                    <p className="text-xs text-slate-400 font-bold uppercase">Commercial Invoice</p>
-                    <p className="text-slate-700 text-xs font-semibold mt-0.5">상업 송장</p>
+                {trackingData.invoice_file_path && (
+                  <div className="bg-white p-4 rounded-xl border flex justify-between items-center">
+                    <div>
+                      <p className="text-xs text-slate-400 font-bold uppercase">Commercial Invoice</p>
+                      <p className="text-slate-700 text-xs font-semibold mt-0.5">상업 송장</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.invoice_file_path || '')}&name=${encodeURIComponent('상업송장')}`, '_blank');
+                      }}
+                      className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
+                    >
+                      서류 보기
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.invoice_file_path || '')}&name=${encodeURIComponent('상업송장')}`, '_blank');
-                    }}
-                    className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
-                  >
-                    서류 보기
-                  </button>
-                </div>
+                )}
 
-                <div className="bg-white p-4 rounded-xl border flex justify-between items-center">
-                  <div>
-                    <p className="text-xs text-slate-400 font-bold uppercase">Packing List</p>
-                    <p className="text-slate-700 text-xs font-semibold mt-0.5">포장 명세서</p>
+                {trackingData.packing_list_file_path && (
+                  <div className="bg-white p-4 rounded-xl border flex justify-between items-center">
+                    <div>
+                      <p className="text-xs text-slate-400 font-bold uppercase">Packing List</p>
+                      <p className="text-slate-700 text-xs font-semibold mt-0.5">포장 명세서</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.packing_list_file_path || '')}&name=${encodeURIComponent('포장명세서')}`, '_blank');
+                      }}
+                      className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
+                    >
+                      서류 보기
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.packing_list_file_path || '')}&name=${encodeURIComponent('포장명세서')}`, '_blank');
-                    }}
-                    className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition"
-                  >
-                    서류 보기
-                  </button>
-                </div>
+                )}
               </div>
             </div>
           )}

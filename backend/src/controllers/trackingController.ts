@@ -1242,12 +1242,19 @@ export const deleteDoc = async (req: Request, res: Response) => {
     // Clear file path and approval state
     await pool.query(`UPDATE shipments SET ${filePathColumn} = NULL, ${approvedColumn} = 0 WHERE bl_number = ?`, [blNumber]);
 
-    // Revert status to 'Pending Documents' if it was in 'Documents Uploaded' or 'Documents Verified'
+    // Revert status to 'Pending Documents' if it was in 'Documents Uploaded', 'Documents Verified', or 'Trucking'
     const [rows]: any = await pool.query('SELECT status FROM shipments WHERE bl_number = ?', [blNumber]);
     if (rows.length > 0) {
       const currentStatus = rows[0].status;
-      if (['Documents Uploaded', 'Documents Verified'].includes(currentStatus)) {
+      if (['Documents Uploaded', 'Documents Verified', 'Trucking'].includes(currentStatus)) {
         await pool.query('UPDATE shipments SET status = \'Pending Documents\' WHERE bl_number = ?', [blNumber]);
+
+        // Update all vehicles that were automatically set to 'Trucking' back to 'Pending'
+        const [shipmentRows]: any = await pool.query('SELECT id FROM shipments WHERE bl_number = ?', [blNumber]);
+        if (shipmentRows.length > 0) {
+          const shipmentId = shipmentRows[0].id;
+          await pool.query("UPDATE vehicles SET status = 'Pending' WHERE shipment_id = ? AND status = 'Trucking'", [shipmentId]);
+        }
 
         // Notify via Socket.io
         const io = req.app.get('io');
