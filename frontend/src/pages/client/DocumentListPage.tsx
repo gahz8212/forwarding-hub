@@ -43,7 +43,8 @@ export default function DocumentListPage() {
     setError(null);
     try {
       const res = await api.get("/api/tracking/all", {
-        withCredentials: true
+        withCredentials: true,
+        params: { t: Date.now() } // 캐시 방지
       });
       if (res.data.success) {
         const shipments = res.data.data || [];
@@ -153,6 +154,9 @@ export default function DocumentListPage() {
       if (res.data.success) {
         alert(res.data.message);
         fetchDocuments();
+        // Zustand 스토어 업데이트
+        fetchAllShipments();
+        fetchTracking(blNumber);
       }
     } catch (err: any) {
       alert(err.response?.data?.message || "서류 삭제 처리 중 에러가 발생했습니다.");

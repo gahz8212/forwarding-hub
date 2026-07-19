@@ -55,7 +55,10 @@ export const useTrackingStore = create<TrackingState>((set) => ({
   fetchTracking: async (blNumber: string) => {
     set({ loading: true, error: null });
     try {
-      const response = await api.get(`/api/tracking/${blNumber}`, { withCredentials: true });
+      const response = await api.get(`/api/tracking/${blNumber}`, { 
+        withCredentials: true,
+        params: { t: Date.now() }
+      });
       if (response.data.success) {
         set({ data: response.data.data, loading: false });
       }
@@ -71,7 +74,10 @@ export const useTrackingStore = create<TrackingState>((set) => ({
   fetchAllShipments: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await api.get('/api/tracking/all', { withCredentials: true });
+      const response = await api.get('/api/tracking/all', { 
+        withCredentials: true,
+        params: { t: Date.now() }
+      });
       if (response.data.success) {
         // 날짜 포맷 변경 (yyyy-mm-dd)
         const formatted = response.data.data.map((item: any) => ({
