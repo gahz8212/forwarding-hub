@@ -10,7 +10,7 @@ import {
   ChevronDown,
   ChevronUp
 } from "lucide-react";
-import { useTrackingStore } from '../../store/trackingStore';
+import { useTrackingStore } from '../../store/useTrackingStore';
 
 interface DocumentItem {
   id: string; // bl_number + type
