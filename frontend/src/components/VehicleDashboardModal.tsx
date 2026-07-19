@@ -798,7 +798,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
         const docPhotos = isArr ? [] : (data.data.docs || []);
 
         setUnclassifiedPhotos(extPhotos);
-        setPendingPhotos(docPhotos);
+        setPendingPhotos(docPhotos.filter((url: string) => url.split('/').pop()?.startsWith('shipper_')));
       }
     } catch (err) {
       console.error("미분류 사진 조회 실패:", err);
@@ -908,10 +908,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                 className="w-fit mt-1 sm:mt-0 sm:ml-4 flex items-center gap-1.5 bg-rose-50 border border-rose-200 text-rose-600 px-4 py-2 rounded-full text-xs md:text-sm font-bold hover:bg-rose-100 transition-colors animate-pulse shadow-sm"
               >
                 <BellRing size={16} className="animate-bounce" />
-                {`화주 대기 서류 ${pendingPhotos.filter(url => url.split('/').pop()?.startsWith('shipper_')).length}장 확인`}
-                {pendingPhotos.length - pendingPhotos.filter(url => url.split('/').pop()?.startsWith('shipper_')).length > 0 && 
-                  ` (추가 미분류: ${pendingPhotos.length - pendingPhotos.filter(url => url.split('/').pop()?.startsWith('shipper_')).length}장)`
-                }
+                화주 대기 서류 {pendingPhotos.length}장 확인
               </button>
             )}
           </h2>
@@ -1741,7 +1738,7 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
       <PendingDocsModal
         isOpen={showPendingModal}
         onClose={() => setShowPendingModal(false)}
-        unclassifiedPhotos={pendingPhotos}
+        unclassifiedPhotos={pendingPhotos.filter(url => url.split('/').pop()?.startsWith('shipper_'))}
         onConfirm={handlePendingDocsConfirm}
       />
     </div>
