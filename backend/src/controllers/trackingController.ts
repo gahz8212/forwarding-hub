@@ -1107,12 +1107,12 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
     
     // Generate Invoice PDF
     const pageInvoice = await browser.newPage();
-    await pageInvoice.setContent(invoiceHtml);
+    await pageInvoice.setContent(invoiceHtml, { waitUntil: 'networkidle0' });
     const invoiceBuffer = await pageInvoice.pdf({ format: 'A4', printBackground: true });
     
     // Generate Packing PDF
     const pagePacking = await browser.newPage();
-    await pagePacking.setContent(packingHtml);
+    await pagePacking.setContent(packingHtml, { waitUntil: 'networkidle0' });
     const packingBuffer = await pagePacking.pdf({ format: 'A4', printBackground: true });
 
     await browser.close();
