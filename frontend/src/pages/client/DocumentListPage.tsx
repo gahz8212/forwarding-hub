@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronUp
 } from "lucide-react";
+import { useTrackingStore } from '../../store/trackingStore';
 
 interface DocumentItem {
   id: string; // bl_number + type
@@ -34,7 +35,7 @@ export default function DocumentListPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloadedDocs, setDownloadedDocs] = useState<{ [docId: string]: boolean }>({});
 
-
+  const { fetchAllShipments, fetchTracking } = useTrackingStore();
 
   // 선적 데이터 불러온 후 문서 리스트로 추출 및 그룹화
   const fetchDocuments = async () => {
@@ -82,30 +83,35 @@ export default function DocumentListPage() {
           }
         });
 
-        // B/L 번호로 그룹화 진행
-        const grouped: { [key: string]: DocumentItem[] } = {};
-        docList.forEach(doc => {
-          if (!grouped[doc.blNumber]) {
-            grouped[doc.blNumber] = [];
+        // B/L 기준으로 그룹화
+        const groupedMap = docList.reduce((acc: { [key: string]: DocumentItem[] }, curr) => {
+          if (!acc[curr.blNumber]) {
+            acc[curr.blNumber] = [];
           }
-          grouped[doc.blNumber].push(doc);
-        });
+          acc[curr.blNumber].push(curr);
+          return acc;
+        }, {});
 
-        const list: GroupedDocuments[] = Object.keys(grouped).map(bl => ({
+        const groupedArray = Object.keys(groupedMap).map(bl => ({
           blNumber: bl,
-          items: grouped[bl]
+          items: groupedMap[bl]
         }));
 
-        setGroupedDocs(list);
+        setGroupedDocs(groupedArray);
         
-        // 기본값으로 첫 번째 아코디언 열어두기
-        if (list.length > 0) {
-          setOpenAccordions({ [list[0].blNumber]: true });
+        // 처음 렌더링 시 모든 아코디언 열어두기
+        if (Object.keys(openAccordions).length === 0) {
+          const initialOpenState: { [key: string]: boolean } = {};
+          groupedArray.forEach(g => {
+            initialOpenState[g.blNumber] = true;
+          });
+          setOpenAccordions(initialOpenState);
         }
+      } else {
+        setError(res.data.message || "서류 데이터를 불러올 수 없습니다.");
       }
-    } catch (err: any) {
-      console.error("문서 목록 조회 실패:", err);
-      setError("문서 목록을 불러오는 중 오류가 발생했습니다.");
+    } catch (err) {
+      setError("서버 에러가 발생했습니다.");
     } finally {
       setLoading(false);
     }
@@ -125,6 +131,9 @@ export default function DocumentListPage() {
       if (res.data.success) {
         alert(res.data.message);
         fetchDocuments();
+        // Zustand 스토어 업데이트
+        fetchAllShipments();
+        fetchTracking(blNumber);
       }
     } catch (err: any) {
       alert(err.response?.data?.message || "서류 승인 처리 중 에러가 발생했습니다.");
