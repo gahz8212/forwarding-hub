@@ -30,9 +30,9 @@ const STEPS = [
 
 const getStepIndex = (status: string) => {
   switch (status) {
-    case "Pending Documents": return 0;
-    case "Documents Uploaded": return 1; // 승인 대기 ➔ 내륙 운송 단계에서 대기
-    case "Documents Verified": return 1; // 승인 완료 ➔ 내륙 운송 활성화
+    case "Pending Documents": return 0;  // 서류 대기
+    case "Documents Uploaded": return 0; // 서류는 업로드됐으나 승인 전이므로 '서류 업로드' 단계 유지
+    case "Documents Verified": return 1; // 둘 다 승인 완료 ➔ 내륙 운송 단계로 넘어감
     case "Trucking": return 1;           // 내륙 운송 중
     case "Gate In": return 2;            // CY 입고 완료
     case "Loaded on Vessel": return 3;   // 선적 완료
