@@ -1013,41 +1013,81 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* 서류 마감 및 업로드 패널 (Pending Documents 상태인 경우에만 렌더링) */}
-          {trackingData.status === "Pending Documents" && (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-6">
-              <h4 className="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
-                <FileUp className="text-blue-600" size={18} /> 선적 서류 업로드 (마감 전 필수 제출)
-              </h4>
-              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                출발 전 선사 적하목록 신고를 위해 상업송장(Invoice) 및 패킹리스트(Packing List) 파일을 업로드해 주십시오.<br />
-                서류 마감일시: <span className="text-red-600 font-bold">
-                  {trackingData.doc_closing_date ? new Date(trackingData.doc_closing_date).toLocaleString("ko-KR") : "-"}
-                </span>
-              </p>
+          {/* 선적 서류 업로드 및 확인 패널 (항상 표시되지만 제출 버튼은 조건부) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-6">
+            <h4 className="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
+              <FileUp className="text-blue-600" size={18} /> 선적 서류 업로드 및 확인
+            </h4>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              출발 전 선사 적하목록 신고를 위해 상업송장(Invoice) 및 패킹리스트(Packing List) 파일을 업로드해 주십시오.<br />
+              서류 마감일시: <span className="text-red-600 font-bold">
+                {trackingData.doc_closing_date ? new Date(trackingData.doc_closing_date).toLocaleString("ko-KR") : "-"}
+              </span>
+            </p>
 
-              <form onSubmit={handleUploadSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 bg-white rounded-xl border">
-                    <label className="block text-xs font-bold text-slate-600 mb-2">상업송장 (Commercial Invoice)</label>
+            <form onSubmit={handleUploadSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-white rounded-xl border">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-xs font-bold text-slate-600">상업송장 (Commercial Invoice)</label>
+                    {trackingData.invoice_approved === 1 && (
+                      <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded text-[10px] font-bold border border-green-200">승인 완료</span>
+                    )}
+                  </div>
+                  {trackingData.invoice_approved === 1 ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.invoice_file_path || '')}&name=${encodeURIComponent('상업송장')}`, '_blank');
+                      }}
+                      className="w-full text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center justify-center gap-1 border border-blue-100 bg-blue-50 py-2 rounded-lg transition"
+                    >
+                      서류 보기
+                    </button>
+                  ) : (
                     <input
                       type="file"
                       accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
                       className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
                     />
+                  )}
+                </div>
+
+                <div className="p-4 bg-white rounded-xl border">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-xs font-bold text-slate-600">패킹리스트 (Packing List)</label>
+                    {trackingData.packing_approved === 1 && (
+                      <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded text-[10px] font-bold border border-green-200">승인 완료</span>
+                    )}
                   </div>
-                  <div className="p-4 bg-white rounded-xl border">
-                    <label className="block text-xs font-bold text-slate-600 mb-2">패킹리스트 (Packing List)</label>
+                  {trackingData.packing_approved === 1 ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.packing_list_file_path || '')}&name=${encodeURIComponent('포장명세서')}`, '_blank');
+                      }}
+                      className="w-full text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center justify-center gap-1 border border-blue-100 bg-blue-50 py-2 rounded-lg transition"
+                    >
+                      서류 보기
+                    </button>
+                  ) : (
                     <input
                       type="file"
                       accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
                       className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       onChange={(e) => setPackingFile(e.target.files?.[0] || null)}
                     />
-                  </div>
+                  )}
                 </div>
+              </div>
 
+              {/* 둘 중 하나라도 승인되지 않은 경우에만 업로드 버튼 표시 */}
+              {(trackingData.invoice_approved !== 1 || trackingData.packing_approved !== 1) && (
                 <button
                   type="submit"
                   disabled={uploading}
@@ -1055,9 +1095,9 @@ export default function DashboardPage() {
                 >
                   {uploading ? "업로드 중..." : "서류 업로드 완료하기"}
                 </button>
-              </form>
-            </div>
-          )}
+              )}
+            </form>
+          </div>
 
           {/* 차량 사진 및 서류 업로드 패널 (선택) */}
           {(trackingData.status === "Pending Documents" || trackingData.status === "Documents Uploaded") && (
@@ -1114,67 +1154,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* 제출된 서류 보기 다운로드 패널 */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 mt-6">
-            <h4 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
-              <FileText className="text-slate-500" size={18} /> 제출된 선적 서류 내역
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white p-4 rounded-xl border flex justify-between items-center">
-                <div>
-                  <p className="text-xs text-slate-400 font-bold uppercase">Commercial Invoice</p>
-                  <p className="text-slate-700 text-xs font-semibold mt-0.5">상업 송장</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {trackingData.invoice_approved === 1 ? (
-                    <span className="text-green-600 bg-green-50 px-2.5 py-1 rounded-md text-xs font-bold border border-green-200">완료</span>
-                  ) : (
-                    <span className="text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-200">미완료</span>
-                  )}
-                  {trackingData.invoice_file_path && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.invoice_file_path || '')}&name=${encodeURIComponent('상업송장')}`, '_blank');
-                      }}
-                      className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition shrink-0"
-                    >
-                      서류 보기
-                    </button>
-                  )}
-                </div>
-              </div>
 
-              <div className="bg-white p-4 rounded-xl border flex justify-between items-center">
-                <div>
-                  <p className="text-xs text-slate-400 font-bold uppercase">Packing List</p>
-                  <p className="text-slate-700 text-xs font-semibold mt-0.5">포장 명세서</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {trackingData.packing_approved === 1 ? (
-                    <span className="text-green-600 bg-green-50 px-2.5 py-1 rounded-md text-xs font-bold border border-green-200">완료</span>
-                  ) : (
-                    <span className="text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md text-xs font-bold border border-slate-200">미완료</span>
-                  )}
-                  {trackingData.packing_list_file_path && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        window.open(`${API_BASE_URL}/api/files/download?path=${encodeURIComponent(trackingData.packing_list_file_path || '')}&name=${encodeURIComponent('포장명세서')}`, '_blank');
-                      }}
-                      className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg transition shrink-0"
-                    >
-                      서류 보기
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
 
           {/* 트럭 배정 내역 카드 (배정일자가 세팅된 경우) */}
           {trackingData.truck_date && (
