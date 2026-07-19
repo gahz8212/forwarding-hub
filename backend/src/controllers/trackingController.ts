@@ -1102,7 +1102,14 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
 
     // 4. Puppeteer를 이용한 두 개의 PDF 파일 생성 (메모리상에서 바로 GCS로 업로드)
     const browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox', 
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process'
+      ]
     });
     
     // Generate Invoice PDF
