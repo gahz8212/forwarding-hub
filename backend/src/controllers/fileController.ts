@@ -551,7 +551,8 @@ export const uploadVehiclePhotos = async (req: Request, res: Response) => {
         const targetRelativeUrl = `/uploads/${shipperName}/${year}/${month}/${safeBlNumber}/${subFolder}/${fileName}`;
         const gcsPath = targetRelativeUrl.replace(/^\//, '');
         await bucket.file(gcsPath).save(optimizedBuffer, { resumable: false, contentType: 'image/jpeg' });
-        if (image.rawBuffer && photoType === 'docs') {
+        // 화주가 업로드하여 나중에 분석해야 할 때(skipOcr === 'true')만 원본 백업 파일을 저장합니다.
+        if (image.rawBuffer && photoType === 'docs' && skipOcr === 'true') {
           const originalGcsPath = gcsPath.replace(fileName, `original_${fileName}`);
           await bucket.file(originalGcsPath).save(image.rawBuffer, { resumable: false, contentType: 'image/jpeg' });
         }
