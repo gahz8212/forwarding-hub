@@ -1742,7 +1742,7 @@ export default function AdminShipmentPage() {
             </div>
 
             {/* Print Content Area (Styled like Debit Note Sheet) */}
-            <div className="p-4 md:p-6 space-y-4  flex-1 text-slate-800 bg-slate-50/30">
+            <div className="p-4 md:p-6 space-y-4 flex-1 min-h-0 overflow-y-auto text-slate-800 bg-slate-50/30">
 
               {/* Document Sheet */}
               <div className="bg-white rounded-3xl p-5 md:p-6 space-y-4 border border-slate-200/60 shadow-lg">
