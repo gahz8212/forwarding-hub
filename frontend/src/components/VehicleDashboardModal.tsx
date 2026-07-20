@@ -352,21 +352,19 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
   const handleGeneratePDF = async () => {
     setIsSending(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/tracking/shipments/${shipmentId}/send-pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blNumber }),
-        credentials: 'include'
-      });
-      const data = await response.json();
-      if (response.ok && data.success) {
+      const response = await api.post(`/api/tracking/shipments/${shipmentId}/send-pdf`, { blNumber });
+      if (response.data.success) {
         alert("✅ 입력된 데이터를 바탕으로 Commercial Invoice 및 Packing List PDF를 생성하여 화주 카카오톡으로 전송했습니다!");
       } else {
-        alert("전송 실패: " + data.message);
+        alert("전송 실패: " + response.data.message);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("PDF 전송 에러:", err);
-      alert("서버와 통신 중 오류가 발생했습니다.");
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        alert("인증 오류(401/403): 카카오 로그인이 만료되었거나 세션이 유실되었습니다. 다시 로그인해주세요.");
+      } else {
+        alert("전송 실패: " + (err.response?.data?.message || "서버와 통신 중 오류가 발생했습니다."));
+      }
     } finally {
       setIsSending(false);
     }
