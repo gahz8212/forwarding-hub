@@ -2048,9 +2048,9 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                           <tr key={i} className="hover:bg-slate-50">
                             <td className="px-3 py-2 font-mono text-slate-700">{item.vin}</td>
                             <td className="px-3 py-2 text-slate-600">{item.cargo_type}</td>
-                            <td className="px-3 py-2 text-right font-semibold text-indigo-600">${Number(item.ocean_usd).toLocaleString()}</td>
-                            <td className="px-3 py-2 text-right font-semibold text-blue-600">₩{Number(item.local_krw).toLocaleString()}</td>
-                            <td className="px-3 py-2 text-right font-bold text-slate-800">₩{Number(item.total_krw).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right font-semibold text-indigo-600">${Number(item.applied_ocean_usd).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right font-semibold text-blue-600">₩{(Number(item.applied_lashing_krw)+Number(item.applied_thc_krw)+Number(item.applied_wharfage_krw)+Number(item.applied_inland_krw)).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right font-bold text-slate-800">₩{(Math.floor(Number(item.applied_ocean_usd)*Number(draftCalcResult.master.exchange_rate))+Number(item.applied_lashing_krw)+Number(item.applied_thc_krw)+Number(item.applied_wharfage_krw)+Number(item.applied_inland_krw)).toLocaleString()}</td>
                           </tr>
                         ))}
                       </tbody>
