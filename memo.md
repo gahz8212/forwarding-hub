@@ -288,3 +288,42 @@
 - **문제점:** 서류 보관함에서 파일을 삭제한 직후에 화면이 즉시 갱신되지 않고 "새로고침(F5)"을 해야만 사라진 서류가 반영되는 문제 발생.
 - **원인 및 해결 방안:** 서류 목록 갱신을 위해 호출하는 `api.get("/api/tracking/all")` GET 요청이 크롬 등 웹 브라우저 단에서 강제로 캐싱되어 과거 응답을 반환하는 현상 확인.
 - `useTrackingStore.ts` 및 `DocumentListPage.tsx`의 axios GET 요청에 파라미터로 `params: { t: Date.now() }` 를 주입하여 브라우저의 무분별한 캐시 재사용을 원천적으로 방지, 서류 삭제 즉시 최신 상태로 즉각 화면이 리렌더링되도록 수정.
+
+---
+
+## 📅 오늘 완료한 작업 (2026-07-20)
+
+### 1. GitHub Personal Access Token `workflow` 스코프 문제 해결
+- `.github/workflows/deploy-frontend.yml` 파일이 포함된 커밋 push 시 `workflow` 스코프 없음으로 거부됨.
+- GitHub Settings → Tokens에서 기존 토큰에 `workflow` 스코프 추가 후 `git remote set-url`로 업데이트하여 해결.
+
+### 2. 차량 관리 대시보드 액션 버튼 3열 × 2행 그리드 재구성
+- **기존**: 버튼들이 단순 flex row로 나열되어 레이아웃이 불규칙함.
+- **변경**: 3열 × 2행 고정 그리드로 재구성.
+  - 1행: `전체` 체크박스 + `선택삭제` / `차량사진` + `추가(N)` / `INV/PAC전송`
+  - 2행: `전체저장` / `서류사진` / `Draft발행`
+- 차량 미선택 시 `선택삭제`는 점선 비활성 영역으로 표시, 선택 시 빨간 버튼으로 전환.
+- 미분류 사진이 있을 때만 `추가(N)` 버튼 노출.
+
+### 3. 데빗노트 내륙배차금액 마진 미적용 버그 수정
+- **문제점:** `billingService.ts`에서 고박료·THC·부두사용료에는 `localMarginMultiplier`가 적용되었으나, 내륙배차금액(`sellInlandKRW`)에는 마진이 빠져 실비 그대로 청구되고 있었음.
+- **수정 내용:** `sellInlandKRW`에도 퍼센트 마진 방식 시 `localMarginMultiplier`를 동일하게 적용. 고정 마진 방식은 기존과 동일하게 실비 처리.
+
+### 4. 합계청구금액 정확도 개선 (total_ocean_krw 컬럼 추가)
+- **문제점:** 프론트엔드에서 `Math.floor(total_ocean_usd * exchange_rate)`로 재계산 시 JS 부동소수점 오차 가능성. 병합(merge) 인보이스에서 환율이 다를 경우 `total_ocean_usd × 첫번째_환율`로 재표시 시 불일치 발생.
+- **수정 내용:**
+  - `invoices` 테이블에 `total_ocean_krw` 컬럼 추가 (Big.js로 정밀 floor 계산한 값 저장).
+  - `billingService.ts`의 `CalculationResult`에 `total_ocean_krw` 포함하여 반환.
+  - 프론트엔드에서 `Math.floor` 재계산 대신 저장된 `total_ocean_krw` 직접 사용 (`??` fallback으로 기존 데이터 호환).
+  - 병합 인보이스: 각 인보이스의 `total_ocean_krw`를 합산 → `final_amount_krw = ocean_krw_sum + local_krw`로 정확하게 계산.
+
+### 5. 합계 로컬비용 불일치 근본 원인 수정 및 DB 데이터 정정
+- **문제점 발견:** `INV-KMTC78532170` 인보이스의 `total_local_krw`가 649,000으로 저장되어 있었으나, 실제 항목 합산(고박료 88,000 + THC 55,000 + 부두사용료 33,000 + 탁송료 440,000 + BL료 40,000 + 관세 33,000) = **689,000**이 맞음.
+- **근본 원인:** `createInvoice` 백엔드가 프론트엔드에서 전달한 `total_local_krw` 값을 검증 없이 그대로 DB에 저장하여, 프론트 계산 오류가 DB에 반영됨.
+- **수정 내용:**
+  - `createInvoice` 컨트롤러에서 `items` 배열을 직접 합산하여 `verified_local_krw` 및 `verified_final_krw`를 서버에서 재계산 후 저장. 프론트 전달값 불신.
+  - DB UPDATE로 기존 잘못된 인보이스 데이터 직접 정정:
+    - `total_local_krw`: 649,000 → **689,000**
+    - `final_amount_krw`: 4,998,328 → **5,038,328**
+  - 검증 쿼리 실행 결과 차이 = **0** 확인 ✅
+
