@@ -2015,7 +2015,11 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                     <div className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                       <Coins size={13} /> 정산 요약
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                      <div className="text-center">
+                        <div className="text-xs text-slate-400 font-medium mb-1">적용 환율</div>
+                        <div className="font-black text-slate-700 dark:text-slate-300">₩{Number(draftCalcResult.master.exchange_rate).toLocaleString()}</div>
+                      </div>
                       <div className="text-center">
                         <div className="text-xs text-slate-400 font-medium mb-1">해상 운임</div>
                         <div className="font-black text-indigo-700 dark:text-indigo-300">${Number(draftCalcResult.master.total_ocean_usd).toLocaleString()}</div>
