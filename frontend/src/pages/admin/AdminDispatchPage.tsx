@@ -117,6 +117,7 @@ export default function AdminDispatchPage() {
           등록된 차량이 없습니다.
         </div>
       ) : (
+        <>
         {/* 데스크탑: 테이블형 */}
         <div className="hidden md:block overflow-x-auto bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-3xs">
           <table className="w-full text-sm text-left">
@@ -228,6 +229,7 @@ export default function AdminDispatchPage() {
           ))}
         </div>
 
+        </>
       )}
 
       {modalOpen && (
