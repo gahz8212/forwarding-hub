@@ -1017,14 +1017,14 @@ export const sendPdfToShipper = async (req: Request, res: Response) => {
                   <td>${v.make || 'Unknown'} / ${v.model || 'Unknown'}</td>
                   <td>${v.year || ''}</td>
                   <td>${v.plate_number || ''}</td>
-                  <td>$${(v.price || 0).toLocaleString()}</td>
+                  <td>$${Number(String(v.price || '0').replace(/[^0-9.-]+/g, '')).toLocaleString()}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
           
           <div style="margin-top: 40px; text-align: right; font-weight: bold; font-size: 16px;">
-            Total Price: $${vehicles.reduce((sum: number, v: any) => sum + (v.price || 0), 0).toLocaleString()}
+            Total Price: $${vehicles.reduce((sum: number, v: any) => sum + Number(String(v.price || '0').replace(/[^0-9.-]+/g, '')), 0).toLocaleString()}
           </div>
         </body>
       </html>
