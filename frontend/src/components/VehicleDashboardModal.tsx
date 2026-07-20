@@ -1087,126 +1087,131 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
               </div>
             </div>
 
-            {/* Right Controls (Buttons) */}
-            <div className="flex flex-wrap items-center gap-2 justify-end lg:ml-auto">
+            {/* Action Buttons — 2단 그리드 */}
+            <div className="grid grid-cols-3 gap-x-2 gap-y-1.5 w-full md:w-auto md:min-w-[420px]">
 
-              {/* 전체선택 + 선택삭제 */}
-              <div className="flex items-center gap-1.5 h-9 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="select-all-vehicles"
-                  checked={vehicles.length > 0 && selectedVehicleIds.length === vehicles.length}
-                  onChange={toggleSelectAll}
-                  className="h-3.5 w-3.5 rounded accent-rose-500 cursor-pointer"
-                />
-                <label htmlFor="select-all-vehicles" className="text-xs font-bold text-slate-500 dark:text-slate-400 cursor-pointer select-none">
-                  전체
-                </label>
+              {/* 1행 1열: 전체(체크박스) + 선택삭제 */}
+              <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 h-9 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shrink-0">
+                  <input
+                    type="checkbox"
+                    id="select-all-vehicles"
+                    checked={vehicles.length > 0 && selectedVehicleIds.length === vehicles.length}
+                    onChange={toggleSelectAll}
+                    className="h-3.5 w-3.5 rounded accent-rose-500 cursor-pointer"
+                  />
+                  <label htmlFor="select-all-vehicles" className="text-xs font-bold text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+                    전체
+                  </label>
+                </div>
+                {selectedVehicleIds.length > 0 ? (
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={isDeleting}
+                    className="h-9 flex items-center justify-center gap-1 bg-rose-500 hover:bg-rose-600 text-white px-2.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 shadow-sm animate-pulse whitespace-nowrap"
+                  >
+                    <Trash2 size={13} />
+                    {isDeleting ? '삭제중' : `${selectedVehicleIds.length}대 삭제`}
+                  </button>
+                ) : (
+                  <div className="h-9 flex items-center justify-center px-2.5 rounded-lg text-xs text-slate-300 dark:text-slate-600 border border-dashed border-slate-200 dark:border-slate-700 whitespace-nowrap">
+                    선택삭제
+                  </div>
+                )}
               </div>
-              {selectedVehicleIds.length > 0 && (
+
+              {/* 1행 2열: 차량사진 + 차량사진추가 */}
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,.zip"
+                  className="hidden"
+                  ref={fastFileInputRef}
+                  onChange={(e) => handleFileUpload(e, true, 'exterior')}
+                />
                 <button
-                  onClick={handleDeleteSelected}
-                  disabled={isDeleting}
-                  className="h-9 flex items-center justify-center gap-1.5 bg-rose-500 hover:bg-rose-600 text-white px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors disabled:opacity-50 shadow-sm animate-pulse"
+                  onClick={() => fastFileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="h-9 flex items-center justify-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 px-3 rounded-lg text-xs font-bold shadow-sm transition-colors disabled:opacity-50 border border-slate-200 dark:border-slate-700 whitespace-nowrap"
                 >
-                  <Trash2 size={14} />
-                  {isDeleting ? '삭제 중...' : `선택 ${selectedVehicleIds.length}대 삭제`}
+                  {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={14} className="text-amber-500" />}
+                  차량사진
                 </button>
-              )}
+                {unclassifiedPhotos.length > 0 && (
+                  <button
+                    onClick={() => setShowUnclassifiedDrawer(!showUnclassifiedDrawer)}
+                    className={`h-9 flex items-center justify-center gap-1 px-2 rounded-lg text-xs font-bold shadow-sm border transition-colors whitespace-nowrap ${
+                      showUnclassifiedDrawer
+                        ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/50'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <Camera size={13} className={showUnclassifiedDrawer ? "text-amber-600" : "text-slate-400"} />
+                    추가({unclassifiedPhotos.length})
+                  </button>
+                )}
+              </div>
 
-              {/* 전체삭제 */}
-              {/* <button
-                onClick={handleReset}
-                disabled={loading}
-                className="h-9 flex items-center justify-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors disabled:opacity-50 border border-red-200 dark:border-red-800"
-              >
-                <Trash2 size={15} />
-                전체삭제
-              </button> */}
-
-              {/* 전체저장 */}
-              <button
-                onClick={handleSaveAll}
-                disabled={isSaveDisabled || loading}
-                className="h-9 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                title={isSaveDisabled ? "차량번호 '?' 수정 및 구동상태를 모두 선택해야 저장할 수 있습니다." : "모든 변경사항 저장"}
-              >
-                <Save size={15} />
-                전체저장
-              </button>
-
-              {/* INV/PAC전송 */}
-              <button
-                onClick={handleGeneratePDF}
-                disabled={isSending || loading}
-                className="h-9 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors disabled:opacity-50 shadow-sm"
-                title="바이어 정보를 기반으로 PDF 서류 생성 및 카카오톡 발송"
-              >
-                <Send size={15} />
-                {isSending ? "전송 중..." : "INV/PAC전송"}
-              </button>
-
-              {/* Draft 발행 */}
-              <button
-                type="button"
-                onClick={handleOpenDraft}
-                className="h-9 flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors shadow-sm"
-                title="임시 정산서(Draft) 발행 폼 열기"
-              >
-                <CreditCard size={15} />
-                Draft 발행
-              </button>
-
-              {/* 차량사진 업로드 */}
-              <input
-                type="file"
-                multiple
-                accept="image/*,.zip"
-                className="hidden"
-                ref={fastFileInputRef}
-                onChange={(e) => handleFileUpload(e, true, 'exterior')}
-              />
-              <button
-                onClick={() => fastFileInputRef.current?.click()}
-                disabled={uploading}
-                className="h-9 flex items-center justify-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 px-3.5 rounded-lg text-xs md:text-sm font-bold shadow-sm transition-colors disabled:opacity-50 border border-slate-200 dark:border-slate-700"
-              >
-                {uploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={15} className="text-amber-500" />}
-                차량사진
-              </button>
-
-              {/* 서류사진 업로드 */}
-              <input
-                type="file"
-                multiple
-                accept="image/*,.zip"
-                className="hidden"
-                ref={fileInputRef}
-                onChange={(e) => handleFileUpload(e, false, 'docs')}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="h-9 flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 rounded-lg text-xs md:text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
-              >
-                {uploading ? <Loader2 size={14} className="animate-spin" /> : <FileImage size={14} />}
-                {uploading ? "분석 중..." : "서류사진"}
-              </button>
-              
-              {/* 차량사진 추가 (미분류 사진함) */}
-              {unclassifiedPhotos.length > 0 && (
+              {/* 1행 3열: INV/PAC전송 */}
+              <div className="flex items-center">
                 <button
-                  onClick={() => setShowUnclassifiedDrawer(!showUnclassifiedDrawer)}
-                  className={`h-9 flex items-center justify-center gap-1.5 px-3.5 rounded-lg text-xs md:text-sm font-bold shadow-sm border transition-colors ${
-                    showUnclassifiedDrawer 
-                      ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/50' 
-                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 border-slate-200 dark:border-slate-700'
-                  }`}
+                  onClick={handleGeneratePDF}
+                  disabled={isSending || loading}
+                  className="h-9 w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 shadow-sm whitespace-nowrap"
+                  title="바이어 정보를 기반으로 PDF 서류 생성 및 카카오톡 발송"
                 >
-                  <Camera size={16} className={showUnclassifiedDrawer ? "text-amber-600" : "text-slate-400"} />
-                  차량사진 추가 ({unclassifiedPhotos.length})
+                  <Send size={13} />
+                  {isSending ? "전송 중..." : "INV/PAC전송"}
                 </button>
-              )}
+              </div>
+
+              {/* 2행 1열: 전체저장 */}
+              <div className="flex items-center">
+                <button
+                  onClick={handleSaveAll}
+                  disabled={isSaveDisabled || loading}
+                  className="h-9 w-full flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm whitespace-nowrap"
+                  title={isSaveDisabled ? "차량번호 '?' 수정 및 구동상태를 모두 선택해야 저장할 수 있습니다." : "모든 변경사항 저장"}
+                >
+                  <Save size={14} />
+                  전체저장
+                </button>
+              </div>
+
+              {/* 2행 2열: 서류사진 */}
+              <div className="flex items-center">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,.zip"
+                  className="hidden"
+                  ref={fileInputRef}
+                  onChange={(e) => handleFileUpload(e, false, 'docs')}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="h-9 w-full flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 rounded-lg text-xs font-bold shadow-sm transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  {uploading ? <Loader2 size={13} className="animate-spin" /> : <FileImage size={13} />}
+                  {uploading ? "분석 중..." : "서류사진"}
+                </button>
+              </div>
+
+              {/* 2행 3열: Draft발행 */}
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={handleOpenDraft}
+                  className="h-9 w-full flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-600 text-white px-3 rounded-lg text-xs font-bold transition-colors shadow-sm whitespace-nowrap"
+                  title="임시 정산서(Draft) 발행 폼 열기"
+                >
+                  <CreditCard size={13} />
+                  Draft발행
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
