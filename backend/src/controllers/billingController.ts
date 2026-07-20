@@ -263,6 +263,19 @@ export const createInvoice = async (req: Request, res: Response) => {
     // Compute ocean KRW (floor) to store explicitly
     const total_ocean_krw = Math.floor(Number(total_ocean_usd) * Number(exchange_rate));
 
+    // Re-calculate local total from items directly (do NOT trust frontend-sent totals)
+    const resolvedBlFee = Number(bl_fee_krw) || 40000;
+    const resolvedCustomsFee = Number(customs_fee_krw) || 33000;
+    const items_local_sum = items.reduce((sum: number, item: any) => {
+      return sum
+        + Number(item.applied_lashing_krw || 0)
+        + Number(item.applied_thc_krw || 0)
+        + Number(item.applied_wharfage_krw || 0)
+        + Number(item.applied_inland_krw || 0);
+    }, 0);
+    const verified_local_krw = items_local_sum + resolvedBlFee + resolvedCustomsFee;
+    const verified_final_krw = total_ocean_krw + verified_local_krw;
+
     // Insert Invoice Master
     await connection.query(
       `INSERT INTO invoices 
