@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "../../store/useAuthStore";
 
+import { fmtKRW } from '../../utils/format';
 interface Invoice {
   invoice_no: string;
   client_id: string;
@@ -820,11 +821,11 @@ export default function InvoiceListPage() {
                   </div>
                   <div className="flex justify-between">
                     <span>로컬 비용 합계 (KRW):</span>
-                    <span className="text-slate-800 font-bold">₩{Number(selectedInvoice.total_local_krw).toLocaleString()}</span>
+                    <span className="text-slate-800 font-bold">{fmtKRW(selectedInvoice.total_local_krw)}</span>
                   </div>
                   <div className="flex justify-between border-t pt-2 text-base text-indigo-700 font-black">
                     <span>합계 청구 금액:</span>
-                    <span>₩{Number(selectedInvoice.final_amount_krw).toLocaleString()}</span>
+                    <span>{fmtKRW(selectedInvoice.final_amount_krw)}</span>
                   </div>
                 </div>
               </div>

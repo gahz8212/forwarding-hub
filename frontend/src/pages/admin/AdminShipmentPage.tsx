@@ -34,6 +34,7 @@ import {
 import VehicleDashboardModal from "../../components/VehicleDashboardModal";
 import { useNotificationStore } from "../../store/useNotificationStore";
 
+import { fmtKRW, fmtAmt } from '../../utils/format';
 interface ExtractionKey {
   id: string;
   label: string;
@@ -1906,19 +1907,19 @@ export default function AdminShipmentPage() {
                                 <div className="text-slate-500 text-[10px] mt-0.5 font-normal">{item.model_name}</div>
                               </td>
                               <td className="p-2 text-right font-bold text-slate-700">
-                                ${Number(item.applied_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                ${fmtAmt(item.applied_ocean_usd)}
                               </td>
                               <td className="p-2 text-right font-bold text-slate-700">
-                                ₩{Number(item.applied_lashing_krw).toLocaleString()}
+                                {fmtKRW(item.applied_lashing_krw)}
                               </td>
                               <td className="p-2 text-right font-bold text-slate-700">
-                                ₩{Number(item.applied_thc_krw).toLocaleString()}
+                                {fmtKRW(item.applied_thc_krw)}
                               </td>
                               <td className="p-2 text-right font-bold text-slate-700">
-                                ₩{Number(item.applied_wharfage_krw || 0).toLocaleString()}
+                                {fmtKRW(item.applied_wharfage_krw || 0)}
                               </td>
                               <td className="p-2 text-right font-bold text-slate-700">
-                                ₩{Number(item.applied_inland_krw || 0).toLocaleString()}
+                                {fmtKRW(item.applied_inland_krw || 0)}
                               </td>
                             </tr>
                           ))}
@@ -1930,11 +1931,11 @@ export default function AdminShipmentPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="p-2 border rounded-xl bg-slate-50 border-slate-100 text-xs font-semibold text-slate-500 flex justify-between">
                         <span>Pass-through 서류비 (B/L Fee):</span>
-                        <span className="font-extrabold text-slate-700">₩{Number(calculationResult.master.bl_fee_krw).toLocaleString()}</span>
+                        <span className="font-extrabold text-slate-700">{fmtKRW(calculationResult.master.bl_fee_krw)}</span>
                       </div>
                       <div className="p-2 border rounded-xl bg-slate-50 border-slate-100 text-xs font-semibold text-slate-500 flex justify-between">
                         <span>Pass-through 관세사 수수료 (Customs):</span>
-                        <span className="font-extrabold text-slate-700">₩{Number(calculationResult.master.customs_fee_krw).toLocaleString()}</span>
+                        <span className="font-extrabold text-slate-700">{fmtKRW(calculationResult.master.customs_fee_krw)}</span>
                       </div>
                     </div>
 
@@ -1946,15 +1947,15 @@ export default function AdminShipmentPage() {
                         </div>
                         <div className="flex justify-between">
                           <span>총 해상운임 (USD):</span>
-                          <span className="text-slate-800 font-bold">${Number(calculationResult.master.total_ocean_usd).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          <span className="text-slate-800 font-bold">${fmtAmt(calculationResult.master.total_ocean_usd)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>적용 환율 (1 USD):</span>
-                          <span className="text-slate-800 font-bold">₩{Number(calculationResult.master.exchange_rate).toLocaleString()}</span>
+                          <span className="text-slate-800 font-bold">{fmtKRW(calculationResult.master.exchange_rate)}</span>
                         </div>
                         <div className="flex justify-between border-t pt-1.5 text-indigo-600 font-bold">
                           <span>원화 환산 금액 (절사):</span>
-                          <span>₩{Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)).toLocaleString()}</span>
+                          <span>{fmtKRW(Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)))}</span>
                         </div>
                       </div>
 
@@ -1964,15 +1965,15 @@ export default function AdminShipmentPage() {
                         </div>
                         <div className="flex justify-between">
                           <span>해상 운임 환산액 (KRW):</span>
-                          <span className="text-slate-800 font-bold">₩{Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)).toLocaleString()}</span>
+                          <span className="text-slate-800 font-bold">{fmtKRW(Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)))}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>로컬 비용 합계 (KRW):</span>
-                          <span className="text-slate-800 font-bold">₩{Number(calculationResult.master.total_local_krw).toLocaleString()}</span>
+                          <span className="text-slate-800 font-bold">{fmtKRW(calculationResult.master.total_local_krw)}</span>
                         </div>
                         <div className="flex justify-between border-t pt-2 text-base text-indigo-700 font-black">
                           <span>합계 청구 금액:</span>
-                          <span>₩{Number(calculationResult.master.final_amount_krw).toLocaleString()}</span>
+                          <span>{fmtKRW(calculationResult.master.final_amount_krw)}</span>
                         </div>
                       </div>
                     </div>

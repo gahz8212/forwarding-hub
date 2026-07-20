@@ -5,6 +5,7 @@ import { io } from "socket.io-client";
 import { X, Camera, Search, CheckCircle, Truck, Ship, AlertTriangle, Upload, FileImage, Loader2, Send, GripHorizontal, ChevronLeft, ChevronRight, Save, Trash2, BellRing, CreditCard, Clock, Warehouse, Globe, Coins, Sparkles, AlertCircle, RefreshCw } from "lucide-react";
 import BuyerInfoModal from './BuyerInfoModal';
 import PendingDocsModal from './PendingDocsModal';
+import { fmtKRW, fmtAmt } from '../utils/format';
 
 interface Vehicle {
   id: number;
@@ -2018,19 +2019,19 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                       <div className="text-center">
                         <div className="text-xs text-slate-400 font-medium mb-1">적용 환율</div>
-                        <div className="font-black text-slate-700 dark:text-slate-300">₩{Number(draftCalcResult.master.exchange_rate).toLocaleString()}</div>
+                        <div className="font-black text-slate-700 dark:text-slate-300">{fmtKRW(draftCalcResult.master.exchange_rate)}</div>
                       </div>
                       <div className="text-center">
                         <div className="text-xs text-slate-400 font-medium mb-1">해상 운임</div>
-                        <div className="font-black text-indigo-700 dark:text-indigo-300">${Number(draftCalcResult.master.total_ocean_usd).toLocaleString()}</div>
+                        <div className="font-black text-indigo-700 dark:text-indigo-300">${fmtAmt(draftCalcResult.master.total_ocean_usd)}</div>
                       </div>
                       <div className="text-center">
                         <div className="text-xs text-slate-400 font-medium mb-1">로컬 비용</div>
-                        <div className="font-black text-blue-700 dark:text-blue-300">₩{Number(draftCalcResult.master.total_local_krw).toLocaleString()}</div>
+                        <div className="font-black text-blue-700 dark:text-blue-300">{fmtKRW(draftCalcResult.master.total_local_krw)}</div>
                       </div>
                       <div className="text-center col-span-2 sm:col-span-1">
                         <div className="text-xs text-slate-400 font-medium mb-1">최종 청구금액</div>
-                        <div className="font-black text-emerald-700 dark:text-emerald-300 text-base">₩{Number(draftCalcResult.master.final_amount_krw).toLocaleString()}</div>
+                        <div className="font-black text-emerald-700 dark:text-emerald-300 text-base">{fmtKRW(draftCalcResult.master.final_amount_krw)}</div>
                       </div>
                     </div>
                   </div>
@@ -2052,9 +2053,9 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                           <tr key={i} className="hover:bg-slate-50">
                             <td className="px-3 py-2 font-mono text-slate-700">{item.vin}</td>
                             <td className="px-3 py-2 text-slate-600">{item.cargo_type}</td>
-                            <td className="px-3 py-2 text-right font-semibold text-indigo-600">${Number(item.applied_ocean_usd).toLocaleString()}</td>
-                            <td className="px-3 py-2 text-right font-semibold text-blue-600">₩{(Number(item.applied_lashing_krw)+Number(item.applied_thc_krw)+Number(item.applied_wharfage_krw)+Number(item.applied_inland_krw)).toLocaleString()}</td>
-                            <td className="px-3 py-2 text-right font-bold text-slate-800">₩{(Math.floor(Number(item.applied_ocean_usd)*Number(draftCalcResult.master.exchange_rate))+Number(item.applied_lashing_krw)+Number(item.applied_thc_krw)+Number(item.applied_wharfage_krw)+Number(item.applied_inland_krw)).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right font-semibold text-indigo-600">${fmtAmt(item.applied_ocean_usd)}</td>
+                            <td className="px-3 py-2 text-right font-semibold text-blue-600">{fmtKRW(Number(item.applied_lashing_krw)+Number(item.applied_thc_krw)+Number(item.applied_wharfage_krw)+Number(item.applied_inland_krw))}</td>
+                            <td className="px-3 py-2 text-right font-bold text-slate-800">{fmtKRW(Math.floor(Number(item.applied_ocean_usd)*Number(draftCalcResult.master.exchange_rate))+Number(item.applied_lashing_krw)+Number(item.applied_thc_krw)+Number(item.applied_wharfage_krw)+Number(item.applied_inland_krw))}</td>
                           </tr>
                         ))}
                       </tbody>

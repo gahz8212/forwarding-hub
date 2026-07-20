@@ -2,6 +2,7 @@ import api, { API_BASE_URL } from '../../api/axios';
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
+import { fmtAmt } from '../../utils/format';
 import { 
   Settings, 
   DollarSign, 
@@ -301,7 +302,7 @@ export default function AdminBillingPage() {
                         </td>
                         <td className="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">{c.margin_type === "PERCENTAGE" ? `${c.ocean_margin_rate}%` : "-"}</td>
                         <td className="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">{c.margin_type === "PERCENTAGE" ? `${c.local_margin_rate}%` : "-"}</td>
-                        <td className="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">{c.margin_type === "FIXED" ? `$${Number(c.fixed_margin_per_unit).toLocaleString()}` : "-"}</td>
+                        <td className="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">{c.margin_type === "FIXED" ? `$${fmtAmt(c.fixed_margin_per_unit)}` : "-"}</td>
                         <td className="px-5 py-3 text-center">
                           <button
                             type="button"
@@ -351,7 +352,7 @@ export default function AdminBillingPage() {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-400 font-medium">대당 고정 마진 (Fixed):</span>
-                          <span className="text-slate-750 dark:text-slate-300">{c.margin_type === "FIXED" ? `$${Number(c.fixed_margin_per_unit).toLocaleString()}` : "-"}</span>
+                          <span className="text-slate-750 dark:text-slate-300">{c.margin_type === "FIXED" ? `$${fmtAmt(c.fixed_margin_per_unit)}` : "-"}</span>
                         </div>
                       </div>
                     </div>

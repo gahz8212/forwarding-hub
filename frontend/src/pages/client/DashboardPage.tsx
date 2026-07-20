@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { io } from "socket.io-client";
 import { useTrackingStore } from "../../store/useTrackingStore";
+import { fmtAmt } from '../../utils/format';
 import {
   Search,
   Ship,
@@ -1238,7 +1239,7 @@ export default function DashboardPage() {
                       {shipment.eta}
                     </td>
                     {/* <td className="p-4 text-sm font-semibold text-right text-red-600">
-                      ${Number(shipment.invoice_amount).toLocaleString()}
+                      ${fmtAmt(shipment.invoice_amount)}
                     </td> */}
                     <td className="p-4 text-center">
                       {shipment.is_paid ? (
