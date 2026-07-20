@@ -1,7 +1,8 @@
 import { API_BASE_URL } from '../api/axios';
+import api from '../api/axios';
 import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-import { X, Camera, Search, CheckCircle, Truck, Ship, AlertTriangle, Upload, FileImage, Loader2, Send, GripHorizontal, ChevronLeft, ChevronRight, Save, Trash2, BellRing, CreditCard, Clock, Warehouse } from "lucide-react";
+import { X, Camera, Search, CheckCircle, Truck, Ship, AlertTriangle, Upload, FileImage, Loader2, Send, GripHorizontal, ChevronLeft, ChevronRight, Save, Trash2, BellRing, CreditCard, Clock, Warehouse, Globe, Coins, Sparkles, AlertCircle, RefreshCw } from "lucide-react";
 import BuyerInfoModal from './BuyerInfoModal';
 import PendingDocsModal from './PendingDocsModal';
 
@@ -79,6 +80,22 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
   const fastFileInputRef = useRef<HTMLInputElement>(null);
   const [showUnclassifiedDrawer, setShowUnclassifiedDrawer] = useState(false);
   const [focusedPriceId, setFocusedPriceId] = useState<number | null>(null);
+
+  // 선택삭제 상태
+  const [selectedVehicleIds, setSelectedVehicleIds] = useState<number[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Draft 인라인 폼 상태
+  const [isDraftOpen, setIsDraftOpen] = useState(false);
+  const [draftClients, setDraftClients] = useState<any[]>([]);
+  const [draftClientId, setDraftClientId] = useState("");
+  const [draftInvoiceNo, setDraftInvoiceNo] = useState("");
+  const [draftDueDate, setDraftDueDate] = useState("");
+  const [draftExchangeRate, setDraftExchangeRate] = useState("1350");
+  const [draftCalcResult, setDraftCalcResult] = useState<any>(null);
+  const [draftCalculating, setDraftCalculating] = useState(false);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [draftError, setDraftError] = useState("");
 
   const [viewerState, setViewerState] = useState<ViewerState>({
     isOpen: false,
@@ -474,6 +491,132 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
     } catch (err) {
       console.error("차량 상태 변경 에러:", err);
       alert("차량 상태 변경 중 에러가 발생했습니다.");
+    }
+  };
+
+  // 선택 차량 삭제
+  const handleDeleteSelected = async () => {
+    if (selectedVehicleIds.length === 0) return;
+    const ok = window.confirm(`선택한 ${selectedVehicleIds.length}대의 차량을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`);
+    if (!ok) return;
+    setIsDeleting(true);
+    try {
+      await Promise.all(
+        selectedVehicleIds.map(id =>
+          fetch(`${API_BASE_URL}/api/tracking/vehicles/${id}`, { method: 'DELETE' })
+        )
+      );
+      setSelectedVehicleIds([]);
+      fetchVehicles();
+    } catch (err) {
+      console.error('선택삭제 에러:', err);
+      alert('선택 차량 삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const toggleSelectVehicle = (id: number) => {
+    setSelectedVehicleIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedVehicleIds.length === vehicles.length) {
+      setSelectedVehicleIds([]);
+    } else {
+      setSelectedVehicleIds(vehicles.map(v => v.id));
+    }
+  };
+
+  // Draft 정산서 핸들러
+  const handleOpenDraft = async () => {
+    setDraftInvoiceNo(`INV-${blNumber}`);
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    setDraftDueDate(nextWeek.toISOString().split('T')[0]);
+    setDraftCalcResult(null);
+    setDraftError("");
+    setIsDraftOpen(true);
+    try {
+      const [clientsRes, rateRes] = await Promise.all([
+        api.get("/api/billing/clients", { withCredentials: true }),
+        api.get("/api/billing/exchange-rate", { withCredentials: true }).catch(() => ({ data: { success: false } }))
+      ]);
+      if (clientsRes.data.success) {
+        setDraftClients(clientsRes.data.clients);
+        const matched = clientsRes.data.clients.find((c: any) =>
+          c.client_name.includes(shipment.shipper) || (shipment.shipper || '').includes(c.client_name)
+        );
+        setDraftClientId(matched ? matched.client_id : (clientsRes.data.clients[0]?.client_id || ''));
+      }
+      if (rateRes.data.success && rateRes.data.rate) setDraftExchangeRate(String(rateRes.data.rate));
+    } catch (err) {
+      setDraftError('기본 설정을 불러오는 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleCalculateDraft = async () => {
+    if (!draftClientId || !draftExchangeRate) { setDraftError('화주와 환율을 입력해주세요.'); return; }
+    setDraftCalculating(true);
+    setDraftError("");
+    try {
+      const res = await api.post("/api/billing/invoices/calculate", {
+        shipmentIds: [shipmentId],
+        clientId: draftClientId,
+        exchangeRate: parseFloat(draftExchangeRate)
+      }, { withCredentials: true });
+      if (res.data.success) setDraftCalcResult(res.data.data);
+      else setDraftError(res.data.message || '계산 실패');
+    } catch (err: any) {
+      setDraftError(err.response?.data?.message || '정산 계산 중 오류가 발생했습니다.');
+    } finally {
+      setDraftCalculating(false);
+    }
+  };
+
+  // 화주/환율 변경 시 자동 계산
+  useEffect(() => {
+    if (isDraftOpen && draftClientId && draftExchangeRate) {
+      const t = setTimeout(() => handleCalculateDraft(), 300);
+      return () => clearTimeout(t);
+    }
+  }, [isDraftOpen, draftClientId, draftExchangeRate]);
+
+  const handleSaveDraft = async () => {
+    if (!draftCalcResult || !draftInvoiceNo || !draftDueDate) { setDraftError('인보이스 번호와 납기일을 입력해주세요.'); return; }
+    setDraftSaving(true);
+    setDraftError("");
+    try {
+      const payload = {
+        invoice_no: draftInvoiceNo,
+        client_id: draftClientId,
+        bl_number: blNumber,
+        vessel_name: shipment.vessel_name,
+        pol: shipment.pol,
+        pod: shipment.pod,
+        exchange_rate: parseFloat(draftCalcResult.master.exchange_rate),
+        total_ocean_usd: parseFloat(draftCalcResult.master.total_ocean_usd),
+        total_local_krw: parseFloat(draftCalcResult.master.total_local_krw),
+        final_amount_krw: parseFloat(draftCalcResult.master.final_amount_krw),
+        bl_fee_krw: parseFloat(draftCalcResult.master.bl_fee_krw),
+        customs_fee_krw: parseFloat(draftCalcResult.master.customs_fee_krw),
+        due_date: draftDueDate,
+        items: draftCalcResult.items,
+        shipmentIds: [shipmentId]
+      };
+      const res = await api.post("/api/billing/invoices", payload, { withCredentials: true });
+      if (res.data.success) {
+        alert('정산서(가승인)가 성공적으로 임시 발행되었습니다!');
+        setIsDraftOpen(false);
+      } else {
+        setDraftError(res.data.message || '저장 실패');
+      }
+    } catch (err: any) {
+      setDraftError(err.response?.data?.message || '인보이스 저장에 실패했습니다.');
+    } finally {
+      setDraftSaving(false);
     }
   };
 
@@ -947,6 +1090,31 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
 
             {/* Right Controls (Buttons) */}
             <div className="flex flex-wrap items-center gap-2 justify-end lg:ml-auto">
+
+              {/* 전체선택 + 선택삭제 */}
+              <div className="flex items-center gap-1.5 h-9 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="select-all-vehicles"
+                  checked={vehicles.length > 0 && selectedVehicleIds.length === vehicles.length}
+                  onChange={toggleSelectAll}
+                  className="h-3.5 w-3.5 rounded accent-rose-500 cursor-pointer"
+                />
+                <label htmlFor="select-all-vehicles" className="text-xs font-bold text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+                  전체
+                </label>
+              </div>
+              {selectedVehicleIds.length > 0 && (
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={isDeleting}
+                  className="h-9 flex items-center justify-center gap-1.5 bg-rose-500 hover:bg-rose-600 text-white px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors disabled:opacity-50 shadow-sm animate-pulse"
+                >
+                  <Trash2 size={14} />
+                  {isDeleting ? '삭제 중...' : `선택 ${selectedVehicleIds.length}대 삭제`}
+                </button>
+              )}
+
               {/* 전체삭제 */}
               <button
                 onClick={handleReset}
@@ -980,17 +1148,15 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
               </button>
 
               {/* Draft 발행 */}
-              {onOpenDraftGenerator && (
-                <button
-                  type="button"
-                  onClick={() => onOpenDraftGenerator(shipment)}
-                  className="h-9 flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors shadow-sm"
-                  title="임시 정산서(Draft) 발행 폼 열기"
-                >
-                  <CreditCard size={15} />
-                  Draft 발행
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleOpenDraft}
+                className="h-9 flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors shadow-sm"
+                title="임시 정산서(Draft) 발행 폼 열기"
+              >
+                <CreditCard size={15} />
+                Draft 발행
+              </button>
 
               {/* 차량사진 업로드 */}
               <input
@@ -1059,6 +1225,14 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
                 <table className="w-full text-left text-sm block lg:table">
                   <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 sticky top-0 z-10 shadow-sm hidden lg:table-header-group">
                     <tr>
+                      <th className="p-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={vehicles.length > 0 && selectedVehicleIds.length === vehicles.length}
+                          onChange={toggleSelectAll}
+                          className="h-3.5 w-3.5 rounded accent-rose-500 cursor-pointer"
+                        />
+                      </th>
                       <th className="p-3 font-bold w-56">차대번호 (VIN)</th>
                       <th className="p-3 font-bold w-[650px]">제원 및 단가 정보</th>
                       <th className="p-3 font-bold text-center w-56">
@@ -1094,6 +1268,16 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
 
                       return (
                         <tr key={v.id} className={`transition-colors hover:bg-yellow-50 dark:hover:bg-yellow-950/10 ${rowBgClass} ${isCurrentViewingRow ? 'shadow-[0_4px_20px_rgba(239,68,68,0.15)]' : ''} block lg:table-row mb-6 lg:mb-0 p-4 lg:p-0 rounded-2xl border shadow-sm lg:shadow-none bg-white dark:bg-slate-900`}>
+                          {/* 체크박스 셀 (desktop only) */}
+                          <td className="hidden lg:table-cell p-3 align-middle w-10">
+                            <input
+                              type="checkbox"
+                              checked={selectedVehicleIds.includes(v.id)}
+                              onChange={() => toggleSelectVehicle(v.id)}
+                              onClick={e => e.stopPropagation()}
+                              className="h-3.5 w-3.5 rounded accent-rose-500 cursor-pointer"
+                            />
+                          </td>
                           <td className={`p-3 align-top transition-all duration-150 block lg:table-cell w-full lg:w-56 mb-4 lg:mb-0 border-b border-slate-100 dark:border-slate-800 lg:border-none pb-3 lg:pb-3 ${isCurrentViewingRow ? 'border-l-4 border-y-2 border-red-500 bg-red-50/20 dark:bg-red-950/10' : ''}`}>
                             <div className="flex gap-1.5 items-center mb-2">
                               <input
@@ -1742,6 +1926,159 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
         unclassifiedPhotos={pendingPhotos.filter(url => url.split('/').pop()?.startsWith('shipper_'))}
         onConfirm={handlePendingDocsConfirm}
       />
+
+      {/* Draft 정산서 발행 폼 (z-[200] 레이어 — 차량 대시보드 위에 표시) */}
+      {isDraftOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+            {/* 헤더 */}
+            <div className="px-6 py-4 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <CreditCard size={18} />
+                <div>
+                  <h3 className="font-bold text-base">가승인(Draft) 정산서 발행</h3>
+                  <p className="text-xs text-slate-300 mt-0.5">B/L: {blNumber}</p>
+                </div>
+              </div>
+              <button onClick={() => setIsDraftOpen(false)} className="text-white/60 hover:text-white transition p-1.5 hover:bg-white/10 rounded-lg">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 폼 바디 (스크롤 가능) */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-5">
+              {/* 기본 설정 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">화주 (Client)</label>
+                  <select
+                    value={draftClientId}
+                    onChange={e => setDraftClientId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  >
+                    {draftClients.map(c => (
+                      <option key={c.client_id} value={c.client_id}>{c.client_name}</option>
+                    ))}
+                    {draftClients.length === 0 && <option value="">화주 정보 로딩 중...</option>}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">적용 환율 (₩/USD)</label>
+                  <input
+                    type="number"
+                    value={draftExchangeRate}
+                    onChange={e => setDraftExchangeRate(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">인보이스 번호</label>
+                  <input
+                    type="text"
+                    value={draftInvoiceNo}
+                    onChange={e => setDraftInvoiceNo(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5">납기일 (Due Date)</label>
+                  <input
+                    type="date"
+                    value={draftDueDate}
+                    onChange={e => setDraftDueDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-none focus:border-indigo-500 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* 오류 메시지 */}
+              {draftError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-bold">
+                  <AlertCircle size={14} />
+                  {draftError}
+                </div>
+              )}
+
+              {/* 계산 중 로딩 */}
+              {draftCalculating && (
+                <div className="flex items-center justify-center gap-2 py-6 text-indigo-600">
+                  <Loader2 size={20} className="animate-spin" />
+                  <span className="text-sm font-bold">정산 계산 중...</span>
+                </div>
+              )}
+
+              {/* 계산 결과 */}
+              {draftCalcResult && !draftCalculating && (
+                <div className="space-y-4">
+                  {/* 마스터 요약 */}
+                  <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-xl p-4">
+                    <div className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <Coins size={13} /> 정산 요약
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                      <div className="text-center">
+                        <div className="text-xs text-slate-400 font-medium mb-1">해상 운임</div>
+                        <div className="font-black text-indigo-700 dark:text-indigo-300">${Number(draftCalcResult.master.total_ocean_usd).toLocaleString()}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-slate-400 font-medium mb-1">로컬 비용</div>
+                        <div className="font-black text-blue-700 dark:text-blue-300">₩{Number(draftCalcResult.master.total_local_krw).toLocaleString()}</div>
+                      </div>
+                      <div className="text-center col-span-2 sm:col-span-1">
+                        <div className="text-xs text-slate-400 font-medium mb-1">최종 청구금액</div>
+                        <div className="font-black text-emerald-700 dark:text-emerald-300 text-base">₩{Number(draftCalcResult.master.final_amount_krw).toLocaleString()}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 차량별 내역 */}
+                  <div className="overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr>
+                          <th className="px-3 py-2 font-bold">VIN</th>
+                          <th className="px-3 py-2 font-bold">차종</th>
+                          <th className="px-3 py-2 font-bold text-right">해상 운임 (USD)</th>
+                          <th className="px-3 py-2 font-bold text-right">로컬 (KRW)</th>
+                          <th className="px-3 py-2 font-bold text-right">합계 (KRW)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {draftCalcResult.items.map((item: any, i: number) => (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="px-3 py-2 font-mono text-slate-700">{item.vin}</td>
+                            <td className="px-3 py-2 text-slate-600">{item.cargo_type}</td>
+                            <td className="px-3 py-2 text-right font-semibold text-indigo-600">${Number(item.ocean_usd).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right font-semibold text-blue-600">₩{Number(item.local_krw).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right font-bold text-slate-800">₩{Number(item.total_krw).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 푸터 버튼 */}
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex gap-3 shrink-0 bg-slate-50 dark:bg-slate-900/50">
+              <button
+                onClick={() => setIsDraftOpen(false)}
+                className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleSaveDraft}
+                disabled={draftSaving || !draftCalcResult}
+                className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+              >
+                {draftSaving ? <><Loader2 size={15} className="animate-spin" /> 저장 중...</> : <><Sparkles size={15} /> 가승인 정산서 발행</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

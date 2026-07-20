@@ -1142,18 +1142,18 @@ export default function AdminShipmentPage() {
                               const currentIdx = STAGES.findIndex(stage => stage.value === (s.status === "Documents Verified" ? "Trucking" : s.status));
                               if (currentIdx === -1) return null;
 
-                              const cardStepWidth = 120;
+                              const cardStepWidth = 96; // 90px card + 6px gap
                               const translateX = -(currentIdx - 1) * cardStepWidth;
 
                               return (
                                 <div className="flex flex-col gap-1 max-w-full overflow-hidden">
-                                  <div className="relative w-full h-[74px] mt-0.5 overflow-hidden">
+                                  <div className="relative w-full h-[62px] mt-0.5 overflow-hidden">
                                     <div
-                                      className="absolute flex gap-[10px] h-[72px] items-center"
+                                      className="absolute flex gap-[6px] h-[60px] items-center"
                                       style={{
                                         transform: `translateX(${translateX}px)`,
                                         transition: 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
-                                        width: `${STAGES.length * 110 + (STAGES.length - 1) * 10}px`
+                                        width: `${STAGES.length * 90 + (STAGES.length - 1) * 6}px`
                                       }}
                                     >
                                       {STAGES.map((stage, idx) => {
@@ -1164,11 +1164,11 @@ export default function AdminShipmentPage() {
                                           return (
                                             <div
                                               key={stage.value}
-                                              className={`w-[110px] h-[68px] shrink-0 flex flex-col items-center justify-center p-1.5 rounded-lg border font-black ${stage.activeColor} shadow-sm select-none relative overflow-hidden`}
+                                              className={`w-[90px] h-[56px] shrink-0 flex flex-col items-center justify-center p-1 rounded-lg border font-black ${stage.activeColor} shadow-sm select-none relative overflow-hidden`}
                                             >
-                                              <div className="absolute top-1 left-2 text-[6px] font-bold uppercase tracking-wider opacity-60">Active</div>
-                                              <StageIcon size={18} className="mb-0.5 animate-pulse" />
-                                              <span className="text-[11px] tracking-tight text-center leading-none truncate w-full">{stage.label}</span>
+                                              <div className="absolute top-0.5 left-1.5 text-[5px] font-bold uppercase tracking-wider opacity-60">Active</div>
+                                              <StageIcon size={15} className="mb-0.5 animate-pulse" />
+                                              <span className="text-[9px] tracking-tight text-center leading-none truncate w-full px-0.5">{stage.label}</span>
                                             </div>
                                           );
                                         } else {
@@ -1182,11 +1182,11 @@ export default function AdminShipmentPage() {
                                                 handleStatusChange(s.bl_number, stage.value);
                                               }}
                                               disabled={!isVisible}
-                                              className={`w-[110px] h-[60px] shrink-0 flex flex-col items-center justify-center p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition duration-150 shadow-sm group cursor-pointer ${!isVisible ? 'opacity-30' : ''}`}
+                                              className={`w-[90px] h-[48px] shrink-0 flex flex-col items-center justify-center p-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition duration-150 shadow-sm group cursor-pointer ${!isVisible ? 'opacity-30' : ''}`}
                                               title={`클릭 시 '${stage.label}'(으)로 이동`}
                                             >
-                                              <StageIcon size={15} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors mb-0.5" />
-                                              <span className="text-[10px] font-bold text-slate-500 group-hover:text-slate-700 dark:text-slate-400 transition-colors truncate w-full text-center">{stage.label}</span>
+                                              <StageIcon size={13} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors mb-0.5" />
+                                              <span className="text-[9px] font-bold text-slate-500 group-hover:text-slate-700 dark:text-slate-400 transition-colors truncate w-full text-center px-0.5">{stage.label}</span>
                                             </button>
                                           );
                                         }
