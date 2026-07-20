@@ -28,7 +28,7 @@ RUN apk add --no-cache \
 
 # Puppeteer 환경 변수 설정 (설치된 Chromium 경로 지정)
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # 프로덕션 의존성만 설치
 COPY package*.json ./
