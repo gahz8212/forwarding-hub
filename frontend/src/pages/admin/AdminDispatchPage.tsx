@@ -117,10 +117,68 @@ export default function AdminDispatchPage() {
           등록된 차량이 없습니다.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {/* 데스크탑: 테이블형 */}
+        <div className="hidden md:block overflow-x-auto bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-3xs">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+              <tr>
+                <th className="px-4 py-3 font-bold w-10"></th>
+                <th className="px-4 py-3 font-bold">차대번호 (VIN)</th>
+                <th className="px-4 py-3 font-bold">번호판</th>
+                <th className="px-4 py-3 font-bold">B/L 번호</th>
+                <th className="px-4 py-3 font-bold">도착지 (POD)</th>
+                <th className="px-4 py-3 font-bold">탁송방식</th>
+                <th className="px-4 py-3 font-bold">운송사</th>
+                <th className="px-4 py-3 font-bold text-center">상태</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {vehicles.map(v => (
+                <tr
+                  key={v.vin}
+                  onClick={() => toggleVin(v.vin)}
+                  className={`cursor-pointer transition-colors ${
+                    selectedVins.includes(v.vin)
+                      ? 'bg-blue-50/60 dark:bg-blue-950/20'
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedVins.includes(v.vin)}
+                      onChange={(e) => { e.stopPropagation(); toggleVin(v.vin); }}
+                      className="h-4 w-4 rounded text-blue-600 accent-blue-600 cursor-pointer"
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-mono font-bold text-slate-800 dark:text-slate-200 text-xs tracking-tight">{v.vin}</td>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-400 font-medium">{v.plate_number || '-'}</td>
+                  <td className="px-4 py-3 font-mono text-slate-700 dark:text-slate-300 text-xs">{v.bl_number || '-'}</td>
+                  <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{v.pod || '-'}</td>
+                  <td className="px-4 py-3 text-blue-600 dark:text-blue-400 font-bold text-xs">
+                    {v.dispatch_method === 'CAR_CARRIER' ? '카캐리어' : v.dispatch_method === 'DRIVER_DISPATCH' ? '인탁송' : v.dispatch_method === 'SELF_LOADER' ? '셀프로더' : v.dispatch_method || '-'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-700 dark:text-slate-300 max-w-[140px] truncate">{v.carrier_company || '-'}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide ${
+                      v.dispatch_status === 'DISPATCHED'
+                        ? 'bg-emerald-500 text-white dark:bg-emerald-950/30 dark:text-emerald-400'
+                        : 'bg-slate-100 text-slate-650 dark:bg-slate-800 dark:text-slate-400'
+                    }`}>
+                      {v.dispatch_status || 'PENDING'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 모바일: 카드형 */}
+        <div className="md:hidden grid grid-cols-1 gap-4">
           {vehicles.map(v => (
-            <div 
-              key={v.vin} 
+            <div
+              key={v.vin}
               onClick={() => toggleVin(v.vin)}
               className={`relative p-4 rounded-xl border transition-all duration-150 cursor-pointer select-none bg-white dark:bg-slate-900 ${
                 selectedVins.includes(v.vin)
@@ -128,32 +186,24 @@ export default function AdminDispatchPage() {
                   : 'border-slate-200 dark:border-slate-800 hover:border-slate-350 dark:hover:border-slate-700 shadow-3xs'
               }`}
             >
-              {/* Card Header */}
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={selectedVins.includes(v.vin)}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      toggleVin(v.vin);
-                    }}
+                    onChange={(e) => { e.stopPropagation(); toggleVin(v.vin); }}
                     className="h-4 w-4 rounded text-blue-600 accent-blue-600 cursor-pointer"
                   />
-                  <span className="font-mono font-bold text-slate-850 dark:text-slate-200 text-xs md:text-sm tracking-tight truncate max-w-[140px] sm:max-w-none" title={v.vin}>
-                    {v.vin}
-                  </span>
+                  <span className="font-mono font-bold text-slate-850 dark:text-slate-200 text-xs tracking-tight truncate max-w-[180px]" title={v.vin}>{v.vin}</span>
                 </div>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide shrink-0 ${
-                  v.dispatch_status === 'DISPATCHED' 
-                    ? 'bg-emerald-500 text-white dark:bg-emerald-950/30 dark:text-emerald-400' 
+                  v.dispatch_status === 'DISPATCHED'
+                    ? 'bg-emerald-500 text-white dark:bg-emerald-950/30 dark:text-emerald-400'
                     : 'bg-slate-100 text-slate-650 dark:bg-slate-800 dark:text-slate-400'
                 }`}>
                   {v.dispatch_status || 'PENDING'}
                 </span>
               </div>
-
-              {/* Card Body */}
               <div className="space-y-2 text-xs font-bold text-slate-600 dark:text-slate-400">
                 <div className="flex justify-between border-b border-slate-100 dark:border-slate-850 pb-1.5">
                   <span className="text-slate-400 font-medium">B/L 번호:</span>
@@ -171,14 +221,13 @@ export default function AdminDispatchPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-medium">운송사:</span>
-                  <span className="text-slate-700 dark:text-slate-300 truncate max-w-[120px]" title={v.carrier_company || ''}>
-                    {v.carrier_company || '-'}
-                  </span>
+                  <span className="text-slate-700 dark:text-slate-300 truncate max-w-[120px]" title={v.carrier_company || ''}>{v.carrier_company || '-'}</span>
                 </div>
               </div>
             </div>
           ))}
         </div>
+
       )}
 
       {modalOpen && (

@@ -268,58 +268,104 @@ export default function AdminBillingPage() {
               등록된 화주 마진 설정이 없습니다.
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-6 bg-slate-50/30 dark:bg-slate-900/10 border-t">
-              {clients.map((c) => (
-                <div 
-                  key={c.client_id}
-                  className="p-5 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-3xs hover:shadow-2xs hover:border-slate-350 dark:hover:border-slate-700 transition flex flex-col justify-between"
-                >
-                  <div>
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-slate-100 dark:border-slate-850">
-                      <div>
-                        <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">{c.client_name}</h4>
-                        <span className="font-mono text-xs text-slate-400 dark:text-slate-500 font-bold">{c.client_id}</span>
-                      </div>
-                      {c.margin_type === "PERCENTAGE" ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/50">
-                          <Percent size={11} /> 정률 마진
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/50">
-                          <DollarSign size={11} /> 정액 마진
-                        </span>
-                      )}
-                    </div>
+            <>
+              {/* 데스크탑: 테이블형 */}
+              <div className="hidden md:block overflow-x-auto border-t">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="px-5 py-3 font-bold">화주명</th>
+                      <th className="px-5 py-3 font-bold">화주 코드</th>
+                      <th className="px-5 py-3 font-bold">마진 방식</th>
+                      <th className="px-5 py-3 font-bold text-right">해상 운임 마진</th>
+                      <th className="px-5 py-3 font-bold text-right">로컬 비용 마진</th>
+                      <th className="px-5 py-3 font-bold text-right">대당 고정 마진</th>
+                      <th className="px-5 py-3 font-bold text-center">수정</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {clients.map((c) => (
+                      <tr key={c.client_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                        <td className="px-5 py-3 font-extrabold text-slate-800 dark:text-slate-200">{c.client_name}</td>
+                        <td className="px-5 py-3 font-mono text-xs text-slate-400 dark:text-slate-500 font-bold">{c.client_id}</td>
+                        <td className="px-5 py-3">
+                          {c.margin_type === "PERCENTAGE" ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100">
+                              <Percent size={11} /> 정률 마진
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-100">
+                              <DollarSign size={11} /> 정액 마진
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">{c.margin_type === "PERCENTAGE" ? `${c.ocean_margin_rate}%` : "-"}</td>
+                        <td className="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">{c.margin_type === "PERCENTAGE" ? `${c.local_margin_rate}%` : "-"}</td>
+                        <td className="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">{c.margin_type === "FIXED" ? `$${Number(c.fixed_margin_per_unit).toLocaleString()}` : "-"}</td>
+                        <td className="px-5 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => openEditClient(c)}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition rounded-lg font-bold text-xs cursor-pointer border border-slate-200 dark:border-slate-700/50"
+                          >
+                            수정
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-                    {/* Details */}
-                    <div className="space-y-2 text-xs font-bold text-slate-600 dark:text-slate-400 mb-4">
-                      <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
-                        <span className="text-slate-400 font-medium">해상 운임 마진 (Ocean):</span>
-                        <span className="text-slate-700 dark:text-slate-350">{c.margin_type === "PERCENTAGE" ? `${c.ocean_margin_rate}%` : "-"}</span>
-                      </div>
-                      <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
-                        <span className="text-slate-400 font-medium">로컬 비용 마진 (Local):</span>
-                        <span className="text-slate-700 dark:text-slate-350">{c.margin_type === "PERCENTAGE" ? `${c.local_margin_rate}%` : "-"}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400 font-medium">대당 고정 마진 (Fixed):</span>
-                        <span className="text-slate-750 dark:text-slate-300">{c.margin_type === "FIXED" ? `$${Number(c.fixed_margin_per_unit).toLocaleString()}` : "-"}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Edit Button */}
-                  <button
-                    type="button"
-                    onClick={() => openEditClient(c)}
-                    className="w-full h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition rounded-lg font-bold text-xs cursor-pointer mt-auto border border-slate-200 dark:border-slate-700/50"
+              {/* 모바일: 카드형 */}
+              <div className="md:hidden grid grid-cols-1 gap-4 p-4 bg-slate-50/30 border-t">
+                {clients.map((c) => (
+                  <div
+                    key={c.client_id}
+                    className="p-5 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-3xs flex flex-col justify-between"
                   >
-                    마진 정보 수정
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div>
+                      <div className="flex items-start justify-between gap-3 mb-3 pb-3 border-b border-slate-100 dark:border-slate-850">
+                        <div>
+                          <h4 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">{c.client_name}</h4>
+                          <span className="font-mono text-xs text-slate-400 dark:text-slate-500 font-bold">{c.client_id}</span>
+                        </div>
+                        {c.margin_type === "PERCENTAGE" ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100">
+                            <Percent size={11} /> 정률 마진
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-100">
+                            <DollarSign size={11} /> 정액 마진
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-2 text-xs font-bold text-slate-600 dark:text-slate-400 mb-4">
+                        <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
+                          <span className="text-slate-400 font-medium">해상 운임 마진 (Ocean):</span>
+                          <span className="text-slate-700 dark:text-slate-350">{c.margin_type === "PERCENTAGE" ? `${c.ocean_margin_rate}%` : "-"}</span>
+                        </div>
+                        <div className="flex justify-between pb-1.5 border-b border-slate-50 dark:border-slate-850/50">
+                          <span className="text-slate-400 font-medium">로컬 비용 마진 (Local):</span>
+                          <span className="text-slate-700 dark:text-slate-350">{c.margin_type === "PERCENTAGE" ? `${c.local_margin_rate}%` : "-"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400 font-medium">대당 고정 마진 (Fixed):</span>
+                          <span className="text-slate-750 dark:text-slate-300">{c.margin_type === "FIXED" ? `$${Number(c.fixed_margin_per_unit).toLocaleString()}` : "-"}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openEditClient(c)}
+                      className="w-full h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-300 hover:text-indigo-600 transition rounded-lg font-bold text-xs cursor-pointer mt-auto border border-slate-200 dark:border-slate-700/50"
+                    >
+                      마진 정보 수정
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       ) : (
@@ -353,8 +399,9 @@ export default function AdminBillingPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      해상운임 (Ocean, USD)
+                    <label className="block mb-1">
+                      <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">해상운임</span>
+                      <span className="block text-[10px] font-semibold text-slate-400">Ocean, USD</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-sm">$</div>
@@ -368,8 +415,9 @@ export default function AdminBillingPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      고박료 (Lashing, KRW)
+                    <label className="block mb-1">
+                      <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">고박료</span>
+                      <span className="block text-[10px] font-semibold text-slate-400">Lashing, KRW</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-sm">₩</div>
@@ -383,8 +431,9 @@ export default function AdminBillingPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      터미널이용료 (THC, KRW)
+                    <label className="block mb-1">
+                      <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">터미널이용료</span>
+                      <span className="block text-[10px] font-semibold text-slate-400">THC, KRW</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-sm">₩</div>
@@ -398,8 +447,9 @@ export default function AdminBillingPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      부두사용료 (Wharfage, KRW)
+                    <label className="block mb-1">
+                      <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">부두사용료</span>
+                      <span className="block text-[10px] font-semibold text-slate-400">Wharfage, KRW</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-sm">₩</div>
@@ -413,8 +463,9 @@ export default function AdminBillingPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      서류비 (B/L Fee, KRW)
+                    <label className="block mb-1">
+                      <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">서류비</span>
+                      <span className="block text-[10px] font-semibold text-slate-400">B/L Fee, KRW</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-sm">₩</div>
@@ -428,8 +479,9 @@ export default function AdminBillingPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      관세사수수료 (Customs, KRW)
+                    <label className="block mb-1">
+                      <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">관세사수수료</span>
+                      <span className="block text-[10px] font-semibold text-slate-400">Customs, KRW</span>
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-sm">₩</div>
