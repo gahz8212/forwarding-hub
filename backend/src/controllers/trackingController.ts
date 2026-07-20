@@ -1602,3 +1602,63 @@ export const updateVehicleSpecs = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: '제원 저장 중 서버 에러' });
   }
 };
+
+// DELETE /api/tracking/vehicles/:id — 개별 차량 삭제 (DB + GCS 사진 파일 함께 제거)
+export const deleteVehicle = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    // 1. 삭제 전 해당 차량의 사진 URL 목록 가져오기
+    const [rows]: any = await pool.query(
+      'SELECT condition_photo_url, deregistration_photo_url, vin_photo_url FROM vehicles WHERE id = ?',
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: '차량을 찾을 수 없습니다.' });
+    }
+
+    const vehicle = rows[0];
+
+    // 2. 사진 URL 파싱 후 GCS에서 삭제
+    const photoColumns = ['condition_photo_url', 'deregistration_photo_url', 'vin_photo_url'];
+    const deletePromises: Promise<any>[] = [];
+
+    for (const col of photoColumns) {
+      const raw = vehicle[col];
+      if (!raw) continue;
+
+      let urls: string[] = [];
+      try {
+        urls = JSON.parse(raw);
+      } catch {
+        urls = [raw];
+      }
+
+      for (const url of urls) {
+        // GCS 절대 URL → 상대 경로(GCS 키) 추출
+        const gcsPath = url
+          .replace(`https://storage.googleapis.com/${bucketName}/`, '')
+          .replace(/^\//, '');
+
+        if (gcsPath && !gcsPath.startsWith('http')) {
+          deletePromises.push(
+            bucket.file(gcsPath).delete().catch(() => {
+              // 파일이 이미 없는 경우 무시
+            })
+          );
+        }
+      }
+    }
+
+    await Promise.all(deletePromises);
+
+    // 3. DB에서 차량 레코드 삭제
+    await pool.query('DELETE FROM vehicles WHERE id = ?', [id]);
+
+    return res.json({ success: true, message: `차량(id=${id}) 및 관련 사진 파일이 삭제되었습니다.` });
+  } catch (error) {
+    console.error('deleteVehicle error:', error);
+    return res.status(500).json({ success: false, message: '차량 삭제 중 서버 에러가 발생했습니다.' });
+  }
+};

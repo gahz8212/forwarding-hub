@@ -496,20 +496,20 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
   // 선택 차량 삭제
   const handleDeleteSelected = async () => {
     if (selectedVehicleIds.length === 0) return;
-    const ok = window.confirm(`선택한 ${selectedVehicleIds.length}대의 차량을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`);
+    const ok = window.confirm(`선택한 ${selectedVehicleIds.length}대의 차량을 삭제하시겠습니까?\n관련 사진 파일도 함께 삭제되며, 이 작업은 되돌릴 수 없습니다.`);
     if (!ok) return;
     setIsDeleting(true);
     try {
       await Promise.all(
         selectedVehicleIds.map(id =>
-          fetch(`${API_BASE_URL}/api/tracking/vehicles/${id}`, { method: 'DELETE' })
+          api.delete(`/api/tracking/vehicles/${id}`)
         )
       );
       setSelectedVehicleIds([]);
       fetchVehicles();
-    } catch (err) {
+    } catch (err: any) {
       console.error('선택삭제 에러:', err);
-      alert('선택 차량 삭제 중 오류가 발생했습니다.');
+      alert('선택 차량 삭제 중 오류가 발생했습니다: ' + (err.response?.data?.message || err.message));
     } finally {
       setIsDeleting(false);
     }
@@ -1115,14 +1115,14 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
               )}
 
               {/* 전체삭제 */}
-              <button
+              {/* <button
                 onClick={handleReset}
                 disabled={loading}
                 className="h-9 flex items-center justify-center gap-1.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 px-3.5 rounded-lg text-xs md:text-sm font-bold transition-colors disabled:opacity-50 border border-red-200 dark:border-red-800"
               >
                 <Trash2 size={15} />
                 전체삭제
-              </button>
+              </button> */}
 
               {/* 전체저장 */}
               <button

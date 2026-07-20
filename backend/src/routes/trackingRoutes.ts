@@ -17,7 +17,8 @@ import {
   deleteDoc,
   updateVehicleStatus,
   getVehicleSpecByVIN,
-  updateVehicleSpecs
+  updateVehicleSpecs,
+  deleteVehicle
 } from '../controllers/trackingController';
 import { runDailyMscTracking } from '../services/mscTrackerService';
 import multer from 'multer';
@@ -85,6 +86,9 @@ router.get('/vehicles/vin/:vin', getVehicleSpecByVIN);
 
 // PUT /api/tracking/vehicles/:id (개별 차량 제원 저장)
 router.put('/vehicles/:id', updateVehicleSpecs);
+
+// DELETE /api/tracking/vehicles/:id (개별 차량 삭제 — DB + GCS 사진 파일)
+router.delete('/vehicles/:id', deleteVehicle);
 
 // POST /api/tracking/test-daily-run (일일 MSC 트래킹 수동 테스트 트리거)
 router.post('/test-daily-run', async (req, res) => {
