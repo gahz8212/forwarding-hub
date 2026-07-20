@@ -135,6 +135,11 @@ export function calculateSafeInvoice(
     }
 
     let sellInlandKRW = new Big(car.inland_cost_krw || 0).plus(car.surcharge_cost_krw || 0);
+    if (isPercentage) {
+      sellInlandKRW = sellInlandKRW.times(localMarginMultiplier).round(0, 1);
+    } else {
+      sellInlandKRW = sellInlandKRW.round(0, 1);
+    }
 
     totalOceanUSD = totalOceanUSD.plus(sellOceanUSD);
     totalLocalKRW = totalLocalKRW.plus(sellLashingKRW).plus(sellThcKRW).plus(sellWharfageKRW).plus(sellInlandKRW);
