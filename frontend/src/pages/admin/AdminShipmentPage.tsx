@@ -1707,8 +1707,8 @@ export default function AdminShipmentPage() {
       )}
       {/* --- 정산서(Debit Note) 발행 모달 --- */}
       {isBillingModalOpen && billingShipment && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-100 my-2 md:my-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-hidden animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-7xl h-[92vh] flex flex-col shadow-2xl border border-slate-100">
             {/* Modal Header */}
             <div className="px-4 py-2.5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
