@@ -466,7 +466,8 @@ export default function VehicleDashboardModal({ shipment, onClose, onOpenDraftGe
       });
       const res = await response.json();
       if (res.success) {
-        fetchVehicles();
+        // 낙관적 업데이트: loading 없이 해당 차량 상태만 즉시 반영 (번쩍거림 방지)
+        setVehicles(prev => prev.map(v => v.id === vehicleId ? { ...v, status: newStatus } : v));
       } else {
         alert("상태 변경 실패: " + res.message);
       }
