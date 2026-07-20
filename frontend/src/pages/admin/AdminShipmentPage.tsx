@@ -1955,7 +1955,7 @@ export default function AdminShipmentPage() {
                         </div>
                         <div className="flex justify-between border-t pt-1.5 text-indigo-600 font-bold">
                           <span>원화 환산 금액 (절사):</span>
-                          <span>{fmtKRW(Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)))}</span>
+                          <span>{fmtKRW(calculationResult.master.total_ocean_krw ?? Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)))}</span>
                         </div>
                       </div>
 
@@ -1965,7 +1965,7 @@ export default function AdminShipmentPage() {
                         </div>
                         <div className="flex justify-between">
                           <span>해상 운임 환산액 (KRW):</span>
-                          <span className="text-slate-800 font-bold">{fmtKRW(Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)))}</span>
+                          <span className="text-slate-800 font-bold">{fmtKRW(calculationResult.master.total_ocean_krw ?? Math.floor(Number(calculationResult.master.total_ocean_usd) * Number(calculationResult.master.exchange_rate)))}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>로컬 비용 합계 (KRW):</span>

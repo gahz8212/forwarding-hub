@@ -260,11 +260,14 @@ export const createInvoice = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '이미 존재하는 인보이스 번호입니다.' });
     }
 
+    // Compute ocean KRW (floor) to store explicitly
+    const total_ocean_krw = Math.floor(Number(total_ocean_usd) * Number(exchange_rate));
+
     // Insert Invoice Master
     await connection.query(
       `INSERT INTO invoices 
-        (invoice_no, client_id, bl_number, vessel_name, pol, pod, exchange_rate, total_ocean_usd, total_local_krw, final_amount_krw, bl_fee_krw, customs_fee_krw, payment_status, due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`,
+        (invoice_no, client_id, bl_number, vessel_name, pol, pod, exchange_rate, total_ocean_usd, total_ocean_krw, total_local_krw, final_amount_krw, bl_fee_krw, customs_fee_krw, payment_status, due_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`,
       [
         invoice_no,
         client_id,
@@ -274,6 +277,7 @@ export const createInvoice = async (req: Request, res: Response) => {
         pod || '',
         exchange_rate,
         total_ocean_usd,
+        total_ocean_krw,
         total_local_krw,
         final_amount_krw,
         bl_fee_krw || 40000,
@@ -595,18 +599,22 @@ export const mergeAndPublishInvoices = async (req: Request, res: Response) => {
     await connection.beginTransaction();
 
     let total_ocean_usd = 0;
+    let total_ocean_krw = 0; // Sum of each invoice's already-floored ocean KRW
     let total_local_krw = 0;
-    let final_amount_krw = 0;
     let bl_fee_krw = 0;
     let customs_fee_krw = 0;
 
     for (const inv of oldInvoices) {
       total_ocean_usd += Number(inv.total_ocean_usd);
+      // Use stored total_ocean_krw if available, otherwise floor-calculate per invoice
+      total_ocean_krw += Number(inv.total_ocean_krw) || Math.floor(Number(inv.total_ocean_usd) * Number(inv.exchange_rate));
       total_local_krw += Number(inv.total_local_krw);
-      final_amount_krw += Number(inv.final_amount_krw);
       bl_fee_krw += Number(inv.bl_fee_krw);
       customs_fee_krw += Number(inv.customs_fee_krw);
     }
+
+    // final_amount = sum of each invoice's ocean_krw (already floored) + total_local
+    const final_amount_krw = total_ocean_krw + total_local_krw;
 
     const [shipments]: any = await connection.query(
       `SELECT bl_number FROM shipments WHERE invoice_no IN (${placeholders})`,
@@ -616,9 +624,9 @@ export const mergeAndPublishInvoices = async (req: Request, res: Response) => {
     const combinedBlString = blNumbers.length > 1 ? `${blNumbers[0]} 외 ${blNumbers.length - 1}건` : blNumbers[0] || "";
 
     await connection.query(`
-      INSERT INTO invoices (invoice_no, client_id, publish_status, bl_number, vessel_name, pol, pod, exchange_rate, total_ocean_usd, total_local_krw, final_amount_krw, bl_fee_krw, customs_fee_krw, due_date)
-      VALUES (?, ?, 'SENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [newInvoiceNo, clientId, combinedBlString, vesselName, pol, pod, exchangeRate, total_ocean_usd, total_local_krw, final_amount_krw, bl_fee_krw, customs_fee_krw, dueDate]);
+      INSERT INTO invoices (invoice_no, client_id, publish_status, bl_number, vessel_name, pol, pod, exchange_rate, total_ocean_usd, total_ocean_krw, total_local_krw, final_amount_krw, bl_fee_krw, customs_fee_krw, due_date)
+      VALUES (?, ?, 'SENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [newInvoiceNo, clientId, combinedBlString, vesselName, pol, pod, exchangeRate, total_ocean_usd, total_ocean_krw, total_local_krw, final_amount_krw, bl_fee_krw, customs_fee_krw, dueDate]);
 
     await connection.query(`UPDATE invoice_items SET invoice_no = ? WHERE invoice_no IN (${placeholders})`, [newInvoiceNo, ...invoiceNos]);
     await connection.query(`UPDATE shipments SET invoice_no = ? WHERE invoice_no IN (${placeholders})`, [newInvoiceNo, ...invoiceNos]);

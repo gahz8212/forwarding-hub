@@ -29,6 +29,7 @@ interface Invoice {
   pod: string;
   exchange_rate: number;
   total_ocean_usd: number;
+  total_ocean_krw?: number;
   total_local_krw: number;
   final_amount_krw: number;
   bl_fee_krw: number;
@@ -807,7 +808,7 @@ export default function InvoiceListPage() {
                   </div>
                   <div className="flex justify-between border-t pt-1.5 text-indigo-600 font-bold">
                     <span>원화 환산 금액 (절사):</span>
-                    <span>₩{Math.floor(Number(selectedInvoice.total_ocean_usd) * Number(selectedInvoice.exchange_rate)).toLocaleString()}</span>
+                    <span>₩{Number(selectedInvoice.total_ocean_krw ?? Math.floor(Number(selectedInvoice.total_ocean_usd) * Number(selectedInvoice.exchange_rate))).toLocaleString()}</span>
                   </div>
                 </div>
 
@@ -817,7 +818,7 @@ export default function InvoiceListPage() {
                   </div>
                   <div className="flex justify-between">
                     <span>해상 운임 환산액 (KRW):</span>
-                    <span className="text-slate-800 font-bold">₩{Math.floor(Number(selectedInvoice.total_ocean_usd) * Number(selectedInvoice.exchange_rate)).toLocaleString()}</span>
+                    <span className="text-slate-800 font-bold">₩{Number(selectedInvoice.total_ocean_krw ?? Math.floor(Number(selectedInvoice.total_ocean_usd) * Number(selectedInvoice.exchange_rate))).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>로컬 비용 합계 (KRW):</span>

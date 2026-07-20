@@ -30,6 +30,7 @@ export interface CostRate {
 export interface CalculationResult {
   master: {
     total_ocean_usd: string;
+    total_ocean_krw: string;
     total_local_krw: string;
     final_amount_krw: string;
     exchange_rate: string;
@@ -171,6 +172,7 @@ export function calculateSafeInvoice(
   return {
     master: {
       total_ocean_usd: totalOceanUSD.toFixed(2),
+      total_ocean_krw: convertedOceanKRW.toFixed(0),
       total_local_krw: totalLocalKRW.toFixed(0),
       final_amount_krw: finalAmountKRW.toFixed(0),
       exchange_rate: exchangeRate.toFixed(2),
